@@ -1,5 +1,7 @@
 # Weryfikacja 2026-10-17
 
+Wersja 0.3.0: sprawdzono dzienne importy/eksporty, wygaśnięcia i pobór pokryty magazynem, FIFO przy dodatnim bilansie netto, terminy włączne i lata przestępne, niepełny bieżący dzień ze zmianą czasu, brak danych bez zerowania, projekcje przyszłych liczników, niedobór zimowy i ochronę nieskończonych/ujemnych profili. Rzeczywisty HA sprawdza WS, zapis planu, odtworzenie starszego formatu, utrwalenie odczytów dziennych i miesięcznych po purgowaniu Recorder oraz odmowę zapisu dyskowego. Natywne API statystyk przetestowano na zaimportowanych w izolowanej bazie sumach Wh, z konwersją do kWh i różnicą 720/1440 kWh dla kompletnego miesiąca. Chromium otwiera tabelę dni i zmienia profil, po czym sprawdza nową prognozę niedoboru.
+
 Wersja 0.2.2 nadpisuje odziedziczone `user-select: none` dashboardu. Test Chromium przeciąga mysz od początku do końca nagłówka oraz rzeczywistego komunikatu błędu braku historii i sprawdza tekst zaznaczenia. W oryginalnej karcie test zwracał puste zaznaczenie; po poprawce oba teksty można zaznaczyć.
 
 Wersja 0.2.1 naprawia błąd `Custom element doesn’t exist: pge-storage-card` odtworzony w rzeczywistym Chromium z Core 2026.10.0 i frontendem 20260930.2. Globalny import JS wykonywał się przed inicjalizacją rejestru komponentów HA. Zastąpiono go modułem zasobów Lovelace. Nowy test otwiera dashboard bez ręcznego importowania JS, sprawdza treść karty, dostępność formularza i działanie po odświeżeniu strony. Sprawdzono również aktualizację starego URL, usunięcie duplikatu własnego zasobu, zachowanie innych zasobów oraz instrukcję dla trybu zasobów YAML.
@@ -12,9 +14,9 @@ Sprawdzono w odizolowanym środowisku chmurowym, bez dostępu do produkcyjnego H
 |---|---|
 | Python 3.14.8, Home Assistant Core 2026.10.0 | Zainstalowane i uruchomione |
 | `uv sync --frozen`, `npm ci` | Wykonane, także ponownie bez zmian lockfile |
-| pytest | 49 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
-| Testy karty w DOM / Node 24 | 6 zaliczonych, 0 niezaliczonych |
-| Chromium: pełny dashboard HA i ponowne ładowanie strony | Zaliczony (wśród 49 testów pytest) |
+| pytest | 68 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
+| Testy karty w DOM / Node 24 | 9 zaliczonych, 0 niezaliczonych |
+| Chromium: pełny dashboard HA i ponowne ładowanie strony | Zaliczony (wśród 68 testów pytest) |
 | Ruff check i format | Bez błędów |
 | Składnia JS | Poprawna |
 | `hass --script check_config -c .ha-dev` | Poprawna konfiguracja demonstracyjna |

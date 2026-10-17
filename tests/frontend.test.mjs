@@ -105,10 +105,55 @@ test("history paginates all rows instead of capping the ledger size", async () =
   const data = snapshot();
   data.records = Array.from({ length: 101 }, (_, index) => ({ ...data.records[0], id: `id-${index}`, note: `Faktura ${index}` }));
   emit(data);
-  assert.equal(root.querySelectorAll("tbody tr").length, 20);
+  assert.equal(root.querySelectorAll("#rows tr").length, 20);
   assert.match(root.getElementById("pages").textContent, /101/);
   for (let i = 0; i < 5; i++) root.getElementById("next").click();
   assert.match(root.getElementById("rows").textContent, /Faktura 100/);
   assert.equal(root.getElementById("next").disabled, true);
+  await window.happyDOM.close();
+});
+
+test("MAGAZYN shows usable energy and the raw counterpart, both with one decimal", async () => {
+  const { window, root, emit } = await setup();
+  const data = snapshot();
+  Object.assign(data.current, { available_energy: "2197.032", carried_balance: "2164", period_balance: "33.032", import_since_settlement_kwh: "134.76", export_since_settlement_kwh: "209.74", credited_since_settlement_kwh: "167.792" });
+  emit(data);
+  const metrics = root.getElementById("metrics").textContent;
+  assert.match(metrics, /MAGAZYN — do odbioru/);
+  assert.match(metrics, /2.?197,0/);
+  assert.match(metrics, /2.?746,3/);
+  assert.doesNotMatch(metrics, /2197,032|2.?197,032/);
+  assert.match(root.getElementById("flow").textContent, /dodano 167,8 kWh/);
+  await window.happyDOM.close();
+});
+
+test("daily table keeps gaps unknown and distinguishes raw export from usable credit", async () => {
+  const { window, root, card, hass } = await setup();
+  hass.callWS = async () => ({ rows: [{ day: "2026-10-01", import_kwh: "5", withdrawn_kwh: "5", export_kwh: "10", credited_kwh: "8", net_kwh: "3", balance_kwh: "2167" }, { day: "2026-10-02", import_kwh: null, export_kwh: null, credited_kwh: null, net_kwh: null, balance_kwh: null, error: "Brak historii" }], basis: "Odczyty Recorder", updated_at: "2026-10-17T18:00:00+00:00" });
+  await card._loadDaily();
+  const rows = root.querySelectorAll("#daily-rows tr");
+  assert.match(rows[0].textContent, /10,0/);
+  assert.match(rows[0].textContent, /8,0/);
+  assert.match(rows[0].textContent, /2.?167,0/);
+  assert.match(rows[1].textContent, /Brak historii/);
+  assert.match(rows[1].textContent, /—/);
+  await window.happyDOM.close();
+});
+
+test("live updates preserve an unsaved seasonal plan and its revision", async () => {
+  const { window, root, card, emit, calls } = await setup();
+  const data = snapshot();
+  data.planning = { config: { anchor_id: null, lots: [], profile: [] }, target_day: "2027-03-31", inventory: null, forecast: null };
+  emit(data);
+  const input = root.querySelector('[data-profile="import"][data-month="1"]');
+  input.value = "500";
+  root.querySelector('[data-profile="export"][data-month="1"]').value = "0";
+  input.dispatchEvent(new window.Event("input", { bubbles: true }));
+  emit({ ...data, revision: 4 });
+  assert.equal(input.value, "500");
+  await card._savePlan();
+  const command = calls.find((call) => call.type === "pge_storage/put_plan");
+  assert.equal(command.revision, 3);
+  assert.equal(command.planning.profile[0].import_kwh, "500");
   await window.happyDOM.close();
 });

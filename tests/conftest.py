@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 async def ha(tmp_path_factory):
     directory = tmp_path_factory.mktemp("ha-real")
     (directory / "pge.yaml").write_text(
-        "views:\n  - title: PGE\n    path: magazyn\n    cards:\n"
+        "views:\n  - title: PGE\n    path: magazyn\n    type: panel\n    cards:\n"
         "      - type: custom:pge-storage-card\n"
     )
     await asyncio.to_thread(

@@ -28,7 +28,7 @@ Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, p
 - Każdy licznik musi mieć nieujemny liczbowy stan w **Wh, kWh lub MWh**; odczyty przeliczamy do kWh. Obliczony bilans i bilanse okresów mogą być dodatnie albo ujemne. Spadek licznika pomiędzy granicami jest błędem ciągłości. Resetu ukrytego pomiędzy próbkami nie da się wykryć wyłącznie z odczytów granicznych, dlatego wymagamy liczników bez resetów.
 - Odtwarzamy **ostatni zapisany stan**, nie dokładną fizyczną wartość w chwili północy. Czas każdej z dwóch próbek jest widoczny; liczniki nie muszą aktualizować się jednocześnie. Dokładność zależy od częstotliwości źródła i ciągłości rejestracji.
 - Gdy Recorder usunął wymagane dane, integracja odmawia utworzenia odczytu. Statystyki długoterminowe nie przywrócą dokładnej wartości końcowej. Nie ma interpolacji ani wpisywania zmyślonych wartości.
-- Wygaśnięcia energii, roczniki, FIFO i planowanie zużycia pozostają etapem drugim. Dzisiejsze saldo jest szacunkiem opartym na Twoich fakturach i pomiarze, bez automatycznego modelowania regulaminu PGE.
+- Wersja 0.3 dodaje dzienne przepływy, model partii FIFO i sezonowy scenariusz zużycia. Terminy opierają się na partiach z faktury; domyślna reguła to 12 miesięcy od końca miesiąca wprowadzenia. Prognoza rozkłada miesięczny import i eksport równomiernie na dni i pozostaje scenariuszem, nie prognozą pogody ani potwierdzonym saldem PGE.
 
 ## Instalacja w Twoim HA
 
@@ -53,6 +53,31 @@ Poniżej pozostaje alternatywna instalacja ręczna:
 8. Dodawaj kolejne daty, również wcześniejsze; rejestr sortuje je i przelicza zależne wyniki. Nie ma limitu liczby wpisów w logice aplikacji. Tabela pokazuje po 20 wierszy, a wykres ostatnie 12 zamkniętych okresów.
 
 Nie trzeba zmieniać `configuration.yaml`, definicji obecnych sensorów ani konfiguracji Recorder. Ewentualne wydłużenie retencji jest osobną, świadomą decyzją i nie przywraca już usuniętych danych.
+
+## MAGAZYN, odczyty dzienne i prognoza zimy
+
+**MAGAZYN — do odbioru** pokazuje kWh po opuście. Obok **Wprowadzona — przed opustem** pokazuje odpowiednik pozostałego zapasu przed potrąceniem: `MAGAZYN / 0,8`. Przy przeliczaniu wstecz to 25% więcej; 20% jest potrącane od energii oddanej. Liczby na karcie i sugerowany format sensorów mają jedno miejsce po przecinku. Obliczenia i zapis zachowują pełną precyzję.
+
+Rozwiń **Każdy dzień: co weszło, co wyszło**, wybierz miesiąc i odśwież. Tabela pokazuje import z sieci, część pokrytą magazynem, eksport, dodaną energię po opuście, bilans przepływów i saldo. Dzisiaj jest dniem niepełnym. Dzień faktury może zmienić saldo niezależnie od przepływów. Przy skonfigurowanych partiach saldo uwzględnia wygaśnięcia; przy innych fakturach jest saldem pomiarowym. Szczegóły dnia zawierają czasy obu odczytów i brakujące dane.
+
+Znalezione odczyty zakończonych dni są utrwalane we własnym Store. Integracja co godzinę próbuje również zamrozić odczyt poprzedniego dnia, jeśli go jeszcze nie ma. Zachowane dni przeżywają usunięcie historii Recorder; już usuniętych odczytów nie odtwarzamy. Bieżący dzień odśwież przyciskiem — tabela nie odpytuje bazy przy każdej zmianie sensora.
+
+W **Ustaw prognozę i partie z faktury**:
+
+1. Wybierz ostatnie rozliczenie z wpisanym saldem z faktury.
+2. Wpisz partie w formacie `RRRR-MM; pozostały eksport przed opustem [kWh]; ważne do RRRR-MM-DD`, po jednej na linię. Możesz użyć **Wczytaj partie z pliku**: JSON z `anchor_day` i listą `lots` (pola `month`, `export_kwh`, `expires_on`). Wczytanie wypełnia formularz; nie zastępuje rejestru faktur.
+3. Suma partii × 0,8 musi być równa dodatniemu saldu wybranej faktury. Dla salda zerowego lub ujemnego lista partii jest pusta. Terminy mają przypadać na koniec miesiąca; pusty termin w formularzu wylicza 12 miesięcy od końca miesiąca wprowadzenia. Są ważne do wskazanego dnia włącznie.
+4. Ustaw datę prognozy, domyślnie najbliższy 31 marca. Horyzont wynosi maksymalnie dwa lata.
+5. Kliknij **Uzupełnij z historii HA**. Dla każdego miesiąca szukamy ostatniego kompletnego wystąpienia w ciągu 24 miesięcy. Wymagamy obu kierunków, pełnej siatki godzin i poprzedzającej sumy. Różnice sum godzinowych w kWh służą wyłącznie profilowi prognozy. Nie zastępują rzeczywistych stanów na granicach faktur lub dni. Brakujące miesiące uzupełnij ręcznie, wpisując jawne zero, jeśli ma być zerowe zużycie lub eksport.
+6. Sprawdź profil importu i eksportu dla pełnych miesięcy, uwzględnij zmiany ogrzewania/urządzeń i kliknij **Zapisz plan i przelicz prognozę**.
+
+Zobaczysz saldo na wybraną datę, pierwszy przewidywany niedobór, najniższe saldo, wygasającą energię oraz projekcyjne wskazania obu liczników na koniec każdego miesiąca. Przy braku profilu lub partii karta pokazuje, jakich danych brakuje. Prosty budżet kWh/dzień z dzisiejszego zapasu jest wyraźnie oddzielony od prognozy zimowej.
+
+Partie są zużywane od najstarszego terminu. Od faktury odtwarzamy **osobno import i eksport**, dzięki czemu dodatni bilans netto nie zostawia sztucznie całej starej partii. Do nowych miesięcy potrzebne są rzeczywiste odczyty ich końców; utrwalamy je we własnym Store. Model replay jest miesięczny: po wygaśnięciach na początku miesiąca dodaje kredyt miesiąca i odejmuje import FIFO. Prognoza przyszłości działa dzień po dniu według równomiernego profilu. Odczyty HA mogą różnić się od sumarycznego godzinowego bilansowania operatora. Przy nowej fakturze uzupełnij jej nowe partie — stare terminy nie są przypisywane do nowego salda automatycznie.
+
+Nowy eksport JSON ma `format_version: 3` i zawiera także plan, miesięczne odczyty oraz archiwum dzienne. Import starych kopii wersji 2 zachowuje ich rozliczenia i pozostawia plan oraz archiwa puste. Store i Config Flow nadal mają wersję 2: aktualizacja z 0.2 nie wymaga usuwania integracji. Przed powrotem do 0.2 zachowaj kopię wersji 3; starszy kod nie obsługuje nowych danych planowania.
+
+Dla szerszego widoku karty zmień typ widoku dashboardu na **Panel** (edytuj dashboard → edytuj widok → typ Panel). Dostarczany `dashboards/pge.yaml` używa tego układu. W sekcjach karta zgłasza pełną szerokość. Aktualizacja HACS nie nadpisuje Twojego istniejącego dashboardu.
 
 ## Co oznaczają pola
 
@@ -116,7 +141,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.2.2.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.3.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 

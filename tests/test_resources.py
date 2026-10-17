@@ -137,7 +137,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             )
             await page.locator("pge-storage-card #day").fill("2025-01-01")
             await page.locator("pge-storage-card #invoice").fill("0")
-            await page.locator('pge-storage-card button[type="submit"]').click()
+            await page.locator('pge-storage-card #editor button[type="submit"]').click()
             error = page.locator("pge-storage-card #message")
             await expect(error).to_contain_text("Brak próbki Recorder")
             assert "Brak próbki Recorder" in await select_text(error)

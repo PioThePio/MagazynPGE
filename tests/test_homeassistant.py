@@ -266,7 +266,11 @@ async def test_websocket_rejects_non_admin_writes_and_unauthorized_reads(ha):
         for user, action, extra in [
             (viewer, "put", {"revision": 0, "record": {"day": "2025-03-15"}}),
             (viewer, "export", {}),
+            (viewer, "put_plan", {"revision": 0, "planning": {}}),
+            (viewer, "refresh_plan", {}),
             (nobody, "subscribe", {}),
+            (nobody, "daily", {"month": "2026-09"}),
+            (nobody, "profile", {}),
         ]:
             refresh = await hass.auth.async_create_refresh_token(
                 user, client_id="http://pge.test/"

@@ -72,4 +72,12 @@ Każda zmiana rejestru sprawdza, czy żaden licznik nie zmalał pomiędzy sąsie
 
 SDM640 jest domyślnym wyborem opisanym w instrukcji. Victron (`energymeter_consumption` / `energymeter_feed_in`) jest alternatywną parą, jeśli oba kanały mierzą import/eksport na przyłączu. Nie sumujemy wskazań obu zestawów. Nie wykorzystujemy mocy ani energii przepływającej do baterii jako energii oddanej do sieci.
 
-Format eksportu i Store ma wersję 2, Config Flow wersję 2. Prototypu 0.1 nie migrujemy automatycznie: nie zawierał surowych odczytów dwóch liczników. Odmowa migracji zachowuje plik danych; użytkownik tworzy nowy wpis i odtwarza daty z dostępnej historii.
+Format eksportu JSON ma wersję 3 (czyta także wersję 2). Store i Config Flow zachowują wersję 2 z opcjonalnymi nowymi polami. Prototypu 0.1 nie migrujemy automatycznie: nie zawierał surowych odczytów dwóch liczników. Odmowa migracji zachowuje plik danych; użytkownik tworzy nowy wpis i odtwarza daty z dostępnej historii.
+
+## Planowanie 0.3
+
+`planning.py` zawiera walidację partii, FIFO, regułę wygaśnięć oraz projekcję dzienną na podstawie profili miesięcznych. `planning_history.py` odczytuje rzeczywiste granice dni i miesięcy oraz osobno buduje profil sezonowy z różnic godzinowych `sum`. Weryfikuje pełną siatkę godzin i konwersję jednostek przez natywne API Recorder. Karta zapisuje ręczne założenia dopiero po zatwierdzeniu; nowe odczyty na żywo nie niszczą edytowanego profilu.
+
+`planning`, `checkpoint_cache` i `daily_cache` są własnymi polami Store. Zapis rejestru, planu i archiwów jest serializowany wspólnym lockiem; zapisy pomocniczych odczytów zachowują rewizję rozliczeń i pozostałe dane. Błąd utrwalenia dni jest sygnalizowany w wyniku tabeli, a błąd odczytu miesięcy blokuje ocenę terminów. Cache przechowuje surowe dwa liczniki z czasami, nie wyliczone dzienne zera.
+
+Nowe WS: `daily`, `profile` (odczyt obu źródeł), `put_plan` (administrator i rewizja), `refresh_plan` (administrator). Wszystkie używają kontroli dostępu do tej samej pary liczników. Nie zapisują do Recorder ani statystyk źródłowych.

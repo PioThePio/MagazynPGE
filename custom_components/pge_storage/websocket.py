@@ -12,6 +12,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .const import DOMAIN, SIGNAL_LEDGER_UPDATED
 from .history import async_read_counters, async_statistics_metadata
 from .ledger import LedgerError
+from .planning_history import async_seasonal_profile
 
 _LOGGER = logging.getLogger(__name__)
 ENTRY = {vol.Optional("entry_id"): str}
@@ -49,6 +50,10 @@ def async_register(hass):
         export,
         import_records,
         diagnose,
+        daily,
+        profile,
+        put_plan,
+        refresh_plan,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -214,3 +219,57 @@ async def diagnose(hass, connection, msg):
         )
         return
     connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "pge_storage/daily", **ENTRY, vol.Required("month"): str}
+)
+@websocket_api.async_response
+async def daily(hass, connection, msg):
+    coordinator = _get(hass, connection, msg)
+    try:
+        result = await coordinator.async_daily(msg["month"])
+    except LedgerError as err:
+        connection.send_error(msg["id"], err.code, str(err))
+    else:
+        connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command({vol.Required("type"): "pge_storage/profile", **ENTRY})
+@websocket_api.async_response
+async def profile(hass, connection, msg):
+    coordinator = _get(hass, connection, msg)
+    try:
+        result = await async_seasonal_profile(hass, coordinator.sources)
+    except LedgerError as err:
+        connection.send_error(msg["id"], err.code, str(err))
+    else:
+        connection.send_result(msg["id"], result)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "pge_storage/put_plan",
+        **WRITE,
+        vol.Required("planning"): dict,
+    }
+)
+@websocket_api.async_response
+async def put_plan(hass, connection, msg):
+    coordinator = _get(hass, connection, msg)
+    await _write(
+        connection, msg, coordinator.async_put_plan(msg["planning"], msg["revision"])
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): "pge_storage/refresh_plan", **ENTRY}
+)
+@websocket_api.async_response
+async def refresh_plan(hass, connection, msg):
+    coordinator = _get(hass, connection, msg)
+    await coordinator.async_refresh_planning_history()
+    coordinator.publish()
+    connection.send_result(msg["id"])

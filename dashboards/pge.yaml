@@ -3,6 +3,7 @@ views:
   - title: Magazyn PGE
     path: magazyn-pge
     icon: mdi:transmission-tower
+    type: panel
     cards:
       - type: custom:pge-storage-card
         title: Wirtualny magazyn PGE
