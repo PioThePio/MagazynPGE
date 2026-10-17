@@ -8,7 +8,7 @@ Instrukcja dotyczy Twojego HA OS z Core 2026.10.0 i istniejącym HACS. Zacznie d
 
 1. Otwórz **HACS → ⋮ → Repozytoria niestandardowe / Custom repositories**.
 2. Wklej `https://github.com/PioThePio/MagazynPGE`, wybierz typ **Integracja / Integration** i kliknij **Dodaj**.
-3. Wyszukaj **Magazyn energii PGE**, otwórz i kliknij **Pobierz / Download**. Wybierz stabilne wydanie, np. `v0.2.0`.
+3. Wyszukaj **Magazyn energii PGE**, otwórz i kliknij **Pobierz / Download**. Wybierz stabilne wydanie, np. `v0.2.1`.
 4. Uruchom ponownie HA.
 5. Otwórz **Ustawienia → Urządzenia i usługi → Dodaj integrację → Magazyn energii PGE**.
 6. Wybierz parę SDM640: import **„630 E import”**, eksport **„630 E export”**. Alternatywnie wybierz oba kanały Victrona: `energymeter_consumption` i `energymeter_feed_in`. Nie wybieraj gotowego bilansu ani nie sumuj obu zestawów.
@@ -21,7 +21,19 @@ Instrukcja dotyczy Twojego HA OS z Core 2026.10.0 i istniejącym HACS. Zacznie d
 
 8. Dodaj datę początkową i rozliczenia na karcie zgodnie z [README](../README.md).
 
-Karta jest częścią integracji. Nie wymaga osobnej instalacji frontendowej w HACS ani ręcznego dodawania zasobu JS.
+Karta jest częścią integracji. Nie wymaga osobnej instalacji frontendowej w HACS. W standardowym trybie zasobów HA integracja sama dodaje i aktualizuje moduł Lovelace.
+
+Jeżeli świadomie ustawiono `lovelace.resource_mode: yaml`, zasoby pozostają pod kontrolą użytkownika. W istniejącej sekcji `lovelace.resources` w `configuration.yaml` dodaj (lub zaktualizuj) jeden wpis:
+
+```yaml
+lovelace:
+  resource_mode: yaml
+  resources:
+    - url: /pge_storage/pge-storage-card.js?v=0.2.1
+      type: module
+```
+
+Scal go z istniejącą konfiguracją, zachowując pozostałe zasoby; nie dodawaj drugiej sekcji `lovelace`. Po aktualizacji zmień numer wersji URL, uruchom ponownie HA i odśwież stronę. Sam dashboard zapisany w YAML nie wymaga tego kroku — dotyczy on wyłącznie zarządzania **zasobami** w YAML.
 
 ## Następne wersje
 

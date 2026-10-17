@@ -17,6 +17,7 @@ jobs:
       - run: uv run --frozen python scripts/check_release.py
       - run: uv run --frozen ruff check .
       - run: uv run --frozen ruff format --check .
+      - run: uv run --frozen playwright install --with-deps chromium
       - run: uv run --frozen pytest -q
       - run: npm test
       - run: npm run check

@@ -1,9 +1,8 @@
-"""Virtual PGE energy storage, reading an existing signed kWh sensor."""
+"""Virtual PGE energy storage, reading separate import and export counters."""
 
 import logging
 from pathlib import Path
 
-from homeassistant.components import frontend
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -13,9 +12,10 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 
-from .const import CARD_URL, DOMAIN, SIGNAL_LEDGER_UPDATED, STORAGE_VERSION
+from .const import DOMAIN, SIGNAL_LEDGER_UPDATED, STORAGE_VERSION
 from .coordinator import LedgerCoordinator
 from .ledger import LedgerError
+from .resources import async_register_card
 from .websocket import async_register
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -42,7 +42,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             )
         ]
     )
-    frontend.add_extra_js_url(hass, CARD_URL)
+    await async_register_card(hass)
     return True
 
 

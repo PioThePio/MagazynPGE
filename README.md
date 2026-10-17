@@ -47,7 +47,7 @@ Poniżej pozostaje alternatywna instalacja ręczna:
    title: Wirtualny magazyn PGE
    ```
 
-   Skrypt karty integracja udostępnia i rejestruje automatycznie. Nie wymaga zewnętrznych zasobów Lovelace ani dodatków z HACS. Jeśli karta nie pojawia się po instalacji, odśwież przeglądarkę. Przy kilku wpisach integracji ustaw na karcie `entry_id` odczytany z adresu strony danego wpisu w ustawieniach HA.
+   Skrypt karty integracja udostępnia i rejestruje automatycznie. W standardowym trybie zasobów HA dodaje moduł do zasobów Lovelace; nie wymaga osobnego dodatku z HACS. Przy `lovelace.resource_mode: yaml` dodaj zasób zgodnie z [instrukcją HACS](docs/HACS.md). Jeśli karta nie pojawia się po instalacji, odśwież przeglądarkę. Przy kilku wpisach integracji ustaw na karcie `entry_id` odczytany z adresu strony danego wpisu w ustawieniach HA.
 6. Jako administrator wpisz datę i kliknij **Sprawdź historię dla daty**. Wynik pokazuje filtr Recorder, obecność metadanych statystyk i oba znalezione odczyty i ich czasy albo nazwę kierunku, dla którego brakuje danych. Nie trzeba udostępniać tokenu ani hasła.
 7. Dodaj pierwszą datę jako punkt początkowy. Wpisz znane saldo po tej fakturze; **0 tylko wtedy, gdy rzeczywiście wynosiło zero**. Pierwszy wpis nie ma bilansu okresu, ponieważ brak wcześniejszego odczytu. Bez salda początkowego można nadal analizować zmiany energii; saldo magazynu pozostanie nieznane do pierwszej wpisanej faktury.
 8. Dodawaj kolejne daty, również wcześniejsze; rejestr sortuje je i przelicza zależne wyniki. Nie ma limitu liczby wpisów w logice aplikacji. Tabela pokazuje po 20 wierszy, a wykres ostatnie 12 zamkniętych okresów.
@@ -106,6 +106,7 @@ export UV_PYTHON_INSTALL_DIR=/workspace/.python
 export UV_CACHE_DIR=/workspace/.cache/uv
 uv sync --frozen
 npm ci --cache /workspace/.cache/npm --no-audit --no-fund
+uv run --frozen playwright install --with-deps chromium
 uv run --frozen pytest -q
 uv run --frozen ruff check .
 uv run --frozen python scripts/check_release.py
@@ -113,9 +114,9 @@ npm test
 npm run check
 ```
 
-Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty używają DOM, nie pełnej przeglądarki. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
+Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.2.0.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.2.1.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 

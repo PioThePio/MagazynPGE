@@ -59,7 +59,7 @@ Badanie i testy oparto na konkretnym tagu **2026.10.0**, nie na zmiennym `dev`:
 - [HA Store](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/helpers/storage.py): trwały lokalny zapis.
 - [WebSocket decorators](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/components/websocket_api/decorators.py): rejestracja komend i uprawnienia administratora.
 - [HTTP static](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/components/http/server.py): `async_register_static_paths`.
-- [Frontend](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/components/frontend/__init__.py): `add_extra_js_url`.
+- [Zasoby Lovelace](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/components/lovelace/resources.py): `ResourceStorageCollection`, moduł ładowany po inicjalizacji rejestru komponentów frontendu.
 - [Historia HA](https://www.home-assistant.io/integrations/history/) i [Recorder](https://www.home-assistant.io/integrations/recorder/): retencja a statystyki długoterminowe.
 
 W tej wersji schematy Core korzystają z `probatio`; integracja używa tego samego mechanizmu i nie zakłada zgodności z dawnymi API. Brak połączenia z produkcyjnym HA użytkownika oznacza, że poprawność wybranych encji, dokładność liczników, retencja i dostępność statystyk wymagają lokalnej diagnostyki z karty. Wersja Core 2026.10.0 i frontend 20260930.2 zostały podane przez użytkownika i sprawdzone w chmurze.

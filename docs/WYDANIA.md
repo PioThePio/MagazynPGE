@@ -8,7 +8,7 @@ Repozytorium `PioThePio/MagazynPGE` musi być **publiczne** i zawierać kod. Pub
 
 1. Opublikuj przygotowany kod i włącz GitHub Actions. Dodaj opis, np. „Wirtualny magazyn energii PGE dla Home Assistant”, i tematy `home-assistant`, `hacs`, `energy`.
 2. Sprawdź wynik workflow **Tests**.
-3. Utwórz i wypchnij tag `v0.2.0` wskazujący sprawdzony commit.
+3. Utwórz i wypchnij tag `v0.2.1` wskazujący sprawdzony commit.
 4. Workflow **Release** zweryfikuje wersje i tag, wykona testy, zbuduje paczkę i opublikuje GitHub Release. Dopiero udane wydanie jest gotowe do instalacji przez HACS.
 
 Tag wypychaj dopiero, gdy publikacja danego kodu jest zamierzona: workflow automatycznie publikuje po zaliczeniu kontroli. Nie przepisuj opublikowanych tagów. Workflow używa krótkotrwałego `GITHUB_TOKEN` z zapisem tylko w zadaniu publikacji; nie wymaga osobistego tokenu w sekretach repozytorium.

@@ -1,12 +1,11 @@
-MagazynPGE 0.2.0 — pierwsze wydanie z obsługą HACS.
+MagazynPGE 0.2.1 — poprawka ładowania karty w Home Assistant.
 
-- Wybór oddzielnych liczników importu i eksportu SDM640 albo Victrona.
-- Historia rozliczeń PGE, saldo z faktur, korekty i trwały rejestr.
-- Karta Lovelace z edycją, tabelą, wykresem i kopiami JSON.
-- Integracja i jej karta są instalowane oraz aktualizowane razem przez HACS.
+- Naprawiono błąd `Custom element doesn’t exist: pge-storage-card` w HA 2026.10.0 / frontendzie 20260930.2.
+- Karta jest teraz modułem zasobów Lovelace, ładowanym po inicjalizacji frontendu. Integracja automatycznie dodaje i aktualizuje swój zasób w standardowym trybie HA.
+- Dodano test w rzeczywistym Chromium, który otwiera dashboard HA, sprawdza wyświetlenie karty i ponownie ładuje stronę.
 
-Wymagany Home Assistant Core 2026.10.0 lub nowszy; testy wykonano na 2026.10.0 i frontendzie 20260930.2. Po instalacji lub aktualizacji uruchom ponownie HA. Samo minimum wersji HACS nie oznacza przetestowania wszystkich przyszłych wersji Core.
+Aktualizacja: HACS → Magazyn energii PGE → Aktualizuj, następnie restart Home Assistant i odświeżenie przeglądarki Ctrl+F5. Zachowaj istniejący wpis integracji i konfigurację dashboardu. Rejestr faktur oraz format danych pozostają bez zmian.
 
-Dodaj repozytorium `PioThePio/MagazynPGE` w HACS jako **Integracja**. Po pobraniu i restarcie dodaj **Magazyn energii PGE** w ustawieniach integracji HA. Instrukcja instalacji i aktualizacji znajduje się w README oraz `docs/HACS.md`.
+Przy ręcznie ustawionym `lovelace.resource_mode: yaml` dodaj moduł `/pge_storage/pge-storage-card.js?v=0.2.1` do swoich zasobów; szczegóły w `docs/HACS.md`.
 
-Jeżeli używałeś prototypu 0.1, zapoznaj się z sekcją przejścia w README przed aktualizacją: jego próbki nie zawierały dwóch liczników i nie mogą być automatycznie zamienione na nowy format.
+Wymagany Home Assistant Core 2026.10.0 lub nowszy. Testy korzystają z Core 2026.10.0 i frontendu 20260930.2.

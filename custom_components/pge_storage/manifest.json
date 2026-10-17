@@ -1,12 +1,19 @@
 {
   "domain": "pge_storage",
   "name": "Magazyn energii PGE",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "config_flow": true,
   "documentation": "https://github.com/PioThePio/MagazynPGE",
   "issue_tracker": "https://github.com/PioThePio/MagazynPGE/issues",
-  "dependencies": ["recorder", "frontend", "websocket_api"],
-  "codeowners": ["@PioThePio"],
+  "dependencies": [
+    "recorder",
+    "frontend",
+    "websocket_api",
+    "lovelace"
+  ],
+  "codeowners": [
+    "@PioThePio"
+  ],
   "iot_class": "calculated",
   "integration_type": "service",
   "requirements": []

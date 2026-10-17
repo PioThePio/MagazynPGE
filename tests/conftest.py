@@ -13,6 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def ha(tmp_path_factory):
     directory = tmp_path_factory.mktemp("ha-real")
+    (directory / "pge.yaml").write_text(
+        "views:\n  - title: PGE\n    path: magazyn\n    cards:\n"
+        "      - type: custom:pge-storage-card\n"
+    )
     await asyncio.to_thread(
         (directory / "custom_components").symlink_to,
         ROOT / "custom_components",
@@ -35,6 +39,16 @@ async def ha(tmp_path_factory):
         },
         "http": {"server_host": "127.0.0.1", "server_port": port},
         "frontend": {},
+        "lovelace": {
+            "dashboards": {
+                "dashboard-pge-test": {
+                    "mode": "yaml",
+                    "title": "PGE test",
+                    "filename": "pge.yaml",
+                    "show_in_sidebar": True,
+                }
+            }
+        },
         "recorder": {
             "db_url": f"sqlite:///{directory / 'test.db'}",
             "commit_interval": 0,
