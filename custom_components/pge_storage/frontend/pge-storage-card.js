@@ -64,7 +64,7 @@ class PGEStorageCard extends HTMLElement {
   _build() {
     this.shadowRoot.innerHTML = `
       <style>
-        :host{display:block}*{box-sizing:border-box}ha-card{padding:24px;color:var(--primary-text-color);overflow:hidden}
+        :host{display:block;-webkit-user-select:text;user-select:text}*{box-sizing:border-box}ha-card{padding:24px;color:var(--primary-text-color);overflow:hidden}
         h1{font-size:1.4rem;margin:0 0 8px}h2{font-size:1.1rem;margin:24px 0 12px}.muted{color:var(--secondary-text-color);font-size:.9rem;line-height:1.5}
         .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin:20px 0}.metric{background:var(--secondary-background-color,#eee);border-radius:12px;padding:16px}.value{font-size:1.5rem;font-weight:600;margin-top:6px}
         .scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:.88rem}th,td{padding:12px 10px;border-bottom:1px solid var(--divider-color,#ddd);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}th{font-weight:600}caption{text-align:left;margin:10px 0}

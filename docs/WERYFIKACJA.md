@@ -1,5 +1,7 @@
 # Weryfikacja 2026-10-17
 
+Wersja 0.2.2 nadpisuje odziedziczone `user-select: none` dashboardu. Test Chromium przeciąga mysz od początku do końca nagłówka oraz rzeczywistego komunikatu błędu braku historii i sprawdza tekst zaznaczenia. W oryginalnej karcie test zwracał puste zaznaczenie; po poprawce oba teksty można zaznaczyć.
+
 Wersja 0.2.1 naprawia błąd `Custom element doesn’t exist: pge-storage-card` odtworzony w rzeczywistym Chromium z Core 2026.10.0 i frontendem 20260930.2. Globalny import JS wykonywał się przed inicjalizacją rejestru komponentów HA. Zastąpiono go modułem zasobów Lovelace. Nowy test otwiera dashboard bez ręcznego importowania JS, sprawdza treść karty, dostępność formularza i działanie po odświeżeniu strony. Sprawdzono również aktualizację starego URL, usunięcie duplikatu własnego zasobu, zachowanie innych zasobów oraz instrukcję dla trybu zasobów YAML.
 
 Repozytorium i wydanie v0.2.0 zostały opublikowane na GitHubie. Zdalne workflow [Tests](https://github.com/PioThePio/MagazynPGE/actions/runs/39061961185) i [Release](https://github.com/PioThePio/MagazynPGE/actions/runs/39061979468) zakończyły się powodzeniem; pobrane publiczne archiwum v0.2.0 przeszło kontrolę CRC i zawartości. Workflow v0.2.1 instaluje dodatkowo Chromium i uruchamia test przeglądarkowy przed publikacją. Jego wynik jest dostępny w zakładce [Actions](https://github.com/PioThePio/MagazynPGE/actions).
