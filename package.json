@@ -1,0 +1,15 @@
+{
+  "name": "magazyn-pge-card-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/frontend.test.mjs",
+    "check": "node --check custom_components/pge_storage/frontend/pge-storage-card.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "happy-dom": "21.0.3"
+  }
+}

@@ -1,0 +1,11 @@
+title: Magazyn energii PGE
+views:
+  - title: Magazyn PGE
+    path: magazyn-pge
+    icon: mdi:transmission-tower
+    cards:
+      - type: custom:pge-storage-card
+        title: Wirtualny magazyn PGE
+        # Przy jednej integracji entry_id jest wykrywany automatycznie.
+        # Przy kilku: odczytaj identyfikator w ustawieniach integracji / URL
+        # i wpisz entry_id: "...".

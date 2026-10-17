@@ -1,0 +1,75 @@
+# Decyzje i kontrakt danych
+
+## Rozważone możliwości
+
+| Rozwiązanie | Ograniczenie w tym zadaniu |
+|---|---|
+| Template + input_datetime/input_number | Dynamiczna historia, kasowanie i edycja wymagają ręcznie utrzymywanej struktury oraz mechanizmu zapisu; template nie pyta samodzielnie Recorder |
+| utility_meter | Cykl, offset i kalibracja nie zastępują rejestru faktur z dowolnymi historycznymi datami |
+| recorder.get_statistics | Jest akcją statystyczną, a nie API odczytu dokładnego stanu na koniec dnia; `mean` ani `sum` nie są takim stanem |
+| Pyscript/AppDaemon | Kolejny runtime i dodatkowy mechanizm GUI/persistencji, bez korzyści dla tego zakresu |
+| Mała integracja custom_components | Korzysta z istniejącego runtime HA, Config Flow, Recorder, Store i uprawnień; wybrany wariant |
+
+Karta jest jednym statycznym plikiem JS bez frameworka i procesu budowania. Zapewnia GUI dynamicznego rejestru, którego standardowe karty encji nie oferują. Środowisko Node służy tylko testom deweloperskim, nie działaniu integracji.
+
+## Przepływ
+
+```mermaid
+flowchart LR
+  SOURCE[Dwa liczniki: import i eksport SDM640 lub Victron] -->|odczyt bieżący| CALC[Obliczenia Decimal]
+  REC[Recorder: rzeczywiste stany] -->|odczyt przy zapisie daty| LEDGER[Własny rejestr Store]
+  CARD[Karta Lovelace] -->|WebSocket HA, edycja administratora| LEDGER
+  LEDGER --> CALC
+  CALC --> SENSORS[5 sensorów wynikowych]
+  CALC -->|subskrypcja| CARD
+```
+
+Brak ścieżki zapisu do źródła i Recorder. Jedyny zapis danych integracji to jej własny `Store`; sensory wynikowe normalnie publikuje HA.
+
+## Próbka graniczna
+
+Dla daty `D` obliczamy lokalną północ `D+1`, następnie konwertujemy ją do UTC. Data musi być zakończona. Zapytanie przez `history.get_significant_states` wykonujemy w executorze **Recorder**, z `include_start_time_state=False`, `significant_changes_only=False`, `minimal_response=False` i pełnymi atrybutami. Nie wytwarzamy syntetycznego stanu początkowego. Zakres jest ograniczony limitem wieku próbki (domyślnie 24 h), by uniknąć pełnego skanowania historii dla każdego wpisu.
+
+Wybieramy ostatnią próbkę w tym oknie **ściśle przed** granicą. Sprawdzamy jednostkę energii Wh/kWh/MWh i skończoną nieujemną wartość każdego licznika; przeliczamy dokładnie do kWh. Jeśli ostatni stan to `unknown`/`unavailable`, nie cofamy się do wcześniejszego wygodnego stanu. Nie pytamy o próbkę po granicy i nie interpolujemy. Wartości i czasy obu próbek zostają zapisane i pokazane w tabeli. Bilans `0,8 × E − I` wyliczamy wewnętrznie, bez odczytu sensora gotowego bilansu. Odczyty nie muszą mieć identycznego czasu; ich rozbieżność jest widoczna. Warunki obliczeń odnoszą się do tak uzyskanych próbek, a nie do gwarantowanego odczytu fizycznego o północy; luki lub awaria źródła bez zarejestrowania `unavailable` mogą zaniżać dokładność, nawet w dopuszczalnym oknie wieku.
+
+Przy granicach `B1 < B2 < B3` różnice to `V2 − V1` i `V3 − V2`. Ich suma to `V3 − V1`, bez podwójnego naliczenia. Dni zmiany czasu mają 23/25 h; nie zastępujemy daty lokalnej dodaniem stałych 24 h do znacznika UTC.
+
+Nie odczytujemy bezpośrednio tabel SQL ani plików bazy HA. Odczyt statystyk służy diagnostyce **metadanych**, nie rekonstrukcji próbki. Obecność metadanych nie dowodzi istnienia danych dla konkretnej daty. Statystyki `state` także nie są tu fallbackiem: ich znaczenie zależy od klasy sensora, resetów i granic agregacji. W przypadku utraconej historii pozostaje przywrócenie danych z istniejącej kopii, import wcześniejszego rejestru albo rozpoczęcie od dostępnego punktu.
+
+## Rozliczenia
+
+Dla każdego wpisu przechowujemy osobno odczyty importu i eksportu, fakturę, korektę, niedobór rozliczony i uwagi. Wyniki obliczane są od nowa po każdej zmianie, nie zapisujemy zależnych sum. Pierwszy wpis jest kotwicą pomiarową; bez znanego salda nie zakładamy pustego magazynu. Faktura może ustalić saldo także w późniejszym wpisie.
+
+Podpisane saldo faktury zastępuje szacunek. Korekta jest alternatywą, dodawaną do znanego szacunku. Niedobór z faktury jest informacyjny; saldo po jej rozliczeniu ustala użytkownik. Dzięki temu faktura z dopłatą i saldem 0 nie tworzy ponownie długu w nowym okresie. Brak faktury przenosi wyliczony szacunek. Brak salda odniesienia propaguje `null`, a nie 0; nie da się wtedy wyliczyć kwotowej różnicy faktury z szacunkiem.
+
+Zmiana kwot nie ponawia zapytania historycznego. Zmiana daty lub jawne „Odczytaj ponownie” wymaga dostępnej historii. Wstawienie daty w środku i jej usunięcie przelicza okresy i przeniesienia. Nie zmienia pomiarowych odczytów sąsiednich wpisów. Rejestr nie próbuje przypisywać bilansu przed pierwszą datą.
+
+## Persistencja i współbieżność
+
+Jedna lista rozliczeń per wpis integracji; liczba nie jest ograniczona stałą aplikacji. Praktyczne limity pamięci, komunikacji HA i przeglądarki nadal obowiązują. Historyczne wiersze nie są atrybutami sensorów i nie są kopiowane do Recorder przy każdym bieżącym odczycie. Sensory nie mają `total_increasing` ani automatycznej sumy statystyk.
+
+Operacje zapisu trzymają lock, sprawdzają rewizję, walidują całą kandydacką listę i zapisują `Store` przed publikacją wyniku. Zapis dyskowy używa mechanizmu atomowego zapisu HA. Konflikt nie nadpisuje cudzej edycji. Import jest pełnym zastąpieniem z walidacją i wymaga administratora; eksport nie zawiera sekretów. Wyłączenie/przeładowanie zachowuje dane. Usunięcie wpisu usuwa tylko jego własny rejestr.
+
+## Zweryfikowane API i wersja
+
+Badanie i testy oparto na konkretnym tagu **2026.10.0**, nie na zmiennym `dev`:
+
+- [Recorder history](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/components/recorder/history/__init__.py): zakres czasowy i rzeczywiste `last_updated` bez stanu syntetycznego.
+- [Recorder statistics](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/components/recorder/statistics.py): `get_metadata` do diagnostyki.
+- [HA Store](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/helpers/storage.py): trwały lokalny zapis.
+- [WebSocket decorators](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/components/websocket_api/decorators.py): rejestracja komend i uprawnienia administratora.
+- [HTTP static](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/components/http/server.py): `async_register_static_paths`.
+- [Frontend](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/components/frontend/__init__.py): `add_extra_js_url`.
+- [Historia HA](https://www.home-assistant.io/integrations/history/) i [Recorder](https://www.home-assistant.io/integrations/recorder/): retencja a statystyki długoterminowe.
+
+W tej wersji schematy Core korzystają z `probatio`; integracja używa tego samego mechanizmu i nie zakłada zgodności z dawnymi API. Brak połączenia z produkcyjnym HA użytkownika oznacza, że poprawność wybranych encji, dokładność liczników, retencja i dostępność statystyk wymagają lokalnej diagnostyki z karty. Wersja Core 2026.10.0 i frontend 20260930.2 zostały podane przez użytkownika i sprawdzone w chmurze.
+
+## Ciągłość dwóch liczników
+
+W każdym wpisie `sample.components` zawiera osobno `import` i `export`, ich odczyty w kWh i czasy. `sample.value` jest wyłącznie wynikiem `0,8 × eksport − import`; import JSON sprawdza zgodność wzoru z komponentami. Granica przechowuje odczyty obu liczników nawet po usunięciu historii Recorder. Zapytanie do historii pobiera oba źródła w jednym zadaniu Recorder; nie miesza automatycznie danych SDM640 i Victrona.
+
+Każda zmiana rejestru sprawdza, czy żaden licznik nie zmalał pomiędzy sąsiednimi granicami. Porównanie z ostatnią granicą dotyczy także salda bieżącego. Wykryty spadek blokuje zapis lub ustawia bieżący wynik jako niedostępny. Nie deklarujemy wykrywania wszystkich resetów wewnątrz okresu: licznik po resecie może ponownie przekroczyć wcześniejszy stan. Dlatego nie obsługujemy liczników dziennych/miesięcznych ani resetujących się bez dodatkowego modelu ciągłości.
+
+SDM640 jest domyślnym wyborem opisanym w instrukcji. Victron (`energymeter_consumption` / `energymeter_feed_in`) jest alternatywną parą, jeśli oba kanały mierzą import/eksport na przyłączu. Nie sumujemy wskazań obu zestawów. Nie wykorzystujemy mocy ani energii przepływającej do baterii jako energii oddanej do sieci.
+
+Format eksportu i Store ma wersję 2, Config Flow wersję 2. Prototypu 0.1 nie migrujemy automatycznie: nie zawierał surowych odczytów dwóch liczników. Odmowa migracji zachowuje plik danych; użytkownik tworzy nowy wpis i odtwarza daty z dostępnej historii.

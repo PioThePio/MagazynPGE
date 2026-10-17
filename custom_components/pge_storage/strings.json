@@ -1,0 +1,34 @@
+{
+  "title": "Magazyn energii PGE",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Read-only PGE energy ledger",
+        "description": "Wybierz dwa oddzielne narastające liczniki energii sieciowej: import z sieci i eksport do sieci (Wh/kWh/MWh), także z Victrona. Muszą obejmować ten sam punkt pomiarowy i nie resetować się. Integracja liczy eksport × 0,8 − import samodzielnie; nie wybieraj gotowego sensora bilansu, mocy W ani SOC. Przetestowano na Core 2026.10.0 i frontend 20260930.2.",
+        "data": {
+          "import_entity_id": "Licznik energii pobranej z sieci (import)",
+          "export_entity_id": "Licznik energii oddanej do sieci (eksport)",
+          "max_age_hours": "Maksymalny wiek każdej próbki przed końcem dnia (godziny)"
+        }
+      }
+    },
+    "error": {
+      "invalid_source": "Wybierz dostępny nieujemny licznik energii w Wh/kWh/MWh. Moc W/kW i SOC nie są licznikami energii.",
+      "same_source": "Import i eksport muszą być różnymi encjami."
+    },
+    "abort": {
+      "already_configured": "Dla tej pary liczników istnieje już rejestr PGE."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "PGE history reads",
+        "description": "Zmiana dotyczy nowych odczytów. Zapisane odczyty obu liczników pozostają niezmienione. Para źródeł i strefa są stałe, aby chronić spójność rejestru.",
+        "data": {
+          "max_age_hours": "Maximum sample age (hours, 1–168)"
+        }
+      }
+    }
+  }
+}
