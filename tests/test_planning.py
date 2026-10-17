@@ -17,6 +17,7 @@ from custom_components.pge_storage.planning import (
     Inventory,
     expires_on,
     inventory_now,
+    next_settlement,
     planning_snapshot,
     validate_checkpoints,
     validate_plan,
@@ -95,7 +96,12 @@ def test_partial_profile_does_not_assume_missing_winter_months_are_zero():
         datetime(2026, 9, 30, 22, tzinfo=UTC),
     )
     assert result["missing_profile_months"] == [1, 2, 3, 11, 12]
-    assert result["forecast"] is None
+    forecast = result["forecast"]
+    assert forecast["complete"] is False
+    assert forecast["rows"][0]["balance_kwh"] == "-110"
+    assert forecast["rows"][1]["period_import_kwh"] is None
+    assert forecast["rows"][1]["balance_kwh"] is None
+    assert forecast["balance_kwh"] is None
 
 
 def test_projection_reports_depletion_deficit_and_future_counter_readings():
@@ -207,9 +213,14 @@ def test_seasonal_profile_uses_changes_not_counter_states_and_requires_full_hour
     sources = {"import": "sensor.i", "export": "sensor.e"}
     result = seasonal_profile(rows, sources, date(2026, 10, 17))
     assert result["profile"] == [
-        {"month": 9, "import_kwh": "720", "export_kwh": "1440"}
+        {"month": 9, "import_kwh": "720", "export_kwh": "0", "source_month": "2026-09"}
     ]
     rows["sensor.e"].pop(50)
+    assert (
+        seasonal_profile(rows, sources, date(2026, 10, 17))["profile"]
+        == result["profile"]
+    )
+    rows["sensor.i"].pop(50)
     assert seasonal_profile(rows, sources, date(2026, 10, 17))["profile"] == []
 
 
@@ -314,3 +325,71 @@ def test_past_forecast_target_does_not_hide_current_inventory():
     )
     assert result["inventory"]["balance_kwh"] == "200"
     assert result["forecast"] is None and result["error"]
+
+
+def test_projection_ignores_future_exports_and_honors_expiry():
+    row, plan = opening()
+    plan.update(
+        {
+            "target_day": "2026-10-31",
+            "profile": [
+                {
+                    "month": 10,
+                    "import_kwh": "310",
+                    "export_kwh": "99999",
+                    "source_month": "2025-10",
+                }
+            ],
+        }
+    )
+    result = planning_snapshot(
+        plan,
+        [row],
+        [],
+        row.sample.components,
+        "200",
+        datetime(2026, 9, 30, 22, tzinfo=UTC),
+    )
+    forecast = result["forecast"]
+    assert forecast["complete"] is True
+    assert forecast["balance_kwh"] == "-110"
+    assert forecast["rows"][0]["period_import_kwh"] == "310"
+    assert forecast["rows"][0]["export_kwh"] == "0"
+    plan["lots"][0]["expires_on"] = "2026-09-30"
+    result = planning_snapshot(
+        plan,
+        [row],
+        [],
+        row.sample.components,
+        "200",
+        datetime(2026, 9, 30, 22, tzinfo=UTC),
+    )
+    assert result["forecast"]["balance_kwh"] == "-210"
+
+
+def test_previous_year_required_and_month_end_settlement_inferred():
+    row, plan = opening()
+    assert next_settlement([row], date(2026, 10, 17)) == date(2027, 3, 31)
+    plan.update(
+        {
+            "target_day": "2026-10-31",
+            "profile": [
+                {
+                    "month": 10,
+                    "import_kwh": "310",
+                    "export_kwh": "0",
+                    "source_month": "2024-10",
+                }
+            ],
+        }
+    )
+    result = planning_snapshot(
+        plan,
+        [row],
+        [],
+        row.sample.components,
+        "200",
+        datetime(2026, 9, 30, 22, tzinfo=UTC),
+    )
+    assert result["missing_profile_months"] == [10]
+    assert result["forecast"]["balance_kwh"] is None

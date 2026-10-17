@@ -26,7 +26,7 @@ class PGESensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_device_class = SensorDeviceClass.ENERGY
-    _attr_suggested_display_precision = 1
+    _attr_suggested_display_precision = 0
     # This is a signed balance, not a monotonically increasing energy meter.
     # No state_class: do not imply sums/statistics or automatic meter resets.
 

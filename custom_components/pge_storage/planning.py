@@ -78,6 +78,21 @@ def winter_end(today: date) -> date:
     return end if today <= end else end.replace(year=today.year + 1)
 
 
+def next_settlement(records, today):
+    """Infer one half-year after the latest invoice; user can override the date."""
+    if not records:
+        return winter_end(today)
+    anchor = date.fromisoformat(records[-1].day)
+    month = anchor.year * 12 + anchor.month - 1 + 6
+    year, index = divmod(month, 12)
+    day = (
+        monthrange(year, index + 1)[1]
+        if anchor == month_end(anchor)
+        else min(anchor.day, monthrange(year, index + 1)[1])
+    )
+    return date(year, index + 1, day)
+
+
 def validate_plan(raw: object) -> dict:
     if not isinstance(raw, dict) or set(raw) - {
         "anchor_id",
@@ -119,7 +134,12 @@ def validate_plan(raw: object) -> dict:
                 }
             )
         for item in raw.get("profile", []):
-            if set(item) != {"month", "import_kwh", "export_kwh"}:
+            if set(item) - {
+                "month",
+                "import_kwh",
+                "export_kwh",
+                "source_month",
+            } or not {"month", "import_kwh", "export_kwh"} <= set(item):
                 raise ValueError
             month = item["month"]
             if type(month) is not int or not 1 <= month <= 12:
@@ -127,11 +147,20 @@ def validate_plan(raw: object) -> dict:
             imported, exported = energy(item["import_kwh"]), energy(item["export_kwh"])
             if min(imported, exported) < 0:
                 raise ValueError
+            source_month = item.get("source_month")
+            if source_month is not None:
+                source_date = date.fromisoformat(f"{source_month}-01")
+                if (
+                    source_date.strftime("%Y-%m") != source_month
+                    or source_date.month != month
+                ):
+                    raise ValueError
             profile.append(
                 {
                     "month": month,
                     "import_kwh": energy_text(imported),
                     "export_kwh": energy_text(exported),
+                    **({"source_month": source_month} if source_month else {}),
                 }
             )
         if len({item["month"] for item in lots}) != len(lots) or len(
@@ -275,7 +304,7 @@ def planning_snapshot(
     target = (
         date.fromisoformat(plan["target_day"])
         if plan["target_day"]
-        else winter_end(today)
+        else next_settlement(records, today)
     )
     result = {
         "config": plan,
@@ -310,22 +339,14 @@ def planning_snapshot(
     if invalid_target:
         return result
     profiles = {item["month"]: item for item in plan["profile"]}
-    cursor = today
-    required = set()
-    while cursor <= target:
-        required.add(cursor.month)
-        cursor = month_end(cursor) + timedelta(days=1)
-    missing = sorted(required - profiles.keys())
-    if missing:
-        result["missing_profile_months"] = missing
-        return result
     counters = {key: energy(live[key]["value"]) for key in ("import", "export")}
     start = inventory.balance
     low, first_shortfall, rows = start, today.isoformat() if start < 0 else None, []
-    imported = exported = ZERO
+    imported = period_import = ZERO
     cursor = today
+    missing = set()
+    known = True
     while cursor <= target:
-        # Current counters are "now", so project only the remainder of today.
         fraction = Decimal(1)
         if cursor == today:
             start_day = datetime.combine(cursor, time(), WARSAW).astimezone(UTC)
@@ -335,39 +356,56 @@ def planning_snapshot(
             fraction = Decimal(str((end_day - now).total_seconds())) / Decimal(
                 str((end_day - start_day).total_seconds())
             )
-        profile = profiles[cursor.month]
-        count = Decimal(monthrange(cursor.year, cursor.month)[1])
-        day_import = energy(profile["import_kwh"]) / count * fraction
-        day_export = energy(profile["export_kwh"]) / count * fraction
-        imported += day_import
-        exported += day_export
-        inventory.expire(cursor)
-        inventory.credit(cursor.strftime("%Y-%m"), OPUST * day_export)
-        inventory.consume(day_import)
-        low = min(low, inventory.balance)
-        if inventory.balance < 0 and first_shortfall is None:
-            first_shortfall = cursor.isoformat()
+        profile = profiles.get(cursor.month)
+        source_month = f"{cursor.year - 1:04d}-{cursor.month:02d}"
+        if profile is None or profile.get("source_month", source_month) != source_month:
+            missing.add(cursor.month)
+            known = False
+            period_import = None
+        else:
+            count = Decimal(monthrange(cursor.year, cursor.month)[1])
+            day_import = energy(profile["import_kwh"]) / count * fraction
+            imported += day_import
+            if period_import is not None:
+                period_import += day_import
+            if known:
+                inventory.expire(cursor)
+                # Only use today's stock: no future exports or increased consumption.
+                inventory.consume(day_import)
+                low = min(low, inventory.balance)
+                if inventory.balance < 0 and first_shortfall is None:
+                    first_shortfall = cursor.isoformat()
         if cursor == month_end(cursor) or cursor == target:
             rows.append(
                 {
                     "day": cursor.isoformat(),
-                    "import_counter": energy_text(counters["import"] + imported),
-                    "export_counter": energy_text(counters["export"] + exported),
-                    "balance_kwh": energy_text(inventory.balance),
-                    "expired_kwh": energy_text(inventory.expired),
-                    "import_kwh": energy_text(imported),
-                    "export_kwh": energy_text(exported),
+                    "source_month": profile.get("source_month") if profile else None,
+                    "expected_source_month": source_month,
+                    "period_import_kwh": energy_text(period_import)
+                    if period_import is not None
+                    else None,
+                    "import_counter": energy_text(counters["import"] + imported)
+                    if known
+                    else None,
+                    "export_counter": energy_text(counters["export"]),
+                    "balance_kwh": energy_text(inventory.balance) if known else None,
+                    "expired_kwh": energy_text(inventory.expired) if known else None,
+                    "import_kwh": energy_text(imported) if known else None,
+                    "export_kwh": "0",
                 }
             )
+            period_import = ZERO
         cursor += timedelta(days=1)
+    result["missing_profile_months"] = sorted(missing)
     result["forecast"] = {
         "rows": rows,
-        "balance_kwh": energy_text(inventory.balance),
-        "shortfall_kwh": energy_text(max(ZERO, -inventory.balance)),
+        "complete": not missing,
+        "balance_kwh": energy_text(inventory.balance) if known else None,
+        "shortfall_kwh": energy_text(max(ZERO, -inventory.balance)) if known else None,
         "first_shortfall_day": first_shortfall,
-        "minimum_balance_kwh": energy_text(low),
-        "expired_kwh": energy_text(inventory.expired),
+        "minimum_balance_kwh": energy_text(low) if known else None,
+        "expired_kwh": energy_text(inventory.expired) if known else None,
         "opening_balance_kwh": energy_text(start),
-        "lots": inventory.serialize(),
+        "lots": inventory.serialize() if known else None,
     }
     return result

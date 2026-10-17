@@ -2,9 +2,10 @@
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
 }[char]));
-const fmt = (value) => value == null ? "—" : new Intl.NumberFormat("pl-PL", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Math.abs(Number(value)) < 0.05 ? 0 : Number(value));
+const fmt = (value) => value == null ? "—" : new Intl.NumberFormat("pl-PL", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.abs(Number(value)) < 0.5 ? 0 : Number(value));
 const dayLabel = (day) => day ? day.split("-").reverse().join(".") : "—";
 const stampLabel = (stamp) => new Date(stamp).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" });
+const monthLabel = (month) => `${months[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`;
 const months = ["Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec", "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień"];
 
 class PGEStorageCard extends HTMLElement {
@@ -55,7 +56,6 @@ class PGEStorageCard extends HTMLElement {
         if (generation !== this._generation) return;
         this._data = data;
         this._renderData();
-        if (data.planning && this._dailyEntry !== data.entry_id) { this._dailyEntry = data.entry_id; if (this.shadowRoot.getElementById("daily-section").open) this._loadDaily(); }
       }, command);
       if (generation !== this._generation || !this.isConnected) unsubscribe();
       else this._unsubscribe = unsubscribe;
@@ -73,7 +73,7 @@ class PGEStorageCard extends HTMLElement {
         .scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:.88rem}th,td{padding:12px 10px;border-bottom:1px solid var(--divider-color,#ddd);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}th{font-weight:600}caption{text-align:left;margin:10px 0}
         button{background:var(--primary-color,#087f8c);color:var(--text-primary-color,#fff);border:0;border-radius:7px;padding:10px 14px;cursor:pointer;font:inherit}button.secondary{background:var(--secondary-background-color,#eee);color:var(--primary-text-color)}button.danger{background:#a42828;color:white}button:disabled{opacity:.5;cursor:wait}
         .tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0}.notice{border-left:4px solid var(--primary-color,#087f8c);padding:12px;margin:12px 0;background:var(--secondary-background-color,#eee)}.error{border-left-color:#b3261e} .notice:empty{display:none}
-        summary{cursor:pointer;font-weight:600;padding:12px 0}details{margin-top:12px}.hero{font-size:2.2rem;font-weight:700}.compact th,.compact td{padding:9px 6px;white-space:normal}.compact input{width:100%;min-width:75px;padding:7px}.compact small{display:block}select{font:inherit;max-width:100%;padding:10px}#lots{min-height:140px}#flow{line-height:1.7}#forecast-chart svg{width:100%;height:150px}.scroll{overscroll-behavior-x:contain}#daily-note{margin-top:8px}#plan-summary{white-space:pre-line}
+        summary{cursor:pointer;font-weight:600;padding:12px 0}details{margin-top:12px}.hero{font-size:2.2rem;font-weight:700}.compact th,.compact td{padding:9px 6px;white-space:normal}.compact input{width:100%;min-width:75px;padding:7px}.compact small{display:block}select{font:inherit;max-width:100%;padding:10px}#lots{min-height:140px}#flow{line-height:1.7}.month-block{border:1px solid var(--divider-color,#ddd);border-radius:12px;padding:0 14px;margin:10px 0}.month-block>summary{display:flex;justify-content:space-between;gap:12px;align-items:center;list-style:none}.month-block>summary::before{content:"▸";color:var(--primary-color,#087f8c)}.month-block[open]>summary::before{content:"▾"}.month-block>summary .month-name{flex:1}.month-totals{font-size:.85rem;font-weight:400;color:var(--secondary-text-color)}.in{color:var(--primary-color,#087f8c)}.out{color:#b55235}.balance{font-weight:600}.month-block table{margin-bottom:12px}.month-block small{display:block}.month-block .tools{justify-content:space-between}#forecast-table td small{display:block;color:var(--secondary-text-color);font-size:.75rem} @media(max-width:600px){ha-card{padding:16px}.month-block{padding:0 8px}.month-block>summary{flex-wrap:wrap}.month-totals{flex-basis:100%;padding-left:22px}.compact th,.compact td{padding:10px 4px;font-size:.78rem}}.scroll{overscroll-behavior-x:contain}#daily-note{margin-top:8px}#plan-summary{white-space:pre-line}
         form{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}label{display:flex;flex-direction:column;gap:7px;font-size:.9rem}input,textarea{font:inherit;padding:10px;border-radius:6px;border:1px solid var(--divider-color,#aaa);background:var(--card-background-color,#fff);color:var(--primary-text-color)}textarea{resize:vertical}.full{grid-column:1/-1}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.8rem}.chart{min-width:480px}.chart svg{display:block;width:100%;max-height:260px}.chart text{fill:var(--secondary-text-color,#555);font-size:11px}.positive{fill:var(--primary-color,#087f8c)}.negative{fill:#b55235}[hidden]{display:none!important}
       </style>
       <ha-card>
@@ -84,27 +84,24 @@ class PGEStorageCard extends HTMLElement {
         <div id="period" class="muted">Łączenie z rejestrem…</div>
         <div id="warnings" class="notice"></div>
         <div id="flow" class="notice"></div>
-        <details id="daily-section"><summary>Każdy dzień: co weszło, co wyszło — rozwiń</summary>
-        <div class="tools"><label>Miesiąc<input id="daily-month" type="month"></label><button id="daily-refresh" class="secondary">Odśwież dni</button></div>
-        <div class="muted">Pobrano = import z sieci. Z magazynu = część pokryta zapasem. Dodano = eksport × 0,8. Saldo uwzględnia zapisane faktury oraz wygaśnięcia dla skonfigurowanych partii.</div>
-        <div class="scroll"><table class="compact"><thead><tr><th>Dzień</th><th>Pobrano<br>z sieci</th><th>Z magazynu<br>kWh</th><th>Oddano<br>do sieci</th><th>Dodano<br>po opuście</th><th>Zmiana<br>netto</th><th>MAGAZYN<br>na koniec dnia</th></tr></thead><tbody id="daily-rows"><tr><td colspan="7">Wybierz miesiąc i odśwież odczyty.</td></tr></tbody></table></div>
-        <div id="daily-note" class="muted"></div>
-        </details>
-        <h2>Na zimę i terminy wykorzystania</h2>
+        <h2>Wpłaty i pobory</h2>
+        <p class="muted">Wszystkie wartości w kWh do odbioru. Wprowadzono: po odjęciu 20%. Kliknij miesiąc, aby zobaczyć dni.</p>
+        <div id="daily-months"></div>
+        <div class="tools"><label>Inny miesiąc<input id="daily-month" type="month"></label><button id="daily-refresh" class="secondary">Pokaż miesiąc</button></div>
+        <h2>Obecny magazyn do następnego rozliczenia</h2>
         <div id="plan-summary" class="notice"></div>
-        <div id="forecast-chart"></div>
         <div id="forecast-table" class="scroll"></div>
         <div id="expiry-table"></div>
-        <details id="plan-settings" data-admin><summary>Ustaw prognozę i partie z faktury</summary>
+        <details id="plan-settings" data-admin><summary>Ustaw datę rozliczenia, historię poboru i partie</summary>
           <form id="plan-editor">
-            <label>Prognoza do dnia<input id="target-day" type="date" required></label>
+            <label>Następne rozliczenie<input id="target-day" type="date" required></label>
             <label>Faktura odniesienia<select id="plan-anchor"></select></label>
             <label class="full">Partie z faktury: miesiąc; pozostały eksport przed opustem [kWh]; ważne do<textarea id="lots" placeholder="RRRR-MM; kWh; RRRR-MM-DD"></textarea></label>
             <div class="muted full">Suma partii × 0,8 musi odpowiadać saldu faktury. Pusty termin oznacza regułę 12 miesięcy od końca miesiąca wprowadzenia. Daty możesz zmienić zgodnie z zasadami swojego rozliczenia. Pobór zużywa najstarsze partie. To miesięczny model FIFO, nie potwierdzenie salda operatora.</div>
             <div class="tools full"><button id="lots-import" type="button" class="secondary">Wczytaj partie z pliku</button><input id="lots-file" type="file" accept=".json,application/json" hidden></div>
-            <div class="full"><h2>Profil miesięczny prognozy [kWh]</h2><p class="muted">Przewidywany import i eksport do sieci przed opustem. Są to pełne miesiące; pozostałą część bieżącego miesiąca liczymy proporcjonalnie. Zmień profil, jeśli ogrzewanie lub zużycie będą inne niż w historii.</p>
-              <button id="profile-load" type="button" class="secondary">Uzupełnij z historii HA</button><div id="profile-note" class="muted"></div>
-              <table class="compact"><thead><tr><th>Miesiąc</th><th>Import z sieci</th><th>Eksport do sieci</th></tr></thead><tbody>${months.map((name, index) => `<tr><td>${name}</td><td><input aria-label="${name}: import" data-profile="import" data-month="${index + 1}" type="number" min="0" step="any"></td><td><input aria-label="${name}: eksport" data-profile="export" data-month="${index + 1}" type="number" min="0" step="any"></td></tr>`).join("")}</tbody></table>
+            <div class="full"><h2>Pobór z sieci w poprzednim roku [kWh]</h2><p class="muted">To podstawa tabeli powyżej: ile pobrano z sieci w tym samym miesiącu rok wcześniej. Nie dodajemy przyszłego eksportu. Puste pole oznacza brak danych, a nie zero. Wartości można uzupełnić z historii lub wpisać ręcznie. Bieżący miesiąc liczymy tylko od teraz, proporcjonalnie do pozostałego czasu.</p>
+              <button id="profile-load" type="button" class="secondary">Wczytaj pobór z historii HA</button><div id="profile-note" class="muted"></div>
+              <table class="compact"><thead><tr><th>Miesiąc</th><th>Pobrano w całym miesiącu [kWh]</th><th>Źródło</th></tr></thead><tbody>${months.map((name, index) => `<tr><td>${name}</td><td><input aria-label="${name}: pobór" data-profile="import" data-month="${index + 1}" type="number" min="0" step="any"></td><td data-profile-basis="${index + 1}">Brak historii</td></tr>`).join("")}</tbody></table>
             </div>
             <div class="tools full"><button type="submit">Zapisz plan i przelicz prognozę</button><button id="plan-refresh" type="button" class="secondary">Odśwież historię partii</button></div>
           </form>
@@ -139,9 +136,14 @@ class PGEStorageCard extends HTMLElement {
     root.getElementById("daily-month").value = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Warsaw", year: "numeric", month: "2-digit" }).format(new Date());
     root.getElementById("daily-month").onchange = () => this._loadDaily();
     root.getElementById("daily-refresh").onclick = () => this._loadDaily();
-    root.getElementById("daily-section").ontoggle = () => { if (root.getElementById("daily-section").open) this._loadDaily(); };
     root.getElementById("plan-editor").onsubmit = (event) => { event.preventDefault(); this._savePlan(); };
-    root.getElementById("plan-editor").oninput = () => { this._planDirty = true; this._planRevision ??= this._data?.revision; };
+    root.getElementById("plan-editor").oninput = (event) => {
+      this._planDirty = true; this._planRevision ??= this._data?.revision;
+      if (event.target.dataset.profile) {
+        event.target.dataset.sourceMonth = "";
+        root.querySelector(`[data-profile-basis="${event.target.dataset.month}"]`).textContent = "Wpisano ręcznie";
+      }
+    };
     root.getElementById("profile-load").onclick = () => this._loadProfile();
     root.getElementById("plan-refresh").onclick = () => this._run(() => this._call("refresh_plan"), "Historia partii odświeżona.");
     root.getElementById("lots-import").onclick = () => root.getElementById("lots-file").click();
@@ -207,6 +209,7 @@ class PGEStorageCard extends HTMLElement {
       <td data-admin><button class="secondary" data-action="edit" data-id="${esc(row.id)}">Edytuj</button> <button class="secondary" data-action="refresh" data-id="${esc(row.id)}">Odczytaj ponownie</button> <button class="danger" data-action="delete" data-id="${esc(row.id)}">Usuń</button></td>
       </tr>`).join("") || '<tr><td colspan="13">Brak zapisanych dat.</td></tr>';
     root.getElementById("chart").innerHTML = this._chart(records.filter((r) => r.period_balance != null).slice(-12));
+    this._renderMonths();
     this._renderPlanning();
     this._adminVisibility();
   }
@@ -222,23 +225,59 @@ class PGEStorageCard extends HTMLElement {
     }).join("")}</svg>`;
   }
 
-  async _loadDaily() {
+  _monthBlock(month) {
     const root = this.shadowRoot;
-    const month = root.getElementById("daily-month").value;
-    const request = this._dailyRequest = (this._dailyRequest || 0) + 1;
-    root.getElementById("daily-note").textContent = "Odczytywanie dni z Recorder…";
+    let block = root.querySelector(`[data-daily-month="${month}"]`);
+    if (block) return block;
+    block = window.document.createElement("details");
+    block.className = "month-block";
+    block.dataset.dailyMonth = month;
+    block.innerHTML = `<summary><span class="month-name">${esc(monthLabel(month))}</span><span class="month-totals">Pokaż dni</span></summary><div class="tools"><span class="muted" data-daily-note></span><button class="secondary" data-day-refresh>Odśwież</button></div><div class="scroll"><table class="compact"><thead><tr><th>Data</th><th>Wprowadzono</th><th>Pobrano</th><th>Różnica</th><th>Saldo na koniec dnia</th></tr></thead><tbody data-daily-rows></tbody></table></div>`;
+    block.ontoggle = () => { if (block.open && !block.dataset.loaded && !block.dataset.loading) this._loadDaily(month); };
+    block.querySelector("[data-day-refresh]").onclick = () => this._loadDaily(month);
+    const next = [...root.getElementById("daily-months").children].find((item) => item.dataset.dailyMonth < month);
+    root.getElementById("daily-months").insertBefore(block, next || null);
+    return block;
+  }
+
+  _renderMonths() {
+    const key = `${this._data.entry_id}:${this._data.revision}`;
+    if (this._monthsKey !== key) { this.shadowRoot.getElementById("daily-months").replaceChildren(); this._monthsKey = key; }
+    const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Warsaw", year: "numeric", month: "2-digit" }).format(new Date());
+    const first = this._data.records[0]?.day.slice(0, 7) || today;
+    // Show a year at a time; older months are available with the month picker.
+    let [year, month] = today.split("-").map(Number);
+    for (let index = 0; index < 12; index++) {
+      const key = `${year}-${String(month).padStart(2, "0")}`;
+      if (key < first) break;
+      this._monthBlock(key);
+      if (--month === 0) { month = 12; year--; }
+    }
+  }
+
+  async _loadDaily(month = this.shadowRoot.getElementById("daily-month").value) {
+    if (!/^\d{4}-\d{2}$/.test(month)) return;
+    const block = this._monthBlock(month);
+    block.open = true;
+    const request = block._request = (block._request || 0) + 1;
+    block.dataset.loading = "true";
+    const note = block.querySelector("[data-daily-note]");
+    note.textContent = "Wczytywanie…";
     try {
       const result = await this._call("daily", { month });
-      if (request !== this._dailyRequest || !result) return;
-      root.getElementById("daily-rows").innerHTML = result.rows.map((row) => `<tr>
-        <td>${esc(dayLabel(row.day))}${row.partial ? "<small>dzisiaj, do teraz</small>" : ""}${row.invoice ? "<small>dzień faktury</small>" : ""}<details><summary>Czasy / uwagi</summary>${esc(row.error || "")}${row.uncovered_import_kwh != null ? `<br>Import niepokryty magazynem: ${fmt(row.uncovered_import_kwh)} kWh` : ""}${row.recorded_at ? `<br>Import: ${esc(stampLabel(row.recorded_at.import.recorded_at))}<br>Eksport: ${esc(stampLabel(row.recorded_at.export.recorded_at))}` : ""}</details></td>
-        <td>${fmt(row.import_kwh)}</td><td>${fmt(row.withdrawn_kwh)}</td><td>${fmt(row.export_kwh)}</td><td>${fmt(row.credited_kwh)}</td><td>${fmt(row.net_kwh)}</td><td>${fmt(row.balance_kwh)}</td></tr>`).join("");
-      root.getElementById("daily-note").textContent = `${result.basis} Stan tabeli: ${stampLabel(result.updated_at)}. Bieżący dzień odśwież przyciskiem.`;
+      if (request !== block._request || !result) return;
+      block.querySelector("[data-daily-rows]").innerHTML = result.rows.map((row) => `<tr>
+        <td>${esc(dayLabel(row.day))}${row.partial ? "<small>dzisiaj, do teraz</small>" : ""}${row.invoice ? "<small>rozliczenie</small>" : ""}${row.error ? `<small class="muted" title="${esc(row.error)}">Brak historii</small>` : ""}${Number(row.expired_kwh) > 0 ? `<small>Wygasło: ${fmt(row.expired_kwh)} kWh</small>` : ""}</td>
+        <td class="in">${fmt(row.credited_kwh)}</td><td class="out">${fmt(row.import_kwh)}</td><td>${fmt(row.net_kwh)}</td><td class="balance">${fmt(row.balance_kwh)}</td></tr>`).join("");
+      const sum = (field) => result.rows.length && result.rows.every((row) => row[field] != null) ? result.rows.reduce((total, row) => total + Number(row[field]), 0) : null;
+      const last = result.rows.at(-1);
+      block.querySelector(".month-totals").textContent = `+ ${fmt(sum("credited_kwh"))} / − ${fmt(sum("import_kwh"))} · różnica ${fmt(sum("net_kwh"))} · saldo ${fmt(last?.balance_kwh)} kWh`;
+      note.textContent = `Stan na ${stampLabel(result.updated_at)}. Saldo uwzględnia rozliczenia i znane wygaśnięcia.`;
+      block.dataset.loaded = "true";
     } catch (error) {
-      if (request !== this._dailyRequest) return;
-      root.getElementById("daily-rows").textContent = "Brak odczytów dla wybranego miesiąca.";
-      root.getElementById("daily-note").textContent = error.message || String(error);
-    }
+      if (request !== block._request) return;
+      note.textContent = error.message || String(error);
+    } finally { if (request === block._request) delete block.dataset.loading; }
   }
 
   _renderPlanning() {
@@ -247,31 +286,27 @@ class PGEStorageCard extends HTMLElement {
     const forecast = plan.forecast, inventory = plan.inventory;
     const lines = [];
     if (plan.error) lines.push(plan.error);
-    if (forecast) {
-      lines.push(`Scenariusz do ${dayLabel(plan.target_day)}: saldo ${fmt(forecast.balance_kwh)} kWh; niedobór na koniec ${fmt(forecast.shortfall_kwh)} kWh.`);
-      lines.push(forecast.first_shortfall_day ? `Pierwszy przewidywany niedobór: ${dayLabel(forecast.first_shortfall_day)}. Najniższe saldo: ${fmt(forecast.minimum_balance_kwh)} kWh.` : "Według zapisanego profilu zapas wystarcza przez cały wybrany okres.");
-      lines.push(`Energia wygasająca do tej daty: ${fmt(Number(forecast.expired_kwh) - Number(inventory?.expired_kwh || 0))} kWh. Przyszły import i eksport rozłożono równomiernie na dni miesiąca; pogoda i zmiana zużycia zmienią wynik.`);
-    } else {
-      if (plan.inventory_error) lines.push(plan.inventory_error);
-      if (plan.missing_profile_months?.length) lines.push(`Do oceny zimy brakuje profilu miesięcy: ${plan.missing_profile_months.map((month) => months[month - 1]).join(", ")}. Uzupełnij profil poniżej.`);
-      if (plan.daily_budget_kwh != null) lines.push(`Sam obecny zapas daje średnio ${fmt(plan.daily_budget_kwh)} kWh dziennie do ${dayLabel(plan.target_day)} — budżet netto, bez przyszłych doładowań i wygaśnięć. To nie jest prognoza zimowego zużycia.`);
-    }
-    if (inventory) lines.push(inventory.next_expiry ? `Najbliższy termin pozostałej partii: ${dayLabel(inventory.next_expiry)}. Dotychczas wygasło w modelu: ${fmt(inventory.expired_kwh)} kWh.` : "W modelu nie ma dodatnich partii do wykorzystania.");
+    lines.push(`Do ${dayLabel(plan.target_day)}. Odejmujemy pobór taki jak rok wcześniej, bez przyszłych doładowań i bez zwiększania zużycia. Uwzględniamy znane terminy ważności.`);
+    if (plan.inventory_error) lines.push(plan.inventory_error);
+    if (plan.missing_profile_months?.length) lines.push(`Brak historii poboru: ${plan.missing_profile_months.map((month) => months[month - 1]).join(", ")}. Użyj „Wczytaj pobór z historii HA” w ustawieniach. Saldo od pierwszej luki pozostaje nieznane.`);
+    if (forecast?.complete) lines.push(`Saldo na rozliczenie: ${fmt(forecast.balance_kwh)} kWh.${forecast.first_shortfall_day ? ` Zapas wyczerpie się: ${dayLabel(forecast.first_shortfall_day)}.` : " Zapas wystarcza do rozliczenia."}`);
     root.getElementById("plan-summary").textContent = lines.join("\n");
-    root.getElementById("expiry-table").innerHTML = inventory ? `<h2>Pozostałe partie energii (model FIFO)</h2><table class="compact"><thead><tr><th>Miesiąc wprowadzenia</th><th>Pozostała wprowadzona przed opustem [kWh]</th><th>MAGAZYN — do odbioru [kWh]</th><th>Ważne do włącznie</th></tr></thead><tbody>${inventory.lots.map((item) => `<tr><td>${esc(item.month)}</td><td>${fmt(Number(item.kwh) / 0.8)}</td><td>${fmt(item.kwh)}</td><td>${esc(dayLabel(item.expires_on))}</td></tr>`).join("") || '<tr><td colspan="4">Brak pozostałych partii.</td></tr>'}</tbody></table>` : "";
-    root.getElementById("forecast-table").innerHTML = forecast ? `<p class="muted">Projekcja odczytów narastających i salda na koniec miesiąca. Wartości wynikają ze scenariusza.</p><table class="compact"><thead><tr><th>Do dnia</th><th>Import licznika [kWh]</th><th>Eksport licznika [kWh]</th><th>Saldo [kWh]</th><th>Wygasło od faktury [kWh]</th></tr></thead><tbody>${forecast.rows.map((row) => `<tr><td>${esc(dayLabel(row.day))}</td><td>${fmt(row.import_counter)}</td><td>${fmt(row.export_counter)}</td><td>${fmt(row.balance_kwh)}</td><td>${fmt(row.expired_kwh)}</td></tr>`).join("")}</tbody></table>` : "";
-    if (forecast?.rows.length) {
-      const values = [Number(forecast.opening_balance_kwh), ...forecast.rows.map((r) => Number(r.balance_kwh))];
-      const max = Math.max(1, ...values), min = Math.min(0, ...values), spread = max - min;
-      const points = values.map((value, i) => `${15 + i * 570 / (values.length - 1)},${125 - (value - min) * 110 / spread}`).join(" ");
-      root.getElementById("forecast-chart").innerHTML = `<svg viewBox="0 0 600 150" role="img" aria-label="Prognozowane saldo magazynu do ${esc(dayLabel(plan.target_day))}"><line x1="15" x2="585" y1="${125 - (0 - min) * 110 / spread}" y2="${125 - (0 - min) * 110 / spread}" stroke="currentColor" opacity=".4"/><polyline points="${points}" fill="none" stroke="var(--primary-color,#087f8c)" stroke-width="3"/></svg>`;
-    } else root.getElementById("forecast-chart").innerHTML = "";
+    root.getElementById("expiry-table").innerHTML = inventory ? `<details><summary>Terminy wykorzystania pozostałych partii</summary><div class="scroll"><table class="compact"><thead><tr><th>Wprowadzono</th><th>Przed opustem [kWh]</th><th>Do odbioru [kWh]</th><th>Ważne do</th></tr></thead><tbody>${inventory.lots.map((item) => `<tr><td>${esc(item.month)}</td><td>${fmt(Number(item.kwh) / 0.8)}</td><td>${fmt(item.kwh)}</td><td>${esc(dayLabel(item.expires_on))}</td></tr>`).join("")}</tbody></table></div></details>` : "";
+    root.getElementById("forecast-table").innerHTML = forecast ? `<table class="compact"><thead><tr><th>Miesiąc</th><th>Prognozowany pobór [kWh]</th><th>Saldo po poborze [kWh]</th></tr></thead><tbody>${forecast.rows.map((row, index) => {
+      const expired = row.expired_kwh == null ? null : Number(row.expired_kwh) - Number(index ? forecast.rows[index - 1].expired_kwh || 0 : inventory?.expired_kwh || 0);
+      return `<tr><td>${esc(monthLabel(row.day.slice(0, 7)))}<small>do ${esc(dayLabel(row.day))}${index === 0 ? ", od teraz" : ""}</small></td><td>${row.period_import_kwh == null ? "Brak historii" : fmt(row.period_import_kwh)}<small>${esc(row.source_month ? `Historia: ${row.source_month}` : row.period_import_kwh != null ? "Zapisana wartość" : `Potrzebny ${row.expected_source_month}`)}</small></td><td class="balance">${fmt(row.balance_kwh)}${expired > 0 ? `<small>W tym wygaśnięcie: ${fmt(expired)} kWh</small>` : ""}</td></tr>`;
+    }).join("")}</tbody></table>` : "";
     if (!this._planDirty) {
       root.getElementById("plan-anchor").innerHTML = '<option value="">Wybierz fakturę</option>' + this._data.records.slice(-1).filter((row) => row.invoice_balance != null).map((row) => `<option value="${esc(row.id)}">${esc(dayLabel(row.day))}: ${fmt(row.invoice_balance)} kWh</option>`).join("");
       root.getElementById("plan-anchor").value = plan.config.anchor_id || "";
       root.getElementById("target-day").value = plan.target_day;
       root.getElementById("lots").value = plan.config.lots.map((lot) => `${lot.month}; ${lot.export_kwh}; ${lot.expires_on}`).join("\n");
-      for (const input of root.querySelectorAll("[data-profile]")) input.value = plan.config.profile.find((item) => item.month === Number(input.dataset.month))?.[`${input.dataset.profile}_kwh`] ?? "";
+      for (const input of root.querySelectorAll("[data-profile]")) {
+        const item = plan.config.profile.find((item) => item.month === Number(input.dataset.month));
+        input.value = item?.import_kwh ?? "";
+        input.dataset.sourceMonth = item?.source_month || "";
+        root.querySelector(`[data-profile-basis="${input.dataset.month}"]`).textContent = item ? item.source_month || "Zapisana wartość" : "Brak historii";
+      }
       this._planRevision = null;
     }
   }
@@ -288,10 +323,9 @@ class PGEStorageCard extends HTMLElement {
       const profile = [];
       for (let month = 1; month <= 12; month++) {
         const imported = root.querySelector(`[data-profile="import"][data-month="${month}"]`).value;
-        const exported = root.querySelector(`[data-profile="export"][data-month="${month}"]`).value;
-        if (!imported && !exported) continue;
-        if (!imported || !exported) throw new Error(`Uzupełnij oba kierunki dla miesiąca ${months[month - 1]}; zero wpisz jawnie.`);
-        profile.push({ month, import_kwh: imported, export_kwh: exported });
+        if (!imported) continue;
+        const input = root.querySelector(`[data-profile="import"][data-month="${month}"]`);
+        profile.push({ month, import_kwh: imported, export_kwh: "0", ...(input.dataset.sourceMonth ? { source_month: input.dataset.sourceMonth } : {}) });
       }
       await this._call("put_plan", { planning: { anchor_id: root.getElementById("plan-anchor").value || null, lots, profile, target_day: root.getElementById("target-day").value }, revision: this._planRevision ?? this._data.revision }, true);
     }, "Plan zapisany. Prognoza przeliczona.");
@@ -303,8 +337,13 @@ class PGEStorageCard extends HTMLElement {
       const result = await this._call("profile");
       this._planRevision ??= this._data.revision;
       this._planDirty = true;
-      for (const input of this.shadowRoot.querySelectorAll("[data-profile]")) input.value = result.profile.find((item) => item.month === Number(input.dataset.month))?.[`${input.dataset.profile}_kwh`] ?? "";
-      this.shadowRoot.getElementById("profile-note").textContent = `${result.note} Dane: ${Object.entries(result.basis).map(([month, source]) => `${months[Number(month) - 1]} z ${source}`).join(", ")}. Brakujące miesiące: ${result.missing.map((month) => months[month - 1]).join(", ") || "brak"}. Sprawdź i zapisz plan.`;
+      for (const input of this.shadowRoot.querySelectorAll("[data-profile]")) {
+        const item = result.profile.find((item) => item.month === Number(input.dataset.month));
+        input.value = item?.import_kwh ?? "";
+        input.dataset.sourceMonth = item?.source_month || "";
+        this.shadowRoot.querySelector(`[data-profile-basis="${input.dataset.month}"]`).textContent = item?.source_month || "Brak historii";
+      }
+      this.shadowRoot.getElementById("profile-note").textContent = `Wczytano: ${Object.values(result.basis).join(", ") || "brak pełnych miesięcy"}. Brakujące miesiące: ${result.missing.map((month) => months[month - 1]).join(", ") || "brak"}. HA nie ma dla nich kompletnych statystyk poboru. ${result.note} Sprawdź i zapisz.`;
     }, "Wczytano dostępny profil. Sprawdź założenia i zapisz plan.");
   }
 

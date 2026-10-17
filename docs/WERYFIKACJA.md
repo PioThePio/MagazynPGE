@@ -1,5 +1,7 @@
 # Weryfikacja 2026-10-17
 
+Wersja 0.4.0: 70 testów Python i 10 testów DOM zaliczonych. Sprawdzono pięciokolumnowe dni pod rozwijanymi miesiącami, zaokrąglanie do pełnych kWh, trzykolumnową tabelę projekcji, propagację nieznanego salda po luce historii, nieuwzględnianie dowolnie dużego przyszłego eksportu, wygaśnięcia i datę rozliczenia 30 września → 31 marca. Historia importu działa również przy lukach eksportu. Źródłowy miesiąc spoza poprzedniego roku jest odrzucany w projekcji. Chromium sprawdza pełny dashboard, otwiera dni wybranego miesiąca i po zmianie poboru potwierdza datę wyczerpania zapasu. Ruff, składnia JS, metadane v0.4.0 i budowa archiwum przeszły kontrolę.
+
 Wersja 0.3.0: sprawdzono dzienne importy/eksporty, wygaśnięcia i pobór pokryty magazynem, FIFO przy dodatnim bilansie netto, terminy włączne i lata przestępne, niepełny bieżący dzień ze zmianą czasu, brak danych bez zerowania, projekcje przyszłych liczników, niedobór zimowy i ochronę nieskończonych/ujemnych profili. Rzeczywisty HA sprawdza WS, zapis planu, odtworzenie starszego formatu, utrwalenie odczytów dziennych i miesięcznych po purgowaniu Recorder oraz odmowę zapisu dyskowego. Natywne API statystyk przetestowano na zaimportowanych w izolowanej bazie sumach Wh, z konwersją do kWh i różnicą 720/1440 kWh dla kompletnego miesiąca. Chromium otwiera tabelę dni i zmienia profil, po czym sprawdza nową prognozę niedoboru.
 
 Wersja 0.2.2 nadpisuje odziedziczone `user-select: none` dashboardu. Test Chromium przeciąga mysz od początku do końca nagłówka oraz rzeczywistego komunikatu błędu braku historii i sprawdza tekst zaznaczenia. W oryginalnej karcie test zwracał puste zaznaczenie; po poprawce oba teksty można zaznaczyć.
@@ -14,9 +16,9 @@ Sprawdzono w odizolowanym środowisku chmurowym, bez dostępu do produkcyjnego H
 |---|---|
 | Python 3.14.8, Home Assistant Core 2026.10.0 | Zainstalowane i uruchomione |
 | `uv sync --frozen`, `npm ci` | Wykonane, także ponownie bez zmian lockfile |
-| pytest | 68 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
-| Testy karty w DOM / Node 24 | 9 zaliczonych, 0 niezaliczonych |
-| Chromium: pełny dashboard HA i ponowne ładowanie strony | Zaliczony (wśród 68 testów pytest) |
+| pytest | 70 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
+| Testy karty w DOM / Node 24 | 10 zaliczonych, 0 niezaliczonych |
+| Chromium: pełny dashboard HA i ponowne ładowanie strony | Zaliczony (wśród 70 testów pytest) |
 | Ruff check i format | Bez błędów |
 | Składnia JS | Poprawna |
 | `hass --script check_config -c .ha-dev` | Poprawna konfiguracja demonstracyjna |

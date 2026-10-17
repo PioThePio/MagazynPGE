@@ -53,7 +53,7 @@ def seasonal_profile(rows, sources, today):
             int(item["start"]): item.get("sum") for item in rows.get(entity_id, [])
         }
     cursor = end
-    for _ in range(24):
+    for _ in range(12):
         previous = (cursor - timedelta(days=1)).replace(day=1)
         start_utc = datetime.combine(previous, time(), WARSAW).astimezone(UTC)
         end_utc = datetime.combine(cursor, time(), WARSAW).astimezone(UTC)
@@ -62,7 +62,7 @@ def seasonal_profile(rows, sources, today):
         )
         values = {}
         try:
-            for direction in sources:
+            for direction in ("import",):
                 series = [energy(sums[direction][stamp]) for stamp in stamps]
                 if any(
                     current < prior
@@ -74,14 +74,19 @@ def seasonal_profile(rows, sources, today):
             cursor = previous
             continue
         if previous.month not in profile:
-            profile[previous.month] = {"month": previous.month, **values}
+            profile[previous.month] = {
+                "month": previous.month,
+                **values,
+                "export_kwh": "0",
+                "source_month": previous.strftime("%Y-%m"),
+            }
             basis[str(previous.month)] = previous.strftime("%Y-%m")
         cursor = previous
     return {
         "profile": sorted(profile.values(), key=lambda x: x["month"]),
         "basis": basis,
         "missing": sorted(set(range(1, 13)) - profile.keys()),
-        "note": "Profil scenariusza z ostatniego kompletnego wystąpienia każdego miesiąca (do 24 miesięcy wstecz). Różnice sum godzinowych w kWh służą prognozie, nie zastępują odczytów rozliczenia. Pełna siatka godzin nie dowodzi ciągłej pracy fizycznego licznika.",
+        "note": "Pobór z sieci z ostatnich 12 zakończonych miesięcy. Dla każdego miesiąca projekcji używamy tego samego miesiąca rok wcześniej. Brak pełnych statystyk importu pozostaje pusty; eksport nie jest potrzebny. Nie zwiększamy zużycia i nie dodajemy przyszłej produkcji.",
     }
 
 
@@ -89,12 +94,12 @@ async def async_seasonal_profile(hass, sources):
     today = dt_util.utcnow().astimezone(WARSAW).date()
     end = datetime.combine(today.replace(day=1), time(), WARSAW).astimezone(UTC)
     start = datetime.combine(
-        date(today.year - 2, today.month, 1), time(), WARSAW
+        date(today.year - 1, today.month, 1), time(), WARSAW
     ).astimezone(UTC) - timedelta(hours=1)
     metadata = await get_instance(hass).async_add_executor_job(
-        partial(statistics.get_metadata, hass, statistic_ids=set(sources.values()))
+        partial(statistics.get_metadata, hass, statistic_ids={sources["import"]})
     )
-    for entity_id in sources.values():
+    for entity_id in (sources["import"],):
         if (
             entity_id not in metadata
             or not metadata[entity_id][1].get("has_sum")
@@ -102,7 +107,7 @@ async def async_seasonal_profile(hass, sources):
         ):
             raise LedgerError(
                 "missing_statistics",
-                f"Brak statystyk sum energii dla {entity_id}. Wpisz profil miesięczny ręcznie.",
+                f"Brak statystyk poboru energii dla {entity_id}. Nie można odtworzyć zużycia z zeszłego roku.",
             )
     rows = await get_instance(hass).async_add_executor_job(
         partial(
@@ -110,7 +115,7 @@ async def async_seasonal_profile(hass, sources):
             hass,
             start,
             end,
-            set(sources.values()),
+            {sources["import"]},
             "hour",
             {"energy": "kWh"},
             {"sum"},

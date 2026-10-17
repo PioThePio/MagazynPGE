@@ -182,21 +182,22 @@ async def test_plan_daily_api_and_durable_month_boundaries(ha):
             page.on("pageerror", lambda error: errors.append(str(error)))
             await page.goto(f"{origin}/dashboard-pge-test/magazyn")
             await expect(page.locator("pge-storage-card #metrics")).to_contain_text(
-                "220,0", timeout=30000
+                "220 kWh", timeout=30000
             )
             await expect(page.locator("pge-storage-card #flow")).to_contain_text(
-                "dodano 40,0 kWh"
+                "dodano 40 kWh"
             )
             await expect(
                 page.locator("pge-storage-card #forecast-table")
             ).to_contain_text("31.03.2027")
-            await page.locator("pge-storage-card #daily-section > summary").click()
-            await page.locator("pge-storage-card #daily-month").fill("2026-09")
-            await page.locator("pge-storage-card #daily-month").dispatch_event("change")
+            await page.locator(
+                'pge-storage-card [data-daily-month="2026-09"] > summary'
+            ).click()
             await expect(
-                page.locator("pge-storage-card #daily-rows tr").first
-            ).to_contain_text("203,0", timeout=30000)
-            await page.locator("pge-storage-card #daily-section > summary").click()
+                page.locator(
+                    'pge-storage-card [data-daily-month="2026-09"] [data-daily-rows] tr'
+                ).first
+            ).to_contain_text("203", timeout=30000)
             await page.locator("pge-storage-card #plan-settings > summary").click()
             await page.locator(
                 'pge-storage-card [data-profile="import"][data-month="10"]'
@@ -206,7 +207,7 @@ async def test_plan_daily_api_and_durable_month_boundaries(ha):
             ).click()
             await expect(
                 page.locator("pge-storage-card #plan-summary")
-            ).to_contain_text("Pierwszy przewidywany niedobór")
+            ).to_contain_text("Zapas wyczerpie się")
             await page.locator("pge-storage-card #plan-settings > summary").click()
             await page.locator("pge-storage-card h1").scroll_into_view_if_needed()
             await page.screenshot(path="/tmp/pge-planning-ui.png")
@@ -257,4 +258,5 @@ async def test_real_ha_statistics_profile_converts_wh_and_uses_period_changes(ha
     result = await async_seasonal_profile(hass, SOURCES)
     september = next(item for item in result["profile"] if item["month"] == 9)
     assert float(september["import_kwh"]) == pytest.approx(720)
-    assert float(september["export_kwh"]) == pytest.approx(1440)
+    assert september["export_kwh"] == "0"
+    assert september["source_month"] == "2026-09"

@@ -113,28 +113,34 @@ test("history paginates all rows instead of capping the ledger size", async () =
   await window.happyDOM.close();
 });
 
-test("MAGAZYN shows usable energy and the raw counterpart, both with one decimal", async () => {
+test("MAGAZYN shows usable energy and the raw counterpart, rounded to whole kWh", async () => {
   const { window, root, emit } = await setup();
   const data = snapshot();
   Object.assign(data.current, { available_energy: "2197.032", carried_balance: "2164", period_balance: "33.032", import_since_settlement_kwh: "134.76", export_since_settlement_kwh: "209.74", credited_since_settlement_kwh: "167.792" });
   emit(data);
   const metrics = root.getElementById("metrics").textContent;
   assert.match(metrics, /MAGAZYN — do odbioru/);
-  assert.match(metrics, /2.?197,0/);
-  assert.match(metrics, /2.?746,3/);
+  assert.match(metrics, /2.?197 kWh/);
+  assert.match(metrics, /2.?746 kWh/);
   assert.doesNotMatch(metrics, /2197,032|2.?197,032/);
-  assert.match(root.getElementById("flow").textContent, /dodano 167,8 kWh/);
+  assert.match(root.getElementById("flow").textContent, /dodano 168 kWh/);
   await window.happyDOM.close();
 });
 
-test("daily table keeps gaps unknown and distinguishes raw export from usable credit", async () => {
+test("monthly expansion shows five daily columns and preserves unknowns", async () => {
   const { window, root, card, hass } = await setup();
   hass.callWS = async () => ({ rows: [{ day: "2026-10-01", import_kwh: "5", withdrawn_kwh: "5", export_kwh: "10", credited_kwh: "8", net_kwh: "3", balance_kwh: "2167" }, { day: "2026-10-02", import_kwh: null, export_kwh: null, credited_kwh: null, net_kwh: null, balance_kwh: null, error: "Brak historii" }], basis: "Odczyty Recorder", updated_at: "2026-10-17T18:00:00+00:00" });
-  await card._loadDaily();
-  const rows = root.querySelectorAll("#daily-rows tr");
-  assert.match(rows[0].textContent, /10,0/);
-  assert.match(rows[0].textContent, /8,0/);
-  assert.match(rows[0].textContent, /2.?167,0/);
+  const block = card._monthBlock("2026-10");
+  assert.equal(block.open, false);
+  await card._loadDaily("2026-10");
+  assert.equal(block.open, true);
+  const rows = block.querySelectorAll("[data-daily-rows] tr");
+  assert.equal(rows[0].children.length, 5);
+  assert.equal(rows[0].children[1].textContent, "8");
+  assert.equal(rows[0].children[2].textContent, "5");
+  assert.equal(rows[0].children[3].textContent, "3");
+  assert.match(rows[0].children[4].textContent, /2.?167/);
+  assert.doesNotMatch(block.textContent, /Import niepokryty|Czasy \/ uwagi/);
   assert.match(rows[1].textContent, /Brak historii/);
   assert.match(rows[1].textContent, /—/);
   await window.happyDOM.close();
@@ -147,7 +153,6 @@ test("live updates preserve an unsaved seasonal plan and its revision", async ()
   emit(data);
   const input = root.querySelector('[data-profile="import"][data-month="1"]');
   input.value = "500";
-  root.querySelector('[data-profile="export"][data-month="1"]').value = "0";
   input.dispatchEvent(new window.Event("input", { bubbles: true }));
   emit({ ...data, revision: 4 });
   assert.equal(input.value, "500");
@@ -155,5 +160,30 @@ test("live updates preserve an unsaved seasonal plan and its revision", async ()
   const command = calls.find((call) => call.type === "pge_storage/put_plan");
   assert.equal(command.revision, 3);
   assert.equal(command.planning.profile[0].import_kwh, "500");
+  await window.happyDOM.close();
+});
+
+
+test("projection is a three-column stock depletion table with explicit history gaps", async () => {
+  const { window, root, emit } = await setup();
+  const data = snapshot();
+  data.planning = {
+    config: { anchor_id: "test-id", lots: [], profile: [] }, target_day: "2027-03-31",
+    inventory: { balance_kwh: "200", expired_kwh: "0", lots: [] },
+    missing_profile_months: [11],
+    forecast: { complete: false, rows: [
+      { day: "2026-10-31", period_import_kwh: "34.8", balance_kwh: "165.2", expired_kwh: "0", source_month: "2025-10" },
+      { day: "2026-11-30", period_import_kwh: null, balance_kwh: null, expected_source_month: "2025-11" },
+    ] },
+  };
+  emit(data);
+  assert.equal(root.querySelectorAll("#forecast-table th").length, 3);
+  const rows = root.querySelectorAll("#forecast-table tbody tr");
+  assert.match(rows[0].textContent, /35.*165/);
+  assert.match(rows[0].textContent, /2025-10/);
+  assert.match(rows[1].textContent, /Brak historii.*2025-11.*—/);
+  assert.doesNotMatch(root.getElementById("forecast-table").textContent, /Eksport licznika|Import licznika/);
+  assert.match(root.getElementById("plan-summary").textContent, /bez przyszłych doładowań/);
+  assert.equal(root.querySelector('[data-profile="export"]'), null);
   await window.happyDOM.close();
 });

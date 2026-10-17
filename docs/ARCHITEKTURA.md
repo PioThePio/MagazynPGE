@@ -80,4 +80,11 @@ Format eksportu JSON ma wersję 3 (czyta także wersję 2). Store i Config Flow 
 
 `planning`, `checkpoint_cache` i `daily_cache` są własnymi polami Store. Zapis rejestru, planu i archiwów jest serializowany wspólnym lockiem; zapisy pomocniczych odczytów zachowują rewizję rozliczeń i pozostałe dane. Błąd utrwalenia dni jest sygnalizowany w wyniku tabeli, a błąd odczytu miesięcy blokuje ocenę terminów. Cache przechowuje surowe dwa liczniki z czasami, nie wyliczone dzienne zera.
 
-Nowe WS: `daily`, `profile` (odczyt obu źródeł), `put_plan` (administrator i rewizja), `refresh_plan` (administrator). Wszystkie używają kontroli dostępu do tej samej pary liczników. Nie zapisują do Recorder ani statystyk źródłowych.
+Nowe WS: `daily` (oba źródła), `profile` (statystyki importu), `put_plan` (administrator i rewizja), `refresh_plan` (administrator). Wszystkie używają kontroli dostępu do tej samej pary liczników. Nie zapisują do Recorder ani statystyk źródłowych.
+
+
+## Projekcja obecnego zapasu (0.4)
+
+Plan zachowuje kompatybilne pola `profile.import_kwh` i `profile.export_kwh`, ale projekcja ignoruje eksport. GUI zapisuje dla niego zero. Opcjonalne `source_month` identyfikuje rzeczywisty miesiąc historii; przy projekcji musi odpowiadać miesiącowi rok wcześniej. Wartości bez źródła z wersji 0.3 są traktowane jako zapisane założenia. Odczyt historii wymaga tylko statystyk importu i sprawdza ostatnie 12 kompletnych miesięcy. Każda luka propaguje nieznane saldo, nie blokując pokazania znanego poboru w innych miesiącach. FIFO i wygaśnięcia działają dzień po dniu bez dodawania przyszłych partii. Data domyślna wynika z ostatniej faktury + 6 miesięcy, z zachowaniem końca miesiąca.
+
+Frontend pokazuje miesiące rozwijane do pięciokolumnowej tabeli dni, ładuje je na żądanie i sumuje wyłącznie kompletne serie. Wyświetlanie jest zaokrąglone do kWh; Store, sensory i obliczenia zachowują dokładność. Zmiana rewizji rejestru unieważnia wczytane tabele dni.
