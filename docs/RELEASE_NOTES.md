@@ -1,8 +1,9 @@
-MagazynPGE 0.6.0 — automatyczne źródła z panelu Energia i obliczanie domu.
+MagazynPGE 0.7.0 — osobne karty HA, czytelne źródła PV i ustawienia Victrona.
 
-- Automatyczne pobranie źródeł sieci, PV, akumulatora i odbiorców z konfiguracji Energii HA. Dotychczasowe ręczne wybory zachowane. Przycisk „Wczytaj z panelu Energia” umożliwia ponowny import; każdą encję można zmienić ręcznie.
-- Osobna encja domu nie jest wymagana. „Oblicz z bilansu”: PV + pobór sieci + rozładowanie − oddanie sieci − ładowanie. Osobno dla W i kWh. Ręczna encja domu ma pierwszeństwo.
-- Wiele źródeł PV, statystyki zewnętrzne, kierunki mocy i pojemność akumulatora z panelu Energia. Dzisiejsza energia z godzinowych sum Recorder obsługuje resetowane liczniki. Karta pokazuje czas kompletnego odczytu „do HH:mm”. Braki pozostają puste.
-- Konfiguracja natywnej Energii, źródłowe sensory, zapisane faktury i rozliczeniowa para PGE pozostają zachowane. Wszystkie obliczone wartości są nadal dostępne jako samodzielne encje.
+- „Utwórz dashboard z osobnych kart” tworzy natywny dashboard Lovelace z ośmioma niezależnymi kartami. Każdą przesuniesz i edytujesz ołówkiem HA. Ponowne wywołanie zachowuje Twoje zmiany i inne dashboardy.
+- Nowa osobna karta „Odbiorcy w domu”. Schemat przepływów pokazuje wyłącznie PV, sieć, dom, akumulator i magazyn PGE. Dotychczasowy zestaw modułów reaguje na szerokość karty, także na szerokim ekranie; koła i podpisy nie nachodzą na siebie.
+- Wszystkie PV są jawnie widoczne jako wybrane źródła. Brakujący sensor importowany z Energii nie blokuje zapisu, a historyczne statystyki pozostają dostępne. Brak historii pozostaje brakiem danych. Częściowa moc PV nie udaje sumy całej instalacji.
+- Prosty wybór pomiaru mocy: jeden sensor +/− albo dwa kierunki. Opisy kWh, mocy, SOC, energii w akumulatorze i pojemności. Naprawiony import nazw pomocniczych sensorów mocy i pierwszeństwa power_config Energii.
+- Konfiguracja źródłowej Energii, sensory i faktury pozostają zachowane.
 
-Aktualizacja: HACS → 0.6.0 → restart HA → Ctrl+F5. Restart ładuje nowy kod Pythona. Po tej aktualizacji źródła pobiorą się automatycznie; pola domu pozostaw jako „Oblicz z bilansu”. Ponowny import i ręczne zmiany źródeł działają bez restartu.
+Aktualizacja: HACS → 0.7.0 → restart HA → Ctrl+F5. Następnie „Utwórz dashboard z osobnych kart” i „Otwórz dashboard”. Źródła energii → Wczytaj z panelu Energia → Zapisz źródła. Dalsze zmiany ustawień działają bez restartu.

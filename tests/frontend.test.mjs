@@ -305,7 +305,7 @@ test("notes are escaped and failed invoice save keeps the draft", async () => {
 });
 test("Lovelace picker registers every independent module and a visual tile editor", async () => {
   const { window, card } = await setup("pge-balance-card");
-  assert.equal(window.customCards.length, 6);
+  assert.equal(window.customCards.length, 7);
   const editor = card.constructor.getConfigElement();
   editor.setConfig({ type: "custom:pge-balance-card", metric: "deficit" });
   assert.equal(
@@ -357,7 +357,7 @@ test("Energy defaults fill sources, preserve aggregate statistics and leave home
   card.open("sources");
   await card.importPanel();
   assert.equal(
-    root.querySelector('[data-source="pv_power"]').selectedOptions.length,
+    root.querySelectorAll('[data-remove-source="pv_power"]').length,
     2,
   );
   assert.match(
@@ -370,4 +370,80 @@ test("Energy defaults fill sources, preserve aggregate statistics and leave home
   assert.equal(config.consumers[0].statistic, "supplier:pump");
   assert.equal(config.imported_from_energy, true);
   await window.happyDOM.close();
+});
+
+test("missing PV is explicit, additional sources and removals preserve every remaining statistic", async () => {
+  const { window, card, root, hass, emit } = await setup("pge-settings-card");
+  const data = snapshot();
+  data.energy.config = {
+    sources: {
+      pv_energy: ["sensor.solar_total_kwh", "sensor.pv_energy"],
+      grid_power: "sensor.pv",
+    },
+    statistics: { pv_energy: ["sensor.solar_total_kwh", "sensor.pv_energy"] },
+    consumers: [],
+    directions: { grid: "import", battery: "charge" },
+  };
+  emit(data);
+  card.open("sources");
+  assert.equal(
+    root.querySelectorAll('[data-remove-source="pv_energy"]').length,
+    2,
+  );
+  assert.match(root.textContent, /sensor.solar_total_kwh.*BRAK ENCJI/s);
+  assert.equal(root.querySelector('[data-source="grid_import_power"]'), null);
+  assert.equal(root.querySelector('[data-source="grid_export_power"]'), null);
+  let config = card.readSources();
+  assert.equal(config.statistics.pv_energy.length, 2);
+  assert.equal(config.sources.pv_energy.length, 2);
+  root
+    .querySelector(
+      '[data-remove-source="pv_energy"][data-id="sensor.solar_total_kwh"]',
+    )
+    .click();
+  config = card.readSources();
+  assert.equal(config.sources.pv_energy, "sensor.pv_energy");
+  assert.equal(config.statistics.pv_energy.length, 1);
+  const mode = root.querySelector('[data-power-mode="grid"]');
+  mode.value = "split";
+  mode.dispatchEvent(new window.Event("change"));
+  assert.ok(root.querySelector('[data-source="grid_import_power"]'));
+  assert.equal(root.querySelector('[data-source="grid_power"]'), null);
+  config = card.readSources();
+  assert.equal(config.sources.grid_power, undefined);
+  await window.happyDOM.close();
+});
+test("consumers are independent of flow and dashboard creation exposes a native edit link", async () => {
+  const flow = await setup("pge-energy-card"),
+    device = await setup("pge-consumers-card"),
+    settings = await setup("pge-settings-card");
+  const data = snapshot();
+  data.energy.consumers = [
+    {
+      name: "Pompa",
+      today_kwh: "7.8",
+      power_w: "900",
+      energy: "sensor.pv_energy",
+    },
+  ];
+  flow.emit(data);
+  device.emit(data);
+  assert.doesNotMatch(flow.root.textContent, /Pompa/);
+  assert.match(device.root.textContent, /Pompa/);
+  assert.match(device.root.textContent, /8 kWh/);
+  device.root.querySelector('[data-mode="power"]').click();
+  assert.match(device.root.textContent, /900 W/);
+  settings.hass.callWS = async (command) => {
+    assert.equal(command.type, "pge_storage/create_dashboard");
+    return { created: true, url: "/pge-energia-abc/magazyn" };
+  };
+  await settings.card.createDashboard();
+  assert.equal(
+    settings.root.querySelector("#open-dashboard").getAttribute("href"),
+    "/pge-energia-abc/magazyn",
+  );
+  settings.emit({ ...snapshot(), revision: 4 });
+  assert.ok(settings.root.querySelector("#open-dashboard"));
+  for (const value of [flow, device, settings])
+    await value.window.happyDOM.close();
 });

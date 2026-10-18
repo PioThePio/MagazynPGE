@@ -1,3 +1,5 @@
+Wersja 0.7.0: 88 testów Python i 14 testów DOM. Rzeczywisty HA sprawdza stworzenie dashboardu z ośmioma kartami, zapis i zachowanie edycji, powtórne wywołanie, kolizję adresu, awarię zapisu i uprawnienia. Test importu odtwarza brakujący `sensor.solar_total_kwh` obok działającego MPPT: oba źródła pozostają w konfiguracji, zapis działa, historyczne sumy są odczytywane, a niepełna moc pozostaje nieznana. Sprawdzono też konwencje akumulatora i przemianowane sensory transformujące Energii. Chromium sprawdza szerokie okno 1440 px z kartą 500 px, telefon 390 px, brak przepełnień i nachodzenia wszystkich kół oraz podpisów, osobnych odbiorców, przycisk utworzenia i przejście do natywnego dashboardu. Obejrzano zrzuty nowego dashboardu desktop i mobile. DOM sprawdza listy PV, brakujące encje, usuwanie źródła bez utraty pozostałych statystyk, tryby mocy i zachowanie linku dashboardu przy aktualizacji danych.
+
 Wersja 0.6.0: 82 testy Python i 12 testów DOM. Nowy test rzeczywistego HA zapisuje konfigurację natywnej Energii w izolowanym środowisku, importuje godzinowe sumy Wh z resetowanymi stanami i zewnętrzną statystyką, następnie sprawdza automatyczny import, bilans domu w W/kWh, oddzielenie liczników PGE, ręczne zastąpienie i przeładowanie. Testy jednostkowe obejmują wiele źródeł, brak danych, brak akumulatora/PV i zachowanie ręcznych wyborów. DOM sprawdza ponowny import z przycisku, listy wielu encji, zachowanie statystyk i opcję „Oblicz z bilansu”. Użytkownik bez uprawnień administratora nie może importować konfiguracji.
 
 # Weryfikacja 2026-10-18
@@ -20,9 +22,9 @@ Sprawdzono w odizolowanym środowisku chmurowym, bez dostępu do produkcyjnego H
 |---|---|
 | Python 3.14.8, Home Assistant Core 2026.10.0 | Zainstalowane i uruchomione |
 | `uv sync --frozen`, `npm ci` | Wykonane, także ponownie bez zmian lockfile |
-| pytest | 82 testy zaliczonych, 0 niezaliczonych, 0 pominiętych |
-| Testy karty w DOM / Node 24 | 12 zaliczonych, 0 niezaliczonych |
-| Chromium: pełny dashboard HA i ponowne ładowanie strony | Zaliczony (wśród 82 testów pytest) |
+| pytest | 88 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
+| Testy karty w DOM / Node 24 | 14 zaliczonych, 0 niezaliczonych |
+| Chromium: pełny dashboard HA i ponowne ładowanie strony | Zaliczony (wśród 88 testów pytest) |
 | Ruff check i format | Bez błędów |
 | Składnia JS | Poprawna |
 | `hass --script check_config -c .ha-dev` | Poprawna konfiguracja demonstracyjna |

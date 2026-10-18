@@ -163,3 +163,101 @@ def test_one_time_defaults_preserve_manual_roles_and_do_not_mutate_original():
     assert "battery_power" not in merged["sources"]
     assert old["directions"]["grid"] == "import"
     assert old["imported_from_energy"] is False
+
+
+def test_all_native_pv_entries_remain_visible_when_one_live_entity_is_missing():
+    hass = hass_with({"sensor.mppt": (120, "kWh"), "sensor.mppt_w": (2000, "W")})
+    prefs = {
+        "energy_sources": [
+            {"type": "solar", "stat_energy_from": "sensor.solar_total_kwh"},
+            {
+                "type": "solar",
+                "stat_energy_from": "sensor.mppt",
+                "stat_rate": "sensor.mppt_w",
+            },
+        ]
+    }
+    with patch(
+        "custom_components.pge_storage.energy_panel.er.async_get",
+        return_value=SimpleNamespace(async_get=lambda _id: None),
+    ):
+        native = panel_config(hass, prefs)
+    config = native["config"]
+    assert config["sources"]["pv_energy"] == [
+        "sensor.solar_total_kwh",
+        "sensor.mppt",
+    ]
+    assert config["statistics"]["pv_energy"] == config["sources"]["pv_energy"]
+    assert len(native["report"]) == 2
+    assert native["report"][0]["energy"][0]["status"] == "missing"
+    assert native["report"][0]["missing"] == ["pv_power"]
+    with patch(
+        "custom_components.pge_storage.energy.dt_util.utcnow",
+        return_value=datetime(2026, 10, 18, 12, tzinfo=UTC),
+    ):
+        result = energy_snapshot(
+            hass,
+            config,
+            {"import": "sensor.i", "export": "sensor.e"},
+            {},
+            {
+                "day": "2026-10-18",
+                "values": {"sensor.solar_total_kwh": "10", "sensor.mppt": "5"},
+            },
+            native,
+        )
+        assert result["today"]["pv_energy"] == "15"
+        assert result["values"]["pv_power"] is None
+        assert result["source_status"]["pv_energy"][0]["id"] == "sensor.solar_total_kwh"
+        result = energy_snapshot(
+            hass,
+            config,
+            {"import": "sensor.i", "export": "sensor.e"},
+            {},
+            {
+                "day": "2026-10-18",
+                "values": {"sensor.solar_total_kwh": None, "sensor.mppt": "5"},
+            },
+            native,
+        )
+        assert result["today"]["pv_energy"] is None
+
+
+def test_battery_power_config_precedence_and_registered_renamed_transform():
+    from homeassistant.components.energy.helpers import generate_power_sensor_unique_id
+
+    for power in (
+        {"stat_rate_inverted": "sensor.victron_battery"},
+        {"stat_rate_from": "sensor.discharge_w", "stat_rate_to": "sensor.charge_w"},
+    ):
+        prefs = preferences()
+        prefs["energy_sources"][-1]["power_config"] = power
+        registry = SimpleNamespace(
+            async_get=lambda _id: None,
+            async_get_entity_id=lambda domain, platform, unique, power=power: (
+                "sensor.battery_renamed"
+                if (domain, platform, unique)
+                == (
+                    "sensor",
+                    "energy",
+                    generate_power_sensor_unique_id("battery", power),
+                )
+                else None
+            ),
+        )
+        hass = hass_with(
+            {"sensor.battery_renamed": (-400, "W"), "sensor.soc": (65, "%")}
+        )
+        with patch(
+            "custom_components.pge_storage.energy_panel.er.async_get",
+            return_value=registry,
+        ):
+            imported = panel_config(hass, prefs)
+        assert (
+            imported["config"]["sources"]["battery_power"] == "sensor.battery_renamed"
+        )
+        assert imported["config"]["sources"]["battery_soc"] == "sensor.soc"
+        assert imported["config"]["battery_capacity_kwh"] == "10"
+        battery = next(item for item in imported["report"] if item["type"] == "battery")
+        assert battery["power"][0]["status"] == "available"
+        assert battery["soc"][0]["status"] == "available"

@@ -54,13 +54,16 @@ Poniżej pozostaje alternatywna instalacja ręczna:
 
 Nie trzeba zmieniać `configuration.yaml`, definicji obecnych sensorów ani konfiguracji Recorder. Ewentualne wydłużenie retencji jest osobną, świadomą decyzją i nie przywraca już usuniętych danych.
 
-## Osobne moduły dashboardu (0.5)
+## Osobne moduły dashboardu (0.7)
 
-Po aktualizacji **obecna karta `custom:pge-storage-card` staje się responsywnym zestawem oddzielnych kart**. Zachowujesz jej YAML i integrację. Moduły mają osobne obramowania i można używać ich niezależnie: **Edytuj dashboard → Dodaj kartę → wyszukaj PGE**. Kafelki można też dodać jako standardowe karty encji HA.
+Po aktualizacji kliknij **Rozliczenia i ustawienia → Utwórz dashboard z osobnych kart → Otwórz dashboard**. Powstaje natywny dashboard HA z ośmioma niezależnymi kartami: trzy kafelki, przepływy, odbiorcy, projekcja, historia i konfigurator. **Ołówek HA** pozwala przenosić i edytować każdą kartę osobno. Ponowne kliknięcie przycisku otwiera ten sam dashboard i zachowuje Twoje zmiany.
+
+Dotychczasowa `custom:pge-storage-card` pozostaje zgodnym zestawem modułów, dopasowanym do szerokości samej karty. Aby edytować elementy osobno w HA, korzystaj z utworzonego dashboardu lub **Dodaj kartę → wyszukaj PGE**. Kafelki można też dodać jako standardowe karty encji HA.
 
 | Moduł w selektorze | Typ YAML | Przeznaczenie |
 |---|---|---|
-| PGE · Energia w domu | `custom:pge-energy-card` | Schemat PV, domu, sieci, akumulatora i magazynu PGE; Teraz / Dzisiaj; opcjonalni odbiorcy |
+| PGE · Odbiorcy w domu | `custom:pge-consumers-card` | Osobna lista urządzeń, moc teraz i energia dzisiaj |
+| PGE · Energia w domu | `custom:pge-energy-card` | Schemat PV, domu, sieci, akumulatora i magazynu PGE; Teraz / Dzisiaj |
 | PGE · Pojedynczy kafelek | `custom:pge-balance-card` | Jedna wybrana wartość, kliknięcie otwiera encję HA |
 | PGE · Miesiące i dni | `custom:pge-history-card` | Miesięczne podsumowanie i wykres; kliknięcie miesiąca otwiera dni i wykres dzienny |
 | PGE · Projekcja magazynu | `custom:pge-projection-card` | Pobór rok wcześniej, obecnie i projekcja salda do rozliczenia |
@@ -93,6 +96,24 @@ Ten sam bilans liczymy oddzielnie dla mocy W i energii kWh. Ręcznie wybrana enc
 - Źródła fizycznych przepływów z Energii nie zmieniają pary liczników używanej do faktur i magazynu PGE ani opustu 0,8.
 
 Zapis aktualizuje moduły i encje **bez restartu HA**. Nie wybieraj encji obliczonych przez sam Magazyn PGE jako jego źródeł; backend odrzuca takie zapętlenie.
+
+### Sieć i lokalny akumulator — co wybrać
+
+Na screenie z wersji 0.6 moc sieci pochodziła z **630 P**. Liczniki kWh nie służą do obliczania bieżącej mocy.
+
+| Ustawienie | Znaczenie i wybór dla Victrona |
+|---|---|
+| Energia pobrana / oddana z sieci | Narastające kWh: `energymeter_consumption` / `energymeter_feed_in` |
+| Moc sieci +/− | Bieżąca moc w punkcie przyłączenia W/kW, łącznie dla wszystkich faz; wybierz sensor łączny albo poszczególne fazy, nie oba warianty |
+| Osobna moc pobierana / oddawana | Alternatywa dla sensora +/−. Pojawia się po wybraniu „Dwa osobne kierunki”; oba sensory nieujemne |
+| Poziom akumulatora | SOC w % |
+| Energia w akumulatorze | Aktualna zawartość kWh, opcjonalnie; jeśli brak własnego sensora, podaj pojemność i SOC |
+| Moc akumulatora +/− | Chwilowe ładowanie/rozładowanie W/kW. Ustaw znaczenie dodatniej wartości zgodnie z faktycznym ładowaniem; znormalizowana Energia HA ma dodatnie rozładowanie |
+| Liczniki ładowania / rozładowania | Skumulowane kWh wtłoczone do baterii i z niej pobrane, używane do bilansu dnia |
+
+Przy znaku „dodatnia = pobór” karta wylicza z mocy sieci `P`: pobór `max(P, 0)`, oddawanie `max(−P, 0)`. Przy przeciwnym znaku najpierw odwraca P. Nie trzeba podawać oddzielnych mocy kierunkowych.
+
+Import pokazuje wszystkie źródła PV jako jawne wiersze, także brakującą encję z historyczną statystyką. Brak encji w bieżących stanach nie blokuje zapisu importu. Brak historii pozostawia pustą wartość; niepełna moc jednej z kilku instalacji nie udaje całej produkcji. Raport wskazuje, czego nie ma w konfiguracji Energii. Sama konfiguracja kWh nie dostarcza mocy W, SOC ani pojemności akumulatora. Zmienione nazwy pomocniczych sensorów mocy Energii są odczytywane z rejestru HA.
 
 ### Encje do użycia poza kartami
 
@@ -180,7 +201,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.6.0.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.7.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 

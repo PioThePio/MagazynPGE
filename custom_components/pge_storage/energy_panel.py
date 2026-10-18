@@ -15,7 +15,7 @@ from .ledger import WARSAW, LedgerError, energy, energy_text
 
 def panel_config(hass, prefs):
     """Copy all supported sources, including multiple PV arrays and external sums."""
-    from .energy import validate_energy_config
+    from .energy import source_status, validate_energy_config
 
     config = {
         "sources": {},
@@ -26,6 +26,8 @@ def panel_config(hass, prefs):
         "imported_from_energy": True,
     }
     warnings = []
+    report = []
+    current = None
     registry = er.async_get(hass)
 
     def usable(value):
@@ -50,29 +52,44 @@ def panel_config(hass, prefs):
             ids = config["sources"].setdefault(role, [])
             if value not in ids:
                 ids.append(value)
+        if current is not None:
+            key = "soc" if role == "battery_soc" else "energy" if statistic else "power"
+            current[key].append(source_status(hass, value, role, statistic))
 
     def power_source(source, kind):
-        if source.get("stat_rate"):
-            return source["stat_rate"]
         power = source.get("power_config", {})
         if power.get("stat_rate"):
             return power["stat_rate"]
         if power:
             from homeassistant.components.energy.helpers import (
                 generate_power_sensor_entity_id,
+                generate_power_sensor_unique_id,
             )
 
-            return generate_power_sensor_entity_id(kind, power)
-        return None
+            unique_id = generate_power_sensor_unique_id(kind, power)
+            return registry.async_get_entity_id(
+                "sensor", "energy", unique_id
+            ) or generate_power_sensor_entity_id(kind, power)
+        return source.get("stat_rate")
 
     entries = prefs.get("energy_sources", [])
     for kind in ("solar", "battery"):
         config["presence"][kind] = any(source.get("type") == kind for source in entries)
     for source in entries:
         kind = source.get("type")
+        current = {
+            "type": kind,
+            "name": "",
+            "energy": [],
+            "power": [],
+            "soc": [],
+            "missing": [],
+        }
         if kind == "solar":
             add("pv_energy", source.get("stat_energy_from"), True)
             add("pv_power", source.get("stat_rate"))
+            if not current["power"]:
+                current["missing"].append("pv_power")
         elif kind == "battery":
             add("battery_discharge_energy", source.get("stat_energy_from"), True)
             add("battery_charge_energy", source.get("stat_energy_to"), True)
@@ -101,7 +118,19 @@ def panel_config(hass, prefs):
                 power_source(source, "grid"),
             )
             for item in source.get("power", []):
-                add("grid_power", item.get("stat_rate"))
+                add("grid_power", power_source(item, "grid"))
+        else:
+            continue
+        if kind == "battery" and not current["power"]:
+            current["missing"].append("battery_power")
+        if kind == "grid" and not current["power"]:
+            current["missing"].append("grid_power")
+        details = current["energy"] or current["power"] or current["soc"]
+        current["name"] = source.get("name") or (
+            details[0]["name"] if details else kind
+        )
+        report.append(current)
+    current = None
     grid_entries = [source for source in entries if source.get("type") == "grid"]
     if grid_entries:
         config["presence"]["grid_export"] = bool(
@@ -133,9 +162,30 @@ def panel_config(hass, prefs):
     for role, ids in config["sources"].items():
         if len(ids) == 1:
             config["sources"][role] = ids[0]
+    for item in report:
+        for detail in [*item["energy"], *item["power"], *item["soc"]]:
+            if detail["status"] in ("missing", "unknown", "unavailable", "invalid"):
+                warnings.append(
+                    f"{detail['id']}: brak poprawnego odczytu encji. "
+                    + (
+                        "Zachowano identyfikator statystyki z panelu Energia; historia może nadal istnieć."
+                        if detail["statistic"]
+                        else "Odczyt pozostaje niedostępny do czasu poprawienia źródła."
+                    )
+                )
+        if item["missing"]:
+            warnings.append(
+                f"{item['name']}: panel Energia nie ma pomiaru bieżącej mocy. "
+                "Energia kWh nie zastępuje mocy W."
+            )
+    if not config["presence"]["battery"]:
+        warnings.append(
+            "Panel Energia nie ma lokalnego akumulatora. Wybierz jego źródła ręcznie lub dodaj go w panelu Energia i wczytaj ponownie."
+        )
     return {
         "config": validate_energy_config(config),
         "warnings": list(dict.fromkeys(warnings)),
+        "report": report,
     }
 
 

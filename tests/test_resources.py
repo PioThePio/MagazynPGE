@@ -69,6 +69,28 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
     )
     assert result["type"] == "create_entry"
     await hass.async_block_till_done()
+    # Populate independent consumers so the layout regression cannot pass merely
+    # because an empty device list was omitted from the flow card.
+    for entity_id, value in {
+        "sensor.browser_pv_power": "2500",
+        "sensor.browser_grid_power": "900",
+        "sensor.browser_pump_power": "800",
+    }.items():
+        hass.states.async_set(entity_id, value, {"unit_of_measurement": "W"})
+    manager = hass.data[DOMAIN][result["result"].entry_id]
+    await manager.async_put_energy(
+        {
+            "sources": {
+                "pv_power": "sensor.browser_pv_power",
+                "grid_power": "sensor.browser_grid_power",
+            },
+            "presence": {"battery": False},
+            "consumers": [
+                {"name": "Pompa ciepła", "power": "sensor.browser_pump_power"}
+            ],
+        },
+        manager.revision,
+    )
     # Confirm the isolated server's random port so its setup dialog does not
     # cover the dashboard during real mouse and form interactions.
     http_store = await async_get_and_load_store(hass)
@@ -91,7 +113,9 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             executable_path=shutil.which("chromium"), args=["--no-sandbox"]
         )
         try:
-            context = await browser.new_context()
+            context = await browser.new_context(
+                viewport={"width": 1440, "height": 1000}
+            )
             await context.add_init_script(
                 f"localStorage.setItem('hassTokens', {json.dumps(json.dumps(tokens))});"
             )
@@ -144,6 +168,134 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             error = page.locator("pge-admin-panel #message")
             await expect(error).to_contain_text("Brak próbki Recorder")
             assert "Brak próbki Recorder" in await select_text(error)
+            await page.locator("pge-settings-card #close-dialog").click()
+
+            async def check_flow_geometry():
+                flow = page.locator("pge-energy-card .flow")
+                geometry = await flow.evaluate(
+                    """element => ({
+                        bounds: element.getBoundingClientRect().toJSON(),
+                        circles: [...element.querySelectorAll('.orb')].map(
+                            node => node.getBoundingClientRect().toJSON()),
+                        nodes: [...element.querySelectorAll('.node')].map(
+                            node => node.getBoundingClientRect().toJSON()),
+                        captionTop: element.nextElementSibling.getBoundingClientRect().top,
+                        card: {
+                            width: element.closest('ha-card').clientWidth,
+                            scrollWidth: element.closest('ha-card').scrollWidth,
+                        },
+                    })"""
+                )
+                assert len(geometry["circles"]) == 5
+                assert (
+                    geometry["card"]["scrollWidth"] <= geometry["card"]["width"] + 1
+                ), geometry
+                bounds = geometry["bounds"]
+                assert (
+                    max(node["bottom"] for node in geometry["nodes"]) + 4
+                    <= (geometry["captionTop"])
+                ), geometry
+                for index, circle in enumerate(geometry["circles"]):
+                    assert circle["width"] > 0
+                    assert circle["left"] >= bounds["left"] - 1, geometry
+                    assert circle["right"] <= bounds["right"] + 1, geometry
+                    for other in geometry["circles"][index + 1 :]:
+                        dx = (
+                            circle["x"]
+                            + circle["width"] / 2
+                            - (other["x"] + other["width"] / 2)
+                        )
+                        dy = (
+                            circle["y"]
+                            + circle["height"] / 2
+                            - (other["y"] + other["height"] / 2)
+                        )
+                        # Compare circle boundaries, not their rectangular boxes.
+                        assert (dx * dx + dy * dy) ** 0.5 + 1 >= (
+                            circle["width"] + other["width"]
+                        ) / 2, geometry
+
+            async def check_legacy_stack():
+                legacy = page.locator("pge-storage-card")
+                stacks = await legacy.locator(".layout > .stack").evaluate_all(
+                    "elements => elements.map(node => node.getBoundingClientRect().toJSON())"
+                )
+                assert len(stacks) == 2
+                assert stacks[1]["top"] >= stacks[0]["bottom"] - 1, stacks
+                dimensions = await legacy.evaluate(
+                    "node => ({width: node.clientWidth, scrollWidth: node.scrollWidth})"
+                )
+                assert dimensions["scrollWidth"] <= dimensions["width"] + 1
+
+            await expect(page.locator("pge-consumers-card")).to_contain_text(
+                "Pompa ciepła"
+            )
+            await expect(page.locator("pge-energy-card .consumer")).to_have_count(0)
+            await page.locator('pge-energy-card [data-mode="power"]').click()
+            await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
+                "3400 W"
+            )
+            await check_flow_geometry()
+            await page.screenshot(path="/tmp/pge-07-desktop.png", full_page=True)
+
+            # This reproduces the user's desktop screenshot: a narrow HA card
+            # in a wide browser must follow its own width, not the viewport.
+            await page.locator("pge-storage-card").evaluate(
+                """async node => {
+                    node.style.width = '500px';
+                    node.style.maxWidth = '100%';
+                    node.style.margin = '0 auto';
+                    await new Promise(requestAnimationFrame);
+                }"""
+            )
+            await check_legacy_stack()
+            await check_flow_geometry()
+            await page.screenshot(path="/tmp/pge-07-narrow.png", full_page=True)
+            await page.set_viewport_size({"width": 390, "height": 844})
+            await check_legacy_stack()
+            await check_flow_geometry()
+            await page.screenshot(path="/tmp/pge-07-mobile.png", full_page=True)
+
+            await page.set_viewport_size({"width": 1440, "height": 1000})
+            await page.locator("pge-settings-card #create-dashboard").click()
+            link = page.locator("pge-settings-card #open-dashboard")
+            await expect(link).to_be_visible()
+            url = await link.get_attribute("href")
+            assert url.startswith("/pge-energia-") and url.endswith("/magazyn")
+            await link.click()
+            await expect(page).to_have_url(f"{origin}{url}")
+            await expect(page.locator("pge-storage-card")).to_have_count(0)
+            await expect(page.locator("pge-energy-card")).to_have_count(1)
+            await expect(page.locator("pge-consumers-card")).to_have_count(1)
+            await expect(page.locator("pge-balance-card")).to_have_count(3)
+            for tag in (
+                "pge-energy-card",
+                "pge-consumers-card",
+                "pge-projection-card",
+                "pge-history-card",
+                "pge-settings-card",
+            ):
+                card = page.locator(tag)
+                await expect(card).to_be_visible()
+                ancestors = await card.evaluate(
+                    """element => {
+                        const tags = [];
+                        for (let node = element; node; node = node.parentElement || node.getRootNode().host)
+                            tags.push(node.localName);
+                        return tags;
+                    }"""
+                )
+                # Each component is its own HA editing target, with no nested
+                # monolithic compatibility card anywhere in its ancestor chain.
+                assert "hui-card" in ancestors, ancestors
+                assert "pge-storage-card" not in ancestors, ancestors
+            await page.locator('pge-energy-card [data-mode="power"]').click()
+            await page.locator('pge-consumers-card [data-mode="power"]').click()
+            await check_flow_geometry()
+            await page.screenshot(path="/tmp/pge-07-native-desktop.png", full_page=True)
+            await page.set_viewport_size({"width": 390, "height": 844})
+            await check_flow_geometry()
+            await page.screenshot(path="/tmp/pge-07-native-mobile.png", full_page=True)
             assert not errors, errors
         finally:
             await browser.close()

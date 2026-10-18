@@ -83,6 +83,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.energy_cache = {}
         self.energy_statistics = {}
         self.energy_import_warnings = []
+        self.energy_panel_defaults = None
         self.comparison = []
         self._energy_unsub = None
         self.usage_error = None
@@ -144,11 +145,13 @@ class LedgerCoordinator(DataUpdateCoordinator):
         )
 
     async def _auto_energy_defaults(self):
-        if self.energy_config.get("imported_from_energy"):
-            return
         try:
             result = await async_panel_config(self.hass)
         except LedgerError:
+            return
+        self.energy_panel_defaults = result
+        self.energy_import_warnings = result["warnings"]
+        if self.energy_config.get("imported_from_energy"):
             return
         config = validate_energy_config(
             merge_panel_config(self.energy_config, result["config"])
@@ -163,7 +166,6 @@ class LedgerCoordinator(DataUpdateCoordinator):
             )
             self.energy_config = config
             self.revision += 1
-        self.energy_import_warnings = result["warnings"]
 
     def _schedule_midnight(self):
         when = boundary(
@@ -215,6 +217,12 @@ class LedgerCoordinator(DataUpdateCoordinator):
 
     async def async_refresh_energy(self):
         try:
+            try:
+                self.energy_panel_defaults = await async_panel_config(self.hass)
+                self.energy_import_warnings = self.energy_panel_defaults["warnings"]
+            except LedgerError:
+                self.energy_panel_defaults = None
+                self.energy_import_warnings = []
             async with self.lock:
                 updated = await refresh_energy_cache(
                     self.hass,
@@ -293,12 +301,36 @@ class LedgerCoordinator(DataUpdateCoordinator):
         }
 
     async def async_put_energy(self, raw, revision):
+        try:
+            native = await async_panel_config(self.hass)
+        except LedgerError:
+            native = None
         async with self.lock:
             self._check_revision(revision)
             config = validate_energy_config(raw)
             from homeassistant.helpers import entity_registry as er
 
             registry = er.async_get(self.hass)
+
+            def imported_missing(role, entity_id):
+                """Allow a native historical reference, never arbitrary invalid input."""
+                state = self.hass.states.get(entity_id)
+                if state is not None and state.state not in ("unknown", "unavailable"):
+                    return False
+                if not config.get("imported_from_energy"):
+                    return False
+                for accepted in (
+                    native["config"] if native else None,
+                    self.energy_config
+                    if self.energy_config.get("imported_from_energy")
+                    else None,
+                ):
+                    if accepted and entity_id in source_ids(
+                        accepted["sources"].get(role)
+                    ):
+                        return True
+                return False
+
             for entity_id in energy_sources(config):
                 registered = registry.async_get(entity_id)
                 if registered and registered.platform == DOMAIN:
@@ -313,7 +345,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
                         entity_id,
                         ROLES[role][1],
                         role in ("grid_power", "battery_power"),
-                    ):
+                    ) and not imported_missing(role, entity_id):
                         raise LedgerError(
                             "invalid_energy",
                             f"Sprawdź wartość i jednostkę: {ROLES[role][0]} ({entity_id}). Dla mocy ze znakiem wybierz wariant +/−, a dla osobnych kierunków wartości nieujemne.",
@@ -323,6 +355,27 @@ class LedgerCoordinator(DataUpdateCoordinator):
                     if consumer.get(key) and not valid_source(
                         self.hass, consumer[key], unit
                     ):
+                        accepted = [
+                            item
+                            for candidate in (
+                                native["config"] if native else None,
+                                self.energy_config
+                                if self.energy_config.get("imported_from_energy")
+                                else None,
+                            )
+                            if candidate
+                            for item in candidate["consumers"]
+                        ]
+                        state = self.hass.states.get(consumer[key])
+                        if (
+                            config.get("imported_from_energy")
+                            and (
+                                state is None
+                                or state.state in ("unknown", "unavailable")
+                            )
+                            and any(item.get(key) == consumer[key] for item in accepted)
+                        ):
+                            continue
                         raise LedgerError(
                             "invalid_energy",
                             f"Sprawdź źródło odbiorcy: {consumer['name']}.",
@@ -518,6 +571,11 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self.sources,
             self.energy_cache,
             self.energy_statistics,
+            self.energy_panel_defaults,
+        )
+        snapshot["energy"]["import_warnings"] = self.energy_import_warnings
+        snapshot["energy"]["import_report"] = (
+            self.energy_panel_defaults["report"] if self.energy_panel_defaults else []
         )
         from homeassistant.helpers import entity_registry as er
 

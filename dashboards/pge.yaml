@@ -4,24 +4,52 @@ views:
     path: magazyn-pge
     icon: mdi:transmission-tower
     type: sections
-    max_columns: 2
+    max_columns: 3
     sections:
       - type: grid
-        cards:
-          - type: custom:pge-energy-card
-          - type: custom:pge-settings-card
-      - type: grid
+        column_span: 3
         cards:
           - type: custom:pge-balance-card
             metric: available_energy
+            grid_options:
+              columns: 12
+              rows: auto
           - type: custom:pge-balance-card
             metric: deficit
+            grid_options:
+              columns: 12
+              rows: auto
           - type: custom:pge-balance-card
             metric: period_balance
-          - type: custom:pge-projection-card
+            grid_options:
+              columns: 12
+              rows: auto
       - type: grid
         column_span: 2
         cards:
+          - type: custom:pge-energy-card
+            grid_options:
+              columns: 24
+              rows: auto
+      - type: grid
+        cards:
+          - type: custom:pge-consumers-card
+      - type: grid
+        column_span: 2
+        cards:
+          - type: custom:pge-projection-card
+            grid_options:
+              columns: 24
+              rows: auto
+      - type: grid
+        cards:
+          - type: custom:pge-settings-card
+      - type: grid
+        column_span: 3
+        cards:
           - type: custom:pge-history-card
+            grid_options:
+              columns: 36
+              rows: auto
     # Przy wielu integracjach dopisz entry_id do każdego modułu.
     # Moduły są również dostępne w GUI: Edytuj dashboard → Dodaj kartę → PGE.

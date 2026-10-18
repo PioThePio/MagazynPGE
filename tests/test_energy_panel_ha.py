@@ -16,7 +16,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
-from custom_components.pge_storage.ledger import WARSAW
+from custom_components.pge_storage.ledger import WARSAW, LedgerError
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
@@ -160,3 +160,107 @@ async def test_native_energy_autofill_statistics_resets_home_and_manual_override
     assert entry.runtime_data.data["energy"]["values"]["home_power"] == "4000"
     assert entry.runtime_data.sources == core
     assert manager.data == original
+
+
+async def test_missing_imported_pv_keeps_statistics_and_can_be_saved(ha):
+    hass, _port = ha
+    now = dt_util.utcnow()
+    midnight = datetime.combine(
+        now.astimezone(WARSAW).date(), time(), WARSAW
+    ).astimezone(UTC)
+    count = int(
+        (now.replace(minute=0, second=0, microsecond=0) - midnight).total_seconds()
+        / 3600
+    )
+    for entity_id in ("sensor.second_core_import", "sensor.second_core_export"):
+        hass.states.async_set(entity_id, "1000", {"unit_of_measurement": "kWh"})
+    hass.states.async_set("sensor.mppt_energy", "50", {"unit_of_measurement": "kWh"})
+    hass.states.async_set("sensor.mppt_power", "1000", {"unit_of_measurement": "W"})
+    for entity_id, rate in (
+        ("sensor.solar_total_kwh", 1),
+        ("sensor.mppt_energy", 2),
+        ("sensor.second_core_import", 4),
+        ("sensor.second_core_export", 1),
+    ):
+        async_import_statistics(
+            hass,
+            {
+                "statistic_id": entity_id,
+                "source": "recorder",
+                "name": None,
+                "unit_class": "energy",
+                "unit_of_measurement": "kWh",
+                "mean_type": StatisticMeanType.NONE,
+                "has_sum": True,
+            },
+            [
+                {
+                    "start": midnight - timedelta(hours=1) + timedelta(hours=index),
+                    "sum": 100 + index * rate,
+                    "state": 100 + index * rate,
+                }
+                for index in range(count + 1)
+            ],
+        )
+    native = await async_get_manager(hass)
+    await native.async_update(
+        {
+            "energy_sources": [
+                {
+                    "type": "grid",
+                    "stat_energy_from": "sensor.second_core_import",
+                    "stat_energy_to": "sensor.second_core_export",
+                },
+                {"type": "solar", "stat_energy_from": "sensor.solar_total_kwh"},
+                {
+                    "type": "solar",
+                    "stat_energy_from": "sensor.mppt_energy",
+                    "stat_rate": "sensor.mppt_power",
+                },
+            ],
+            "device_consumption": [],
+        }
+    )
+    original = deepcopy(native.data)
+    await hass.async_block_till_done()
+    future = hass.loop.create_future()
+    get_instance(hass).queue_task(SynchronizeTask(future))
+    await asyncio.wait_for(future, 10)
+    flow = await hass.config_entries.flow.async_init(
+        "pge_storage", context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {
+            "import_entity_id": "sensor.second_core_import",
+            "export_entity_id": "sensor.second_core_export",
+            "max_age_hours": 24,
+        },
+    )
+    await hass.async_block_till_done()
+    ledger = result["result"].runtime_data
+    config = deepcopy(ledger.energy_config)
+    assert config["statistics"]["pv_energy"] == [
+        "sensor.solar_total_kwh",
+        "sensor.mppt_energy",
+    ]
+    await ledger.async_put_energy(config, ledger.revision)
+    assert ledger.data["energy"]["today"]["pv_energy"] == str(count * 3)
+    assert ledger.data["energy"]["values"]["pv_power"] is None
+    assert ledger.data["energy"]["values"]["home_power"] is None
+    assert ledger.data["energy"]["source_status"]["pv_energy"][0]["status"] == "missing"
+    assert (
+        len(
+            [
+                item
+                for item in ledger.data["energy"]["import_report"]
+                if item["type"] == "solar"
+            ]
+        )
+        == 2
+    )
+    manual = deepcopy(config)
+    manual["sources"]["pv_power"] = "sensor.does_not_exist"
+    with pytest.raises(LedgerError, match="Sprawdź wartość"):
+        await ledger.async_put_energy(manual, ledger.revision)
+    assert native.data == original

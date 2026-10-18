@@ -268,6 +268,33 @@ def valid_source(hass, entity_id, unit, signed=False):
     return reading(hass, entity_id, unit, signed) is not None
 
 
+def source_status(hass, entity_id, role, statistic=False):
+    """Keep missing imported identifiers visible, including historical statistics."""
+    state = hass.states.get(entity_id)
+    unit = ROLES[role][1]
+    status = (
+        "external"
+        if not entity_id.startswith("sensor.")
+        else "missing"
+        if state is None
+        else state.state
+        if state.state in ("unknown", "unavailable")
+        else "available"
+        if valid_source(hass, entity_id, unit, role in ("grid_power", "battery_power"))
+        else "invalid"
+    )
+    return {
+        "id": entity_id,
+        "role": role,
+        "name": state.attributes.get("friendly_name", entity_id)
+        if state
+        else entity_id,
+        "status": status,
+        "unit": state.attributes.get("unit_of_measurement") if state else None,
+        "statistic": statistic,
+    }
+
+
 def validate_energy_cache(raw):
     try:
         if not isinstance(raw, dict) or len(raw) > 128:
@@ -324,7 +351,7 @@ async def refresh_energy_cache(hass, config, core, cache, max_age):
     return result
 
 
-def energy_snapshot(hass, config, core, cache, stats=None):
+def energy_snapshot(hass, config, core, cache, stats=None, native=None):
     day = (dt_util.utcnow().astimezone(WARSAW).date() - timedelta(days=1)).isoformat()
     values, today = {}, {}
     stats = stats or {}
@@ -352,6 +379,24 @@ def energy_snapshot(hass, config, core, cache, stats=None):
                 if key in config.get("statistics", {})
                 else aggregate([delta(value) for value in source_ids(entity_id)])
             )
+    if native:
+        # A partial PV power reading is not the whole installation. An explicit
+        # manual aggregate power selection may replace the native per-array map.
+        native_config = native["config"]
+        native_pv = set(source_ids(native_config["sources"].get("pv_power")))
+        selected_pv = set(source_ids(config["sources"].get("pv_power")))
+        same_energy = set(config.get("statistics", {}).get("pv_energy", [])) == set(
+            native_config["statistics"].get("pv_energy", [])
+        )
+        if (
+            same_energy
+            and selected_pv == native_pv
+            and any(
+                item["type"] == "solar" and "pv_power" in item["missing"]
+                for item in native.get("report", [])
+            )
+        ):
+            values["pv_power"] = None
     for kind, positive, negative in (
         ("grid", "import", "export"),
         ("battery", "charge", "discharge"),
@@ -481,4 +526,15 @@ def energy_snapshot(hass, config, core, cache, stats=None):
         "consumers": consumers,
         "calculation": calculation,
         "as_of": stats.get("as_of") if stat_values else None,
+        "source_status": {
+            role: [
+                source_status(hass, entity_id, role, entity_id in statistics)
+                for entity_id in dict.fromkeys(
+                    [*source_ids(config["sources"].get(role)), *statistics]
+                )
+            ]
+            for role in ROLES
+            if (statistics := config.get("statistics", {}).get(role, []))
+            or config["sources"].get(role)
+        },
     }

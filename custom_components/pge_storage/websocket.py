@@ -10,6 +10,7 @@ from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN, SIGNAL_LEDGER_UPDATED
+from .dashboard import async_create_dashboard
 from .energy import energy_sources, validate_energy_config
 from .energy_panel import async_panel_config
 from .history import async_read_counters, async_statistics_metadata
@@ -61,6 +62,7 @@ def async_register(hass):
         months,
         put_energy,
         energy_defaults,
+        create_dashboard,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -334,3 +336,25 @@ async def energy_defaults(hass, connection, msg):
         connection.send_result(msg["id"], result)
     except LedgerError as err:
         connection.send_error(msg["id"], err.code, str(err))
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): "pge_storage/create_dashboard", **ENTRY}
+)
+@websocket_api.async_response
+async def create_dashboard(hass, connection, msg):
+    coordinator = _get(hass, connection, msg)
+    try:
+        result = await async_create_dashboard(hass, coordinator.entry.entry_id)
+    except LedgerError as err:
+        connection.send_error(msg["id"], err.code, str(err))
+    except Exception:
+        _LOGGER.exception("PGE dashboard creation failed")
+        connection.send_error(
+            msg["id"],
+            "dashboard_failed",
+            "Nie udało się utworzyć dashboardu. Sprawdź log Home Assistant.",
+        )
+    else:
+        connection.send_result(msg["id"], result)
