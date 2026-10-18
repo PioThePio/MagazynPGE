@@ -330,3 +330,44 @@ test("invoice history still paginates every record in the management dialog", as
   assert.equal(root.getElementById("next").disabled, true);
   await window.happyDOM.close();
 });
+
+test("Energy defaults fill sources, preserve aggregate statistics and leave home automatic", async () => {
+  const { window, card, root, hass } = await setup("pge-settings-card");
+  hass.states["sensor.pv_second"] = {
+    state: "100",
+    attributes: { unit_of_measurement: "W" },
+  };
+  hass.callWS = async (command) =>
+    command.type === "pge_storage/energy_defaults"
+      ? {
+          config: {
+            sources: {
+              pv_power: ["sensor.pv", "sensor.pv_second"],
+              pv_energy: "sensor.pv_energy",
+            },
+            statistics: { pv_energy: ["sensor.pv_energy", "supplier:pv"] },
+            directions: { grid: "import", battery: "discharge" },
+            presence: { solar: true, battery: true },
+            imported_from_energy: true,
+            consumers: [{ name: "Pompa", statistic: "supplier:pump" }],
+          },
+          warnings: [],
+        }
+      : null;
+  card.open("sources");
+  await card.importPanel();
+  assert.equal(
+    root.querySelector('[data-source="pv_power"]').selectedOptions.length,
+    2,
+  );
+  assert.match(
+    root.querySelector('[data-source="home_power"]').textContent,
+    /Oblicz z bilansu/,
+  );
+  const config = card.readSources();
+  assert.equal(config.sources.home_power, undefined);
+  assert.equal(config.statistics.pv_energy.length, 2);
+  assert.equal(config.consumers[0].statistic, "supplier:pump");
+  assert.equal(config.imported_from_energy, true);
+  await window.happyDOM.close();
+});

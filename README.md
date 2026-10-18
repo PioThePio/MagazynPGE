@@ -78,12 +78,19 @@ Wartości `metric`: `available_energy`, `deficit`, `period_balance`, `carried_ba
 
 ### Konfigurator źródeł
 
-Kliknij **Źródła energii**. W oknie wybierz z listy istniejących encji: produkcję PV, zużycie domu, lokalny akumulator i opcjonalne moce sieci. Import i eksport energii pozostają wybraną wcześniej parą liczników. Nie prosimy o przepisywanie entity_id ani zmianę źródłowych sensorów.
+Przy pierwszym uruchomieniu integracja pobiera źródła z konfiguracji natywnego **panelu Energia HA**: sieć, PV, akumulator i odbiorców. Zachowuje dotychczasowe ręczne wybory. Aby ponownie pobrać ustawienia, otwórz **Źródła energii → Wczytaj z panelu Energia → Zapisz źródła**. Każde źródło można zmienić ręcznie z listy encji. Konfiguracja natywnego panelu pozostaje bez zmian.
 
-- Moce W/kW: PV, dom, sieć, ładowanie i rozładowanie. Sieć i akumulator obsługują jeden sensor ze znakiem +/− albo dwa osobne kierunki. Dla źródła ze znakiem wybierasz znaczenie wartości dodatniej.
-- Liczniki produkcji, zużycia i ładowania: narastające Wh/kWh/MWh **bez resetów**. Dzisiaj = aktualny odczyt minus ostatni rzeczywisty odczyt przed północą. Brak odczytu granicznego oznacza brak wartości, nie zero. Dziennych liczników resetujących się nie traktujemy jako narastających.
-- Lokalny akumulator: poziom %, opcjonalnie bieżąca energia zgromadzona w kWh. Energia zgromadzona jest stanem, nie licznikiem ładowania.
-- **Odbiorcy w domu**: do 16 nazwanych urządzeń lub obwodów z mocą i/lub licznikiem energii. Widać ich bieżące wartości i dzisiejszą energię; nie dodajemy ich automatycznie do zużycia domu, aby nie liczyć tej samej energii dwa razy.
+**Osobny sensor zużycia domu nie jest potrzebny.** Pozostaw pola domu jako **Oblicz z bilansu**:
+
+`dom = PV + pobór z sieci + rozładowanie akumulatora − oddanie do sieci − ładowanie akumulatora`
+
+Ten sam bilans liczymy oddzielnie dla mocy W i energii kWh. Ręcznie wybrana encja domu zastępuje obliczenie. Brak potrzebnego pomiaru pozostawia wynik pusty. Źródło nieobecne w konfiguracji Energii (np. brak akumulatora) nie wymaga dodatkowego sensora zerowego.
+
+- Z panelu Energia pobieramy również wiele źródeł PV, statystyki zewnętrzne i kierunki mocy. Moc W/kW jest bieżąca; dzisiejsze kWh pochodzą z godzinowych sum Recorder, z obsługą resetów liczników. Widoczny czas **do HH:mm** określa ostatnią pełną godzinę. Odświeżamy odczyt co pięć minut, gdy HA udostępni statystyki.
+- Ręcznie wybrany licznik bez powiązania ze statystykami musi być narastający Wh/kWh/MWh bez resetów. Wtedy Dzisiaj = aktualny stan minus odczyt przed północą. Brak historii nie oznacza zera.
+- Lokalny akumulator: poziom %, opcjonalnie bieżąca energia zgromadzona w kWh. Jeśli Energia zawiera pojemność i poziom, obliczamy stan jako pojemność × poziom / 100.
+- Do 16 odbiorców: moc i/lub energia. Nie sumujemy ich do zużycia domu, aby nie liczyć tej samej energii dwa razy.
+- Źródła fizycznych przepływów z Energii nie zmieniają pary liczników używanej do faktur i magazynu PGE ani opustu 0,8.
 
 Zapis aktualizuje moduły i encje **bez restartu HA**. Nie wybieraj encji obliczonych przez sam Magazyn PGE jako jego źródeł; backend odrzuca takie zapętlenie.
 
@@ -173,7 +180,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.5.0.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.6.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 

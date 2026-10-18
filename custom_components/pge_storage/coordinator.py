@@ -31,10 +31,12 @@ from .energy import (
     energy_snapshot,
     energy_sources,
     refresh_energy_cache,
+    source_ids,
     valid_source,
     validate_energy_cache,
     validate_energy_config,
 )
+from .energy_panel import async_panel_config, async_statistics_today, merge_panel_config
 from .history import async_read_counters, async_read_samples, sample_from_state
 from .ledger import (
     WARSAW,
@@ -79,6 +81,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.daily_cache = {}
         self.energy_config = validate_energy_config({})
         self.energy_cache = {}
+        self.energy_statistics = {}
+        self.energy_import_warnings = []
         self.comparison = []
         self._energy_unsub = None
         self.usage_error = None
@@ -110,6 +114,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         if data is not None:
             self.energy_config = validate_energy_config(data.get("energy_config", {}))
             self.energy_cache = validate_energy_cache(data.get("energy_cache", {}))
+        await self._auto_energy_defaults()
         await self.async_refresh_planning_history()
         await self.async_refresh_energy()
         await self.async_refresh_usage()
@@ -132,6 +137,33 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 self.hass, self._planning_tick, timedelta(hours=1)
             )
         )
+        self.entry.async_on_unload(
+            async_track_time_interval(
+                self.hass, self._energy_statistics_tick, timedelta(minutes=5)
+            )
+        )
+
+    async def _auto_energy_defaults(self):
+        if self.energy_config.get("imported_from_energy"):
+            return
+        try:
+            result = await async_panel_config(self.hass)
+        except LedgerError:
+            return
+        config = validate_energy_config(
+            merge_panel_config(self.energy_config, result["config"])
+        )
+        async with self.lock:
+            await self.store.async_save(
+                {
+                    **self._payload(),
+                    "energy_config": config,
+                    "revision": self.revision + 1,
+                }
+            )
+            self.energy_config = config
+            self.revision += 1
+        self.energy_import_warnings = result["warnings"]
 
     def _schedule_midnight(self):
         when = boundary(
@@ -144,6 +176,13 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self._schedule_midnight()
 
         self._midnight_cancel = async_track_point_in_utc_time(self.hass, refresh, when)
+
+    async def _energy_statistics_tick(self, _now):
+        if self.energy_config.get("statistics") or any(
+            item.get("statistic") for item in self.energy_config["consumers"]
+        ):
+            await self.async_refresh_energy()
+            self.publish()
 
     async def _planning_tick(self, _now):
         day = (
@@ -189,7 +228,11 @@ class LedgerCoordinator(DataUpdateCoordinator):
                         {**self._payload(), "energy_cache": updated}
                     )
                     self.energy_cache = updated
+            self.energy_statistics = await async_statistics_today(
+                self.hass, self.energy_config
+            )
         except Exception:
+            self.energy_statistics = {}
             _LOGGER.exception("Cannot refresh optional PGE energy boundaries")
 
     async def async_refresh_usage(self):
@@ -263,17 +306,18 @@ class LedgerCoordinator(DataUpdateCoordinator):
                         "invalid_energy",
                         "Wybierz źródłowy sensor, nie encję obliczoną przez Magazyn PGE.",
                     )
-            for role, entity_id in config["sources"].items():
-                if not valid_source(
-                    self.hass,
-                    entity_id,
-                    ROLES[role][1],
-                    role in ("grid_power", "battery_power"),
-                ):
-                    raise LedgerError(
-                        "invalid_energy",
-                        f"Sprawdź wartość i jednostkę: {ROLES[role][0]} ({entity_id}). Dla mocy ze znakiem wybierz wariant +/−, a dla osobnych kierunków wartości nieujemne.",
-                    )
+            for role, selected in config["sources"].items():
+                for entity_id in source_ids(selected):
+                    if not valid_source(
+                        self.hass,
+                        entity_id,
+                        ROLES[role][1],
+                        role in ("grid_power", "battery_power"),
+                    ):
+                        raise LedgerError(
+                            "invalid_energy",
+                            f"Sprawdź wartość i jednostkę: {ROLES[role][0]} ({entity_id}). Dla mocy ze znakiem wybierz wariant +/−, a dla osobnych kierunków wartości nieujemne.",
+                        )
             for consumer in config["consumers"]:
                 for key, unit in (("power", "W"), ("energy", "kWh")):
                     if consumer.get(key) and not valid_source(
@@ -469,7 +513,11 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 if row["month"] == key:
                     row["current_kwh"] = energy_text(delta) if delta >= 0 else None
         snapshot["energy"] = energy_snapshot(
-            self.hass, self.energy_config, self.sources, self.energy_cache
+            self.hass,
+            self.energy_config,
+            self.sources,
+            self.energy_cache,
+            self.energy_statistics,
         )
         from homeassistant.helpers import entity_registry as er
 

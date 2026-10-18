@@ -1,6 +1,6 @@
-/* PGE 0.5.0: independent Lovelace modules, no external libraries. */
-import "./pge-settings.js?v=0.5.0";
-const VERSION = "0.5.0";
+/* PGE 0.6.0: independent Lovelace modules, no external libraries. */
+import "./pge-settings.js?v=0.6.0";
+const VERSION = "0.6.0";
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -314,7 +314,7 @@ class EnergyCard extends PGEBase {
       },
     ];
     this.frame(
-      `<style>.flow{position:relative;aspect-ratio:400/360;max-width:500px;margin:0 auto 12px}.flow svg{position:absolute;width:100%;height:100%;overflow:visible}.node{position:absolute;transform:translate(-50%,-50%);width:98px;text-align:center;padding:0;background:none!important}.orb{width:82px;height:82px;margin:0 auto;border:2px solid var(--c);border-radius:50%;background:var(--card-background-color,#fff);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}.orb ha-icon{--mdc-icon-size:23px}.orb strong{font-size:14px;font-weight:550}.node small{display:block;font-size:10px;margin-top:5px;color:var(--secondary-text-color)}.node .secondary{font-size:10px;color:var(--c)}.node-home .orb{border-width:3px}.consumers{display:grid;gap:11px;margin-top:12px}.consumer .bar{height:4px;background:var(--secondary-background-color,#edf2f3);border-radius:5px;margin-top:5px}.consumer .bar i{height:100%;display:block;background:var(--pge-teal);border-radius:5px}@media(max-width:380px){.orb{width:72px;height:72px}.orb strong{font-size:12px}.node{width:85px}}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Energia w domu")}</h2><div class="seg"><button data-mode="power" class="${power ? "active" : ""}">Teraz</button><button data-mode="today" class="${!power ? "active" : ""}">Dzisiaj</button></div></div><div class="flow"><svg viewBox="0 0 400 360" aria-hidden="true"><path d="M200 95V143" stroke="#e6a020" stroke-width="2" fill="none"/><path d="M105 187H158" stroke="#3287bd" stroke-width="2" fill="none"/><path d="M242 187H295" stroke="#7b61c4" stroke-width="2" stroke-dasharray="4 5" fill="none"/><path d="M200 230V278" stroke="#32aaa4" stroke-width="2" fill="none"/></svg>${nodes.map((n) => `<button class="node node-${n.key}" data-entity="${n.entity}" style="left:${n.x}%;top:${n.y}%;--c:${n.color}" title="${esc(n.name)}"><div class="orb"><ha-icon icon="${n.icon}"></ha-icon><strong>${n.key === "grid" ? "↓ " : ""}${fmt(n.value)} ${n.unit || unit}</strong>${n.key === "grid" ? `<span class="secondary">↑ ${fmt(n.other)} ${unit}</span>` : ""}</div><small>${n.name}</small>${n.key === "battery" ? `<span class="secondary">↓ ${fmt(n.charge)} · ↑ ${fmt(n.other)} ${unit}</span>` : ""}</button>`).join("")}</div><div class="sub" style="text-align:center">${power ? "Bieżąca moc" : "Przepływy dzisiaj"} · PGE: energia do odbioru po opuście</div>${
+      `<style>.flow{position:relative;aspect-ratio:400/360;max-width:500px;margin:0 auto 12px}.flow svg{position:absolute;width:100%;height:100%;overflow:visible}.node{position:absolute;transform:translate(-50%,-50%);width:98px;text-align:center;padding:0;background:none!important}.orb{width:82px;height:82px;margin:0 auto;border:2px solid var(--c);border-radius:50%;background:var(--card-background-color,#fff);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}.orb ha-icon{--mdc-icon-size:23px}.orb strong{font-size:14px;font-weight:550}.node small{display:block;font-size:10px;margin-top:5px;color:var(--secondary-text-color)}.node .secondary{font-size:10px;color:var(--c)}.node-home .orb{border-width:3px}.consumers{display:grid;gap:11px;margin-top:12px}.consumer .bar{height:4px;background:var(--secondary-background-color,#edf2f3);border-radius:5px;margin-top:5px}.consumer .bar i{height:100%;display:block;background:var(--pge-teal);border-radius:5px}@media(max-width:380px){.orb{width:72px;height:72px}.orb strong{font-size:12px}.node{width:85px}}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Energia w domu")}</h2><div class="seg"><button data-mode="power" class="${power ? "active" : ""}">Teraz</button><button data-mode="today" class="${!power ? "active" : ""}">Dzisiaj</button></div></div><div class="flow"><svg viewBox="0 0 400 360" aria-hidden="true"><path d="M200 95V143" stroke="#e6a020" stroke-width="2" fill="none"/><path d="M105 187H158" stroke="#3287bd" stroke-width="2" fill="none"/><path d="M242 187H295" stroke="#7b61c4" stroke-width="2" stroke-dasharray="4 5" fill="none"/><path d="M200 230V278" stroke="#32aaa4" stroke-width="2" fill="none"/></svg>${nodes.map((n) => `<button class="node node-${n.key}" data-entity="${n.entity}" style="left:${n.x}%;top:${n.y}%;--c:${n.color}" title="${esc(n.name)}"><div class="orb"><ha-icon icon="${n.icon}"></ha-icon><strong>${n.key === "grid" ? "↓ " : ""}${fmt(n.value)} ${n.unit || unit}</strong>${n.key === "grid" ? `<span class="secondary">↑ ${fmt(n.other)} ${unit}</span>` : ""}</div><small>${n.name}</small>${n.key === "battery" ? `<span class="secondary">↓ ${fmt(n.charge)} · ↑ ${fmt(n.other)} ${unit}</span>` : ""}</button>`).join("")}</div><div class="sub" style="text-align:center">${power ? "Bieżąca moc" : `Przepływy dzisiaj${data.as_of ? ` · statystyki do ${new Date(data.as_of).toLocaleTimeString("pl-PL", { timeZone: "Europe/Warsaw", hour: "2-digit", minute: "2-digit" })}` : ""}`} · PGE: energia do odbioru po opuście</div><div class="sub" style="text-align:center">Dom: ${data.calculation?.[power ? "home_power" : "home_energy"]?.basis === "sensor" ? "własna encja" : "bilans PV + sieć + akumulator"}</div>${
         data.consumers.length
           ? `<div class="consumers">${data.consumers
               .map((c, i) => {
@@ -324,7 +324,7 @@ class EnergyCard extends PGEBase {
               })
               .join("")}</div>`
           : ""
-      }${!Object.keys(data.config?.sources || {}).length ? '<div class="sub" style="text-align:center;margin-top:12px">Wybierz PV, dom i akumulator w konfiguratorze źródeł.</div>' : ""}</ha-card>`,
+      }${!Object.keys(data.config?.sources || {}).length ? '<div class="sub" style="text-align:center;margin-top:12px">Źródła z panelu Energia lub konfiguratora · dom obliczamy z bilansu.</div>' : ""}</ha-card>`,
     );
     for (const b of this.shadowRoot.querySelectorAll("[data-mode]"))
       b.onclick = () => {
@@ -526,10 +526,12 @@ class ProjectionCard extends PGEBase {
   }
 }
 const sourceRoles = {
+  grid_import_energy: ["Energia pobrana z sieci", "kWh"],
+  grid_export_energy: ["Energia oddana do sieci", "kWh"],
   grid_power: ["Moc sieci +/−", "W"],
   battery_power: ["Moc akumulatora +/−", "W"],
   pv_power: ["Moc PV", "W"],
-  home_power: ["Moc domu", "W"],
+  home_power: ["Własna encja mocy domu (opcjonalnie)", "W"],
   grid_import_power: ["Moc pobierana z sieci", "W"],
   grid_export_power: ["Moc oddawana do sieci", "W"],
   battery_charge_power: ["Moc ładowania", "W"],
@@ -537,7 +539,7 @@ const sourceRoles = {
   battery_soc: ["Poziom naładowania", "%"],
   battery_stored: ["Energia w akumulatorze", "kWh"],
   pv_energy: ["Produkcja PV — licznik", "kWh"],
-  home_energy: ["Zużycie domu — licznik", "kWh"],
+  home_energy: ["Własny licznik domu (opcjonalnie)", "kWh"],
   battery_charge_energy: ["Ładowanie — licznik", "kWh"],
   battery_discharge_energy: ["Rozładowanie — licznik", "kWh"],
 };
@@ -597,46 +599,102 @@ class SettingsCard extends PGEBase {
         !own.has(id) &&
         valid.includes(this._hass.states[id].attributes?.unit_of_measurement),
     );
-    if (selected && !ids.includes(selected)) ids.push(selected);
+    const selectedIds = Array.isArray(selected)
+      ? selected
+      : selected
+        ? [selected]
+        : [];
+    for (const id of selectedIds) if (!ids.includes(id)) ids.push(id);
     ids.sort((a, b) =>
       (this._hass.states[a]?.attributes?.friendly_name || a).localeCompare(
         this._hass.states[b]?.attributes?.friendly_name || b,
         "pl",
       ),
     );
-    return `<option value="">Nie podłączono</option>${ids.map((id) => `<option value="${esc(id)}" ${id === selected ? "selected" : ""}>${esc(this._hass.states[id]?.attributes?.friendly_name || id)} (${esc(id)})</option>`).join("")}`;
+    return `<option value="">Nie podłączono</option>${ids.map((id) => `<option value="${esc(id)}" ${selectedIds.includes(id) ? "selected" : ""}>${esc(this._hass.states[id]?.attributes?.friendly_name || id)} (${esc(id)})</option>`).join("")}`;
   }
   readSources() {
-    const root = this.shadowRoot;
+    const root = this.shadowRoot,
+      draft = this._sourceDraft || {};
+    const sources = Object.fromEntries(
+      [...root.querySelectorAll("[data-source]")]
+        .map((input) => {
+          const ids = [...input.selectedOptions]
+            .map((option) => option.value)
+            .filter(Boolean);
+          return [input.dataset.source, ids.length > 1 ? ids : ids[0] || null];
+        })
+        .filter(([, value]) => value),
+    );
+    const statistics = { ...(draft.statistics || {}) };
+    const list = (value) =>
+      Array.isArray(value) ? value : value ? [value] : [];
+    for (const key of Object.keys(statistics))
+      if (
+        JSON.stringify(list(sources[key]).sort()) !==
+        JSON.stringify(list(draft.sources?.[key]).sort())
+      )
+        delete statistics[key];
     return {
+      ...draft,
+      sources,
+      statistics,
       directions: Object.fromEntries(
         [...root.querySelectorAll("[data-direction]")].map((input) => [
           input.dataset.direction,
           input.value,
         ]),
       ),
-      sources: Object.fromEntries(
-        [...root.querySelectorAll("[data-source]")]
-          .filter((s) => s.value)
-          .map((s) => [s.dataset.source, s.value]),
-      ),
       consumers: [...root.querySelectorAll(".consumer-config")]
-        .map((row) => ({
-          name: row.querySelector("input").value,
-          power: row.querySelector("[data-power]").value,
-          energy: row.querySelector("[data-energy]").value,
-        }))
-        .filter((c) => c.name || c.power || c.energy),
+        .map((row, index) => {
+          const old = draft.consumers?.[index] || {},
+            energy = row.querySelector("[data-energy]").value;
+          const item = {
+            name: row.querySelector("input").value,
+            power: row.querySelector("[data-power]").value,
+            energy,
+          };
+          if (old.statistic && energy === (old.energy || ""))
+            item.statistic = old.statistic;
+          return item;
+        })
+        .filter((c) => c.name || c.power || c.energy || c.statistic),
     };
+  }
+  async importPanel() {
+    const status = this.shadowRoot.getElementById("source-status");
+    try {
+      const result = await this.call("energy_defaults");
+      this._sourceDraft = result.config;
+      this._energyRevision = this.data.revision;
+      this.sourcesHTML();
+      this.shadowRoot.getElementById("source-status").textContent =
+        `Wczytano źródła z panelu Energia. Dom oblicza się z bilansu. ${result.warnings.join(" ")} Zapisz źródła, aby zastosować.`;
+    } catch (error) {
+      status.textContent = error.message || String(error);
+      status.className = "error";
+    }
   }
   sourcesHTML() {
     const config = this._sourceDraft;
     const field = (key) => {
       const [title, unit] = sourceRoles[key];
-      return `<label>${title}<select data-source="${key}">${this.options(unit, config.sources[key])}</select></label>`;
+      const value = config.sources[key],
+        multiple = Array.isArray(value);
+      const options = this.options(unit, value).replace(
+        "Nie podłączono",
+        key.startsWith("home_")
+          ? "Oblicz z bilansu"
+          : config.statistics?.[key]
+            ? "Statystyki panelu Energia"
+            : "Nie podłączono",
+      );
+      return `<label>${title}<select data-source="${key}" ${multiple ? 'multiple size="3"' : ""}>${options}</select>${config.statistics?.[key] ? '<small class="sub">Z panelu Energia · statystyki kWh</small>' : ""}</label>`;
     };
     this.shadowRoot.getElementById("settings-panel").innerHTML =
-      `<div style="padding:8px 20px 24px"><div class="source-section"><h3>Panele słoneczne i dom</h3><div class="source-grid">${["pv_power", "pv_energy", "home_power", "home_energy"].map(field).join("")}</div></div><div class="source-section"><h3>Sieć</h3><div class="sub" style="margin-bottom:10px">Liczniki importu i eksportu są już wybrane w integracji. Tu podłączasz opcjonalną moc chwilową.</div><div class="source-grid">${["grid_power", "grid_import_power", "grid_export_power"].map(field).join("")}</div></div><div class="source-section"><h3>Lokalny akumulator</h3><div class="source-grid">${["battery_soc", "battery_stored", "battery_power", "battery_charge_power", "battery_discharge_power", "battery_charge_energy", "battery_discharge_energy"].map(field).join("")}</div></div><div class="source-grid" style="margin-bottom:16px"><label>Dodatnia moc sieci oznacza<select data-direction="grid"><option value="import" ${config.directions?.grid !== "export" ? "selected" : ""}>Pobór z sieci</option><option value="export" ${config.directions?.grid === "export" ? "selected" : ""}>Oddawanie do sieci</option></select></label><label>Dodatnia moc akumulatora oznacza<select data-direction="battery"><option value="charge" ${config.directions?.battery !== "discharge" ? "selected" : ""}>Ładowanie</option><option value="discharge" ${config.directions?.battery === "discharge" ? "selected" : ""}>Rozładowanie</option></select></label></div><div class="sub">Moc: W / kW. Dla sieci i akumulatora wybierz jeden sensor +/− albo dwa oddzielne kierunki. Liczniki: narastająca energia Wh / kWh / MWh bez resetów. Brak odczytu pozostanie pusty.</div><div class="source-section" style="margin-top:24px"><h3>Odbiorcy w domu</h3><div class="sub">Nazwa · moc teraz · narastający licznik energii. Nie sumujemy odbiorców do zużycia domu.</div>${config.consumers.map((c, i) => `<div class="consumer-config"><input aria-label="Nazwa odbiorcy" placeholder="np. Pompa ciepła" value="${esc(c.name)}"><select data-power aria-label="Moc odbiorcy">${this.options("W", c.power)}</select><select data-energy aria-label="Licznik odbiorcy">${this.options("kWh", c.energy)}</select><button data-remove="${i}" aria-label="Usuń odbiorcę">✕</button></div>`).join("")}<button id="add-consumer">＋ Dodaj odbiorcę</button></div><div class="footer"><button id="save-sources" class="primary">Zapisz źródła</button><span class="sub">Działa bez restartu HA</span></div><div id="source-status" role="status"></div></div>`;
+      `<div style="padding:8px 20px 24px"><div class="source-section"><button id="import-energy-panel" class="primary">Wczytaj z panelu Energia</button><p class="sub">Źródła są pobierane automatycznie przy pierwszym uruchomieniu. Możesz je zmienić ręcznie. Dom liczymy z bilansu PV, sieci i akumulatora — osobny sensor domu nie jest potrzebny.</p></div><div class="source-section"><h3>Panele słoneczne i dom</h3><div class="source-grid">${["pv_power", "pv_energy", "home_power", "home_energy"].map(field).join("")}</div></div><div class="source-section"><h3>Sieć</h3><div class="sub" style="margin-bottom:10px">Źródła przepływów z panelu Energia. Liczniki rozliczenia PGE pozostają niezależne.</div><div class="source-grid">${["grid_import_energy", "grid_export_energy", "grid_power", "grid_import_power", "grid_export_power"].map(field).join("")}</div></div><div class="source-section"><h3>Lokalny akumulator</h3><div class="source-grid">${["battery_soc", "battery_stored", "battery_power", "battery_charge_power", "battery_discharge_power", "battery_charge_energy", "battery_discharge_energy"].map(field).join("")}</div></div><div class="source-grid" style="margin-bottom:16px"><label>Dodatnia moc sieci oznacza<select data-direction="grid"><option value="import" ${config.directions?.grid !== "export" ? "selected" : ""}>Pobór z sieci</option><option value="export" ${config.directions?.grid === "export" ? "selected" : ""}>Oddawanie do sieci</option></select></label><label>Dodatnia moc akumulatora oznacza<select data-direction="battery"><option value="charge" ${config.directions?.battery !== "discharge" ? "selected" : ""}>Ładowanie</option><option value="discharge" ${config.directions?.battery === "discharge" ? "selected" : ""}>Rozładowanie</option></select></label></div><div class="sub">Z panelu Energia odczytujemy kWh ze statystyk, także dla liczników z resetami. Ręcznie wybrane liczniki bez statystyk muszą być narastające. Moc: W / kW. Dla sieci i akumulatora wybierz jeden sensor +/− albo dwa oddzielne kierunki. Energia: Wh / kWh / MWh. Brak odczytu pozostanie pusty.</div><div class="source-section" style="margin-top:24px"><h3>Odbiorcy w domu</h3><div class="sub">Nazwa · moc teraz · narastający licznik energii. Nie sumujemy odbiorców do zużycia domu.</div>${config.consumers.map((c, i) => `<div class="consumer-config"><input aria-label="Nazwa odbiorcy" placeholder="np. Pompa ciepła" value="${esc(c.name)}"><select data-power aria-label="Moc odbiorcy">${this.options("W", c.power)}</select><select data-energy aria-label="Licznik odbiorcy">${this.options("kWh", c.energy)}</select><button data-remove="${i}" aria-label="Usuń odbiorcę">✕</button></div>`).join("")}<button id="add-consumer">＋ Dodaj odbiorcę</button></div><div class="footer"><button id="save-sources" class="primary">Zapisz źródła</button><span class="sub">Działa bez restartu HA</span></div><div id="source-status" role="status"></div></div>`;
+    this.shadowRoot.getElementById("import-energy-panel").onclick = () =>
+      this.importPanel();
     this.shadowRoot.getElementById("add-consumer").onclick = () => {
       this._sourceDraft = this.readSources();
       if (this._sourceDraft.consumers.length < 16)

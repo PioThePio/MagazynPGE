@@ -11,6 +11,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN, SIGNAL_LEDGER_UPDATED
 from .energy import energy_sources, validate_energy_config
+from .energy_panel import async_panel_config
 from .history import async_read_counters, async_statistics_metadata
 from .ledger import LedgerError
 from .overview import async_months
@@ -59,6 +60,7 @@ def async_register(hass):
         refresh_plan,
         months,
         put_energy,
+        energy_defaults,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -313,3 +315,22 @@ async def put_energy(hass, connection, msg):
     ):
         raise Unauthorized
     await _write(connection, msg, coordinator.async_put_energy(config, msg["revision"]))
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): "pge_storage/energy_defaults", **ENTRY}
+)
+@websocket_api.async_response
+async def energy_defaults(hass, connection, msg):
+    _get(hass, connection, msg)
+    try:
+        result = await async_panel_config(hass)
+        if not all(
+            connection.user.permissions.check_entity(entity_id, POLICY_READ)
+            for entity_id in energy_sources(result["config"])
+        ):
+            raise Unauthorized
+        connection.send_result(msg["id"], result)
+    except LedgerError as err:
+        connection.send_error(msg["id"], err.code, str(err))

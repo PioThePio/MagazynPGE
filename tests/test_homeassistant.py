@@ -271,6 +271,7 @@ async def test_websocket_rejects_non_admin_writes_and_unauthorized_reads(ha):
             (viewer, "put_plan", {"revision": 0, "planning": {}}),
             (viewer, "refresh_plan", {}),
             (viewer, "put_energy", {"revision": 0, "config": {}}),
+            (viewer, "energy_defaults", {}),
             (nobody, "months", {}),
             (nobody, "subscribe", {}),
             (nobody, "daily", {"month": "2026-09"}),

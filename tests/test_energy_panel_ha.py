@@ -1,0 +1,162 @@
+import asyncio
+from copy import deepcopy
+from datetime import UTC, datetime, time, timedelta
+
+import pytest
+from homeassistant.components.energy.data import async_get_manager
+from homeassistant.components.recorder.core import SynchronizeTask
+from homeassistant.components.recorder.models.statistics import StatisticMeanType
+from homeassistant.components.recorder.statistics import (
+    async_add_external_statistics,
+    async_import_statistics,
+)
+from homeassistant.const import EVENT_STATE_CHANGED
+from homeassistant.core import State
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.recorder import get_instance
+from homeassistant.util import dt as dt_util
+
+from custom_components.pge_storage.ledger import WARSAW
+
+pytestmark = pytest.mark.asyncio(loop_scope="module")
+
+
+async def test_native_energy_autofill_statistics_resets_home_and_manual_override(ha):
+    hass, _port = ha
+    now = dt_util.utcnow()
+    midnight = datetime.combine(
+        now.astimezone(WARSAW).date(), time(), WARSAW
+    ).astimezone(UTC)
+    end = now.replace(minute=0, second=0, microsecond=0)
+    count = int((end - midnight).total_seconds() / 3600)
+    core = {"import": "sensor.raw_import", "export": "sensor.raw_export"}
+    for entity_id, value in [(core["import"], "1010"), (core["export"], "2005")]:
+        hass.states.async_set(entity_id, value, {"unit_of_measurement": "kWh"})
+    for entity_id, value in [(core["import"], "1000"), (core["export"], "2000")]:
+        moment = midnight - timedelta(minutes=1)
+        state = State(
+            entity_id, value, {"unit_of_measurement": "kWh"}, last_updated=moment
+        )
+        hass.bus.async_fire_internal(
+            EVENT_STATE_CHANGED,
+            {"entity_id": entity_id, "old_state": None, "new_state": state},
+            time_fired=moment.timestamp(),
+        )
+    rates = {
+        "sensor.native_import": 2000,
+        "sensor.native_export": 250,
+        "sensor.pv": 3000,
+        "sensor.charge": 750,
+        "sensor.discharge": 500,
+        "supplier:pump": 1000,
+    }
+    for entity_id, rate in rates.items():
+        if entity_id.startswith("sensor."):
+            # These states reset every hour; only statistics sums are suitable.
+            hass.states.async_set(entity_id, "5", {"unit_of_measurement": "Wh"})
+        importer = (
+            async_import_statistics
+            if entity_id.startswith("sensor.")
+            else async_add_external_statistics
+        )
+        importer(
+            hass,
+            {
+                "statistic_id": entity_id,
+                "source": "recorder" if entity_id.startswith("sensor.") else "supplier",
+                "name": None,
+                "unit_class": "energy",
+                "unit_of_measurement": "Wh",
+                "mean_type": StatisticMeanType.NONE,
+                "has_sum": True,
+            },
+            [
+                {
+                    "start": midnight - timedelta(hours=1) + timedelta(hours=index),
+                    "sum": 1000000 + index * rate,
+                    "state": index % 2 * 1000,
+                }
+                for index in range(count + 1)
+            ],
+        )
+    for entity_id, value in [
+        ("sensor.pv_w", "3000"),
+        ("sensor.grid_w", "-500"),
+        ("sensor.battery_w", "-100"),
+        ("sensor.manual_home", "4000"),
+    ]:
+        hass.states.async_set(entity_id, value, {"unit_of_measurement": "W"})
+    manager = await async_get_manager(hass)
+    await manager.async_update(
+        {
+            "energy_sources": [
+                {
+                    "type": "grid",
+                    "stat_energy_from": "sensor.native_import",
+                    "stat_energy_to": "sensor.native_export",
+                    "stat_rate": "sensor.grid_w",
+                },
+                {
+                    "type": "solar",
+                    "stat_energy_from": "sensor.pv",
+                    "stat_rate": "sensor.pv_w",
+                    "config_entry_solar_forecast": None,
+                },
+                {
+                    "type": "battery",
+                    "stat_energy_from": "sensor.discharge",
+                    "stat_energy_to": "sensor.charge",
+                    "stat_rate": "sensor.battery_w",
+                },
+            ],
+            "device_consumption": [
+                {"stat_consumption": "supplier:pump", "name": "Pompa"}
+            ],
+        }
+    )
+    original = deepcopy(manager.data)
+    await hass.async_block_till_done()
+    future = hass.loop.create_future()
+    get_instance(hass).queue_task(SynchronizeTask(future))
+    await asyncio.wait_for(future, 10)
+    flow = await hass.config_entries.flow.async_init(
+        "pge_storage", context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {
+            "import_entity_id": core["import"],
+            "export_entity_id": core["export"],
+            "max_age_hours": 24,
+        },
+    )
+    await hass.async_block_till_done()
+    entry = result["result"]
+    ledger = entry.runtime_data
+    assert ledger.energy_config["imported_from_energy"] is True
+    assert ledger.sources == core
+    assert ledger.data["energy"]["values"]["home_power"] == "2400"
+    assert float(ledger.data["energy"]["today"]["home_energy"]) == pytest.approx(
+        count * 4.5
+    )
+    assert float(ledger.data["energy"]["today"]["grid_import_energy"]) == pytest.approx(
+        count * 2
+    )
+    assert ledger.data["energy"]["today"]["credited_energy"] == "4"
+    assert float(ledger.data["energy"]["consumers"][0]["today_kwh"]) == pytest.approx(
+        count
+    )
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", "pge_storage", f"{entry.entry_id}_home_power"
+    )
+    assert float(hass.states.get(entity_id).state) == 2400
+    override = deepcopy(ledger.energy_config)
+    override["sources"]["home_power"] = "sensor.manual_home"
+    await ledger.async_put_energy(override, ledger.revision)
+    await hass.async_block_till_done()
+    assert ledger.data["energy"]["values"]["home_power"] == "4000"
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.runtime_data.data["energy"]["values"]["home_power"] == "4000"
+    assert entry.runtime_data.sources == core
+    assert manager.data == original

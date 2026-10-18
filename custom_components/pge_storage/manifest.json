@@ -1,7 +1,7 @@
 {
   "domain": "pge_storage",
   "name": "Magazyn energii PGE",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "config_flow": true,
   "documentation": "https://github.com/PioThePio/MagazynPGE",
   "issue_tracker": "https://github.com/PioThePio/MagazynPGE/issues",
@@ -16,5 +16,8 @@
   ],
   "iot_class": "calculated",
   "integration_type": "service",
-  "requirements": []
+  "requirements": [],
+  "after_dependencies": [
+    "energy"
+  ]
 }
