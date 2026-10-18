@@ -10,8 +10,10 @@ from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN, SIGNAL_LEDGER_UPDATED
+from .energy import energy_sources, validate_energy_config
 from .history import async_read_counters, async_statistics_metadata
 from .ledger import LedgerError
+from .overview import async_months
 from .planning_history import async_seasonal_profile
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,7 +36,8 @@ def _get(hass, connection, msg):
         )
     if connection.user is None or not all(
         connection.user.permissions.check_entity(entity_id, POLICY_READ)
-        for entity_id in coordinator.sources.values()
+        for entity_id in set(coordinator.sources.values())
+        | energy_sources(coordinator.energy_config)
     ):
         raise Unauthorized
     return coordinator
@@ -54,6 +57,8 @@ def async_register(hass):
         profile,
         put_plan,
         refresh_plan,
+        months,
+        put_energy,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -74,7 +79,8 @@ def subscribe(hass, connection, msg):
         # Recheck permissions on each emission, including after role changes.
         if all(
             connection.user.permissions.check_entity(entity_id, POLICY_READ)
-            for entity_id in coordinator.sources.values()
+            for entity_id in set(coordinator.sources.values())
+            | energy_sources(coordinator.energy_config)
         ):
             connection.send_message(websocket_api.event_message(msg["id"], snapshot))
 
@@ -273,3 +279,37 @@ async def refresh_plan(hass, connection, msg):
     await coordinator.async_refresh_planning_history()
     coordinator.publish()
     connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command({vol.Required("type"): "pge_storage/months", **ENTRY})
+@websocket_api.async_response
+async def months(hass, connection, msg):
+    coordinator = _get(hass, connection, msg)
+    try:
+        connection.send_result(msg["id"], await async_months(coordinator))
+    except LedgerError as err:
+        connection.send_error(msg["id"], err.code, str(err))
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "pge_storage/put_energy",
+        **WRITE,
+        vol.Required("config"): dict,
+    }
+)
+@websocket_api.async_response
+async def put_energy(hass, connection, msg):
+    coordinator = _get(hass, connection, msg)
+    try:
+        config = validate_energy_config(msg["config"])
+    except LedgerError as err:
+        connection.send_error(msg["id"], err.code, str(err))
+        return
+    if not all(
+        connection.user.permissions.check_entity(entity_id, POLICY_READ)
+        for entity_id in energy_sources(config)
+    ):
+        raise Unauthorized
+    await _write(connection, msg, coordinator.async_put_energy(config, msg["revision"]))

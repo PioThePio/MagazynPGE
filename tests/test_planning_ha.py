@@ -181,36 +181,75 @@ async def test_plan_daily_api_and_durable_month_boundaries(ha):
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             await page.goto(f"{origin}/dashboard-pge-test/magazyn")
-            await expect(page.locator("pge-storage-card #metrics")).to_contain_text(
+            await expect(page.locator("pge-balance-card").first).to_contain_text(
                 "220 kWh", timeout=30000
             )
-            await expect(page.locator("pge-storage-card #flow")).to_contain_text(
-                "dodano 40 kWh"
+            await expect(page.locator("pge-projection-card")).to_contain_text(
+                "31.03.2027"
             )
+            await page.locator('pge-history-card [data-month="2026-09"] button').click()
             await expect(
-                page.locator("pge-storage-card #forecast-table")
-            ).to_contain_text("31.03.2027")
-            await page.locator(
-                'pge-storage-card [data-daily-month="2026-09"] > summary'
-            ).click()
-            await expect(
-                page.locator(
-                    'pge-storage-card [data-daily-month="2026-09"] [data-daily-rows] tr'
-                ).first
+                page.locator('pge-history-card [data-days="2026-09"] tbody tr').first
             ).to_contain_text("203", timeout=30000)
-            await page.locator("pge-storage-card #plan-settings > summary").click()
+            hass.states.async_set(
+                "sensor.planning_pv_power", "5000", {"unit_of_measurement": "W"}
+            )
+            await hass.async_block_till_done()
+            await page.locator("pge-settings-card #open-sources").click()
             await page.locator(
-                'pge-storage-card [data-profile="import"][data-month="10"]'
-            ).fill("3100")
-            await page.locator(
-                'pge-storage-card #plan-editor button[type="submit"]'
-            ).click()
+                'pge-settings-card [data-source="pv_power"]'
+            ).select_option("sensor.planning_pv_power")
+            await page.locator("pge-settings-card #save-sources").click()
             await expect(
-                page.locator("pge-storage-card #plan-summary")
-            ).to_contain_text("Zapas wyczerpie się")
-            await page.locator("pge-storage-card #plan-settings > summary").click()
-            await page.locator("pge-storage-card h1").scroll_into_view_if_needed()
-            await page.screenshot(path="/tmp/pge-planning-ui.png")
+                page.locator("pge-settings-card #source-status")
+            ).to_contain_text("Źródła zapisane")
+            assert (
+                manager.energy_config["sources"]["pv_power"]
+                == "sensor.planning_pv_power"
+            )
+            await page.locator("pge-settings-card #close-dialog").click()
+            await page.locator('pge-energy-card [data-mode="power"]').click()
+            await expect(page.locator("pge-energy-card .node-pv")).to_contain_text(
+                "5000 W"
+            )
+            hass.states.async_set(
+                "sensor.planning_pv_power", "6000", {"unit_of_measurement": "W"}
+            )
+            await hass.async_block_till_done()
+            await expect(page.locator("pge-energy-card .node-pv")).to_contain_text(
+                "6000 W"
+            )
+            # Synthetic display fixture; independent API tests verify real statistics.
+            manager.comparison = [
+                {
+                    "month": month,
+                    "previous_month": previous,
+                    "previous_kwh": str(amount),
+                    "current_kwh": "20" if index == 0 else None,
+                    "partial": index == 0,
+                }
+                for index, (month, previous, amount) in enumerate(
+                    [
+                        ("2026-10", "2025-10", 310),
+                        ("2026-11", "2025-11", 420),
+                        ("2026-12", "2025-12", 650),
+                        ("2027-01", "2026-01", 720),
+                        ("2027-02", "2026-02", 600),
+                        ("2027-03", "2026-03", 380),
+                    ]
+                )
+            ]
+            manager.publish()
+            await expect(
+                page.locator("pge-projection-card svg.chart polyline")
+            ).to_have_count(2)
+            await expect(
+                page.locator('pge-history-card [data-days="2026-09"] tbody tr').first
+            ).to_contain_text("203")
+            await page.locator("pge-energy-card").scroll_into_view_if_needed()
+            await page.screenshot(path="/tmp/pge-modules-desktop.png", full_page=True)
+            await page.set_viewport_size({"width": 430, "height": 932})
+            await page.screenshot(path="/tmp/pge-modules-mobile.png", full_page=True)
             assert not errors, errors
         finally:
             await browser.close()

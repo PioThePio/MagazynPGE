@@ -46,9 +46,9 @@ def select_sample(states: list, day: str, max_age_hours: int) -> Sample:
     return sample_from_state(state)
 
 
-async def async_read_counters(
+async def async_read_samples(
     hass: HomeAssistant, sources: dict, day: str, max_age_hours: int, now: datetime
-) -> Sample:
+) -> dict[str, Sample]:
     end = boundary(day)
     if end > now:
         raise LedgerError("future_date", "Wybierz zakończony dzień.")
@@ -73,6 +73,11 @@ async def async_read_counters(
             )
         except LedgerError as err:
             raise LedgerError(err.code, f"{direction} ({entity_id}): {err}") from err
+    return samples
+
+
+async def async_read_counters(hass, sources, day, max_age_hours, now) -> Sample:
+    samples = await async_read_samples(hass, sources, day, max_age_hours, now)
     return combine_counters(samples["import"], samples["export"])
 
 

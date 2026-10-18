@@ -20,7 +20,7 @@ flowchart LR
   REC[Recorder: rzeczywiste stany] -->|odczyt przy zapisie daty| LEDGER[Własny rejestr Store]
   CARD[Karta Lovelace] -->|WebSocket HA, edycja administratora| LEDGER
   LEDGER --> CALC
-  CALC --> SENSORS[5 sensorów wynikowych]
+  CALC --> SENSORS[24 sensory: salda i energia]
   CALC -->|subskrypcja| CARD
 ```
 
@@ -88,3 +88,14 @@ Nowe WS: `daily` (oba źródła), `profile` (statystyki importu), `put_plan` (ad
 Plan zachowuje kompatybilne pola `profile.import_kwh` i `profile.export_kwh`, ale projekcja ignoruje eksport. GUI zapisuje dla niego zero. Opcjonalne `source_month` identyfikuje rzeczywisty miesiąc historii; przy projekcji musi odpowiadać miesiącowi rok wcześniej. Wartości bez źródła z wersji 0.3 są traktowane jako zapisane założenia. Odczyt historii wymaga tylko statystyk importu i sprawdza ostatnie 12 kompletnych miesięcy. Każda luka propaguje nieznane saldo, nie blokując pokazania znanego poboru w innych miesiącach. FIFO i wygaśnięcia działają dzień po dniu bez dodawania przyszłych partii. Data domyślna wynika z ostatniej faktury + 6 miesięcy, z zachowaniem końca miesiąca.
 
 Frontend pokazuje miesiące rozwijane do pięciokolumnowej tabeli dni, ładuje je na żądanie i sumuje wyłącznie kompletne serie. Wyświetlanie jest zaokrąglone do kWh; Store, sensory i obliczenia zachowują dokładność. Zmiana rewizji rejestru unieważnia wczytane tabele dni.
+
+
+## Moduły i źródła energii (0.5)
+
+`energy.py` waliduje opcjonalne źródła i do 16 odbiorców, przelicza W/kW i Wh/kWh/MWh, dzieli moc ze znakiem na dwa kierunki oraz wyznacza dzisiejsze energie z granic Recorder. Archiwum `energy_cache` jest indeksowane entity_id i datą; zmiana źródła nie przenosi obcej wartości początkowej. Nowe pola są zachowywane przez wszystkie zapisy Store i eksport JSON. Zapis `put_energy` wymaga administratora, praw do źródeł i aktualnej rewizji; zabronione są źródła z własnych encji integracji. Subskrypcje ponownie sprawdzają dostęp do wszystkich skonfigurowanych źródeł.
+
+`overview.py` odczytuje miesięczne różnice granicznych liczników oraz porównawcze sumy godzinowe importu. Projekcja używa automatycznej historii zamiast ręcznych założeń, gdy odczyt jest dostępny. Brakujące dane nie są zerami. Miesiąc historyczny musi być zakończony; bieżący jest niepełny.
+
+Frontend składa się z niezależnych Custom Elements. Wspólna subskrypcja jest współdzielona według połączenia HA i entry_id, zaś `pge-storage-card` jest układem tych modułów bez nadrzędnego ha-card. `pge-settings.js` zawiera edytor księgi używany wyłącznie w natywnym dialogu. Natywny dialog zapewnia klawiaturę/Escape i izoluje konfigurację od głównego dashboardu. Zmiany źródeł instalują nowe nasłuchy stanów, bez przeładowania HA. Początek nowego dnia ma osobny timer w Europe/Warsaw, z uwzględnieniem DST.
+
+Stare pięć unique_id pozostaje bez zmian; łącznie powstają 24 stałe sensory. Nie deklarujemy stanu narastającego dla sald lub dziennych różnic. Fizyczne przepływy PV/domu/sieci nie są pomniejszane o opust; konto PGE, rozliczenia i dzienne wpłaty są po opuście. Żaden alias nie zmienia źródła ani jego statystyk.

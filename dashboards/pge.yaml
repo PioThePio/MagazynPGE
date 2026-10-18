@@ -3,10 +3,25 @@ views:
   - title: Magazyn PGE
     path: magazyn-pge
     icon: mdi:transmission-tower
-    type: panel
-    cards:
-      - type: custom:pge-storage-card
-        title: Wirtualny magazyn PGE
-        # Przy jednej integracji entry_id jest wykrywany automatycznie.
-        # Przy kilku: odczytaj identyfikator w ustawieniach integracji / URL
-        # i wpisz entry_id: "...".
+    type: sections
+    max_columns: 2
+    sections:
+      - type: grid
+        cards:
+          - type: custom:pge-energy-card
+          - type: custom:pge-settings-card
+      - type: grid
+        cards:
+          - type: custom:pge-balance-card
+            metric: available_energy
+          - type: custom:pge-balance-card
+            metric: deficit
+          - type: custom:pge-balance-card
+            metric: period_balance
+          - type: custom:pge-projection-card
+      - type: grid
+        column_span: 2
+        cards:
+          - type: custom:pge-history-card
+    # Przy wielu integracjach dopisz entry_id do każdego modułu.
+    # Moduły są również dostępne w GUI: Edytuj dashboard → Dodaj kartę → PGE.

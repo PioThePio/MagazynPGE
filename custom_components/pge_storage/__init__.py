@@ -36,8 +36,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     await hass.http.async_register_static_paths(
         [
             StaticPathConfig(
-                "/pge_storage/pge-storage-card.js",
-                str(Path(__file__).parent / "frontend" / "pge-storage-card.js"),
+                "/pge_storage",
+                str(Path(__file__).parent / "frontend"),
                 False,
             )
         ]

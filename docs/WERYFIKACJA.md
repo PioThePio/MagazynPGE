@@ -1,4 +1,6 @@
-# Weryfikacja 2026-10-17
+# Weryfikacja 2026-10-18
+
+Wersja 0.5.0: **77 testów Python i 11 testów DOM zaliczonych**. Pełny frontend HA w Chromium sprawdza osobne moduły, kliknięcie miesiąca i dni, okno faktur, zaznaczanie tekstu, wybór źródła PV z listy i natychmiastową aktualizację bez restartu. Obejrzano zrzuty desktop 1440 px i telefon 430 px. Natywne testy Recorder sprawdzają różnice dzienne Wh→kWh, bilans miesięczny mimo usuniętych dni pośrednich, moce ze znakiem i ich kierunki, 24 encje, odbiorców, zachowanie konfiguracji po przeładowaniu i po zapisaniu faktury oraz brak mutacji źródeł przy błędnym zapisie. Importowane do izolowanej bazy kompletne statystyki godzinowe potwierdzają odczyt poprzedniego roku, bieżącego poboru i kompletną projekcję, z uwzględnieniem 745 godzin października ze zmianą czasu. Wykresy nie zamieniają braków na zero. Kopie wersji 2/3 bez nowych pól zachowują zgodność. Zasób ma wersję i skrót zawartości, a obie części frontendu są sprawdzane pod kątem składni.
 
 Wersja 0.4.0: 70 testów Python i 10 testów DOM zaliczonych. Sprawdzono pięciokolumnowe dni pod rozwijanymi miesiącami, zaokrąglanie do pełnych kWh, trzykolumnową tabelę projekcji, propagację nieznanego salda po luce historii, nieuwzględnianie dowolnie dużego przyszłego eksportu, wygaśnięcia i datę rozliczenia 30 września → 31 marca. Historia importu działa również przy lukach eksportu. Źródłowy miesiąc spoza poprzedniego roku jest odrzucany w projekcji. Chromium sprawdza pełny dashboard, otwiera dni wybranego miesiąca i po zmianie poboru potwierdza datę wyczerpania zapasu. Ruff, składnia JS, metadane v0.4.0 i budowa archiwum przeszły kontrolę.
 
@@ -16,18 +18,18 @@ Sprawdzono w odizolowanym środowisku chmurowym, bez dostępu do produkcyjnego H
 |---|---|
 | Python 3.14.8, Home Assistant Core 2026.10.0 | Zainstalowane i uruchomione |
 | `uv sync --frozen`, `npm ci` | Wykonane, także ponownie bez zmian lockfile |
-| pytest | 70 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
-| Testy karty w DOM / Node 24 | 10 zaliczonych, 0 niezaliczonych |
-| Chromium: pełny dashboard HA i ponowne ładowanie strony | Zaliczony (wśród 70 testów pytest) |
+| pytest | 77 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
+| Testy karty w DOM / Node 24 | 11 zaliczonych, 0 niezaliczonych |
+| Chromium: pełny dashboard HA i ponowne ładowanie strony | Zaliczony (wśród 77 testów pytest) |
 | Ruff check i format | Bez błędów |
 | Składnia JS | Poprawna |
 | `hass --script check_config -c .ha-dev` | Poprawna konfiguracja demonstracyjna |
 | Serwer demonstracyjny | Frontend i API pierwszej konfiguracji odpowiadają HTTP 200 z oczekiwaną treścią |
 | Powtórne przygotowanie `.ha-dev` | Zachowuje istniejącą konfigurację |
 
-Testy rzeczywistego HA korzystają z osobnej SQLite Recorder, prawdziwego Config Flow, pięciu encji i autoryzowanego HTTP/WebSocket. Weryfikują zapisane odczyty wstecz, wzory z przykładu, edycję i usuwanie, eksport/import, przetrwanie przeładowania, działanie otwartej subskrypcji po przeładowaniu, błędne daty, brak historii, konflikt równoczesnych edycji, odmowę zapisu dyskowego, opcje i odmowę operacji bez uprawnień. Obliczenia obejmują też ujemny bilans obliczony z nieujemnych liczników, saldo nieznane, wyzerowanie faktury, korektę, rozliczony niedobór, granice UTC, zmianę czasu i 500 dat.
+Testy rzeczywistego HA korzystają z osobnej SQLite Recorder, prawdziwego Config Flow, 24 encji i autoryzowanego HTTP/WebSocket. Weryfikują zapisane odczyty wstecz, wzory z przykładu, edycję i usuwanie, eksport/import, przetrwanie przeładowania, działanie otwartej subskrypcji po przeładowaniu, błędne daty, brak historii, konflikt równoczesnych edycji, odmowę zapisu dyskowego, opcje i odmowę operacji bez uprawnień. Obliczenia obejmują też ujemny bilans obliczony z nieujemnych liczników, saldo nieznane, wyzerowanie faktury, korektę, rozliczony niedobór, granice UTC, zmianę czasu i 500 dat.
 
-Testy karty sprawdzają renderowanie, wyświetlanie ujemnych bilansów, wysyłanie zera z faktury, zachowanie niezapisanej edycji przy aktualizacjach, błędy serwera, paginację i traktowanie uwag jako tekstu. Osobny test Chromium sprawdza ładowanie karty przez pełny frontend HA. Nie oceniano wyglądu na telefonie.
+Testy karty sprawdzają renderowanie, wyświetlanie ujemnych bilansów, wysyłanie zera z faktury, zachowanie niezapisanej edycji przy aktualizacjach, błędy serwera, paginację i traktowanie uwag jako tekstu. Osobny test Chromium sprawdza ładowanie karty przez pełny frontend HA. W wersji 0.5 obejrzano również układ przy szerokości 430 px.
 
 Ostrzeżenia pytest pochodzą z zależności HA/aiohttp/backoff. W minimalnej demonstracyjnej instalacji HA może także logować brak opcjonalnej biblioteki `libturbojpeg` do przyspieszania obrazów kamer; magazyn energii jej nie używa. Obsługa kamer i pozostałych urządzeń HA nie należy do przygotowanego workflow.
 

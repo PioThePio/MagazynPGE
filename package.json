@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/frontend.test.mjs",
-    "check": "node --check custom_components/pge_storage/frontend/pge-storage-card.js"
+    "check": "node --check custom_components/pge_storage/frontend/pge-storage-card.js && node --check custom_components/pge_storage/frontend/pge-settings.js"
   },
   "engines": {
     "node": ">=22"

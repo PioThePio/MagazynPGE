@@ -103,15 +103,16 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             # Global extra JS executes before HA installs its element registry.
             # The module must instead be requested by Lovelace after that point.
             assert CARD_URL not in await response.text()
-            period = page.locator("pge-storage-card #period")
-            await expect(period).to_contain_text("sensor.browser_import", timeout=30000)
-            await expect(period).to_contain_text("sensor.browser_export")
+            period = page.locator("pge-energy-card h2")
+            await expect(period).to_contain_text("Energia w domu", timeout=30000)
+            await expect(page.locator("pge-balance-card").first).to_contain_text(
+                "Magazyn PGE"
+            )
             assert await page.evaluate(
                 "typeof customElements.get('pge-storage-card') === 'function'"
             )
-            await expect(page.locator("pge-storage-card #day")).to_be_visible()
             await page.reload()
-            await expect(period).to_contain_text("sensor.browser_import", timeout=30000)
+            await expect(period).to_contain_text("Energia w domu", timeout=30000)
 
             async def select_text(locator):
                 await locator.scroll_into_view_if_needed()
@@ -132,13 +133,15 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 await page.mouse.up()
                 return await page.evaluate("window.getSelection().toString()")
 
-            assert "Wirtualny magazyn PGE" in await select_text(
-                page.locator("pge-storage-card h1")
+            assert "Energia w domu" in await select_text(
+                page.locator("pge-energy-card h2")
             )
-            await page.locator("pge-storage-card #day").fill("2025-01-01")
-            await page.locator("pge-storage-card #invoice").fill("0")
-            await page.locator('pge-storage-card #editor button[type="submit"]').click()
-            error = page.locator("pge-storage-card #message")
+            await page.locator("pge-settings-card #open-invoices").click()
+            await expect(page.locator("pge-admin-panel #day")).to_be_visible()
+            await page.locator("pge-admin-panel #day").fill("2025-01-01")
+            await page.locator("pge-admin-panel #invoice").fill("0")
+            await page.locator('pge-admin-panel #editor button[type="submit"]').click()
+            error = page.locator("pge-admin-panel #message")
             await expect(error).to_contain_text("Brak próbki Recorder")
             assert "Brak próbki Recorder" in await select_text(error)
             assert not errors, errors

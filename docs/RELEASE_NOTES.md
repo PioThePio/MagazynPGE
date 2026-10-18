@@ -1,9 +1,10 @@
-MagazynPGE 0.4.0 — miesiące rozwijane do dni i prosta projekcja obecnego zapasu.
+MagazynPGE 0.5.0 — osobne moduły i konfigurator energii.
 
-- Wszystkie wyniki na karcie i sugerowane wyświetlanie sensorów: pełne kWh. Obliczenia i zapis pozostają dokładne.
-- Wpłaty i pobory: klikany miesiąc, pod nim pięć kolumn — data, wprowadzono po opuście, pobrano, różnica i saldo na koniec dnia. Po wczytaniu nagłówek zawiera sumy miesiąca. Usunięto techniczne komunikaty o imporcie niepokrytym magazynem.
-- Projekcja do następnego rozliczenia: miesiąc, pobór taki jak rok wcześniej i pozostałe saldo. Bez przyszłego eksportu i wzrostu zużycia; znane terminy ważności są uwzględnione. Brak historii daje puste saldo od pierwszej luki, zamiast zerowego zużycia.
-- Dawny profil zastępuje „Pobór z sieci w poprzednim roku”. Historia potrzebuje tylko statystyk importu; brak eksportu nie blokuje miesiąca. Przy wartościach widnieje miesiąc źródłowy. Domyślna data końcowa to sześć miesięcy po ostatniej fakturze, edytowalna.
+- Osobne karty Lovelace: Energia w domu, Pojedynczy kafelek, Miesiące i dni, Projekcja magazynu i Konfigurator. Każda dostępna w GUI dodawania kart. Dotychczasowa `pge-storage-card` automatycznie pokazuje responsywny zestaw osobnych kart.
+- Schemat PV, domu, sieci, lokalnego akumulatora i magazynu PGE. Przełącznik Teraz/Dzisiaj. Źródła wybierane z listy encji HA w oknie konfiguratora; bez restartu po zmianie. Moce dwukierunkowe +/− lub osobne kierunki, z wyborem znaku. Opcjonalnie do 16 odbiorców.
+- 24 stałe sensory: zachowane dotychczasowe salda plus energie od faktury, moce, lokalny akumulator i dzisiejsze energie. Można używać ich w natywnych kafelkach, automatyzacjach i innych dashboardach. Oryginalne źródła pozostają nietknięte.
+- Kompaktowe miesięczne rozliczenie z wykresem; kliknięcie miesiąca pokazuje tabelę dni i wykres. Wszystko z pozycji magazynu, po opuście. Kolumny: pobrano, oddano, stan magazynu, netto. Bez czasów i uwag przy każdym dniu.
+- Trzy serie na wykresie: pobór rok wcześniej, pobór obecnie i projekcja magazynu. Osobna oś magazynu. Automatyczny odczyt statystyk, puste luki, bez przyszłych doładowań i zwiększania poboru.
+- Faktury, usuwanie, edycja, kopie i partie energii w osobnym oknie. Rejestr i partie zachowane. URL modułu zawiera wersję i skrót zawartości; w konfiguratorze widać wersję integracji i karty.
 
-Wymagany restart HA: zmieniły się obliczenia Python i odczyt historii, nie tylko wygląd karty.
-Aktualizacja: HACS → Aktualizuj do 0.4.0 → restart HA → Ctrl+F5. Zachowaj integrację, faktury i partie. W ustawieniach karty kliknij „Wczytaj pobór z historii HA”, następnie „Zapisz plan i przelicz prognozę”, aby odświeżyć historyczne wartości i ich daty. Jeśli nadal są dostępne tylko letnie miesiące, HA nie ma kompletnych statystyk zimowego poboru — nie tworzymy ich z domysłów.
+Aktualizacja: HACS → 0.5.0 → restart HA → pełne odświeżenie przeglądarki (Ctrl+F5). Restart jest wymagany z powodu nowych sensorów, backendu i tras frontendowych. Nie usuwaj wpisu integracji ani faktur. Następnie Źródła energii → wybierz sensory → Zapisz źródła. Kolejne zmiany źródeł, faktur i planu działają bez restartu HA.

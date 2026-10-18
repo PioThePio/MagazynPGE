@@ -66,7 +66,9 @@ async def test_full_integration_recorder_gui_api_and_restart(ha):
     manager = entry.runtime_data
     assert entry.state.value == "loaded"
     entities = er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
-    assert len(entities) == 5
+    from custom_components.pge_storage.sensor import SENSOR_DEFINITIONS
+
+    assert len(entities) == len(SENSOR_DEFINITIONS)
 
     for day, imported, exported in [
         ("2025-03-15", "1000", "1250"),
@@ -268,6 +270,8 @@ async def test_websocket_rejects_non_admin_writes_and_unauthorized_reads(ha):
             (viewer, "export", {}),
             (viewer, "put_plan", {"revision": 0, "planning": {}}),
             (viewer, "refresh_plan", {}),
+            (viewer, "put_energy", {"revision": 0, "config": {}}),
+            (nobody, "months", {}),
             (nobody, "subscribe", {}),
             (nobody, "daily", {"month": "2026-09"}),
             (nobody, "profile", {}),

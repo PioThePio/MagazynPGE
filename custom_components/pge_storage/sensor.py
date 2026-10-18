@@ -6,6 +6,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
+from .energy import ROLES
 
 SENSORS = {
     "estimated_balance": "Szacunkowe saldo magazynu",
@@ -16,9 +17,52 @@ SENSORS = {
 }
 
 
+SENSOR_DEFINITIONS = {
+    key: (name, "kWh", "current", key) for key, name in SENSORS.items()
+}
+SENSOR_DEFINITIONS.update(
+    {
+        "import_since_settlement": (
+            "Pobrano z magazynu od faktury",
+            "kWh",
+            "current",
+            "import_since_settlement_kwh",
+        ),
+        "credited_since_settlement": (
+            "Oddano do magazynu od faktury",
+            "kWh",
+            "current",
+            "credited_since_settlement_kwh",
+        ),
+    }
+)
+SENSOR_DEFINITIONS.update(
+    {
+        key: (name, unit, "values", key)
+        for key, (name, unit) in ROLES.items()
+        if not key.endswith("_energy")
+    }
+)
+SENSOR_DEFINITIONS.update(
+    {
+        key.replace("_energy", "_today"): (name + " dzisiaj", "kWh", "today", key)
+        for key, name in {
+            "pv_energy": "Produkcja PV",
+            "home_energy": "Zużycie domu",
+            "battery_charge_energy": "Ładowanie akumulatora",
+            "battery_discharge_energy": "Rozładowanie akumulatora",
+            "grid_import_energy": "Pobrano z sieci",
+            "grid_export_energy": "Oddano do sieci",
+            "credited_energy": "Oddano do magazynu PGE",
+        }.items()
+    }
+)
+
+
 async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(
-        PGESensor(entry.runtime_data, key, name) for key, name in SENSORS.items()
+        PGESensor(entry.runtime_data, key, definition[0])
+        for key, definition in SENSOR_DEFINITIONS.items()
     )
 
 
@@ -33,6 +77,15 @@ class PGESensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, key, name):
         super().__init__(coordinator)
         self.key = key
+        _name, unit, self._value_group, self.field = SENSOR_DEFINITIONS[key]
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_class = (
+            SensorDeviceClass.POWER
+            if unit == "W"
+            else SensorDeviceClass.BATTERY
+            if unit == "%"
+            else SensorDeviceClass.ENERGY
+        )
         self._attr_name = name
         self._attr_unique_id = f"{coordinator.entry.entry_id}_{key}"
         self._attr_device_info = DeviceInfo(
@@ -43,7 +96,14 @@ class PGESensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        value = self.coordinator.data["current"][self.key]
+        if self._value_group != "current":
+            value = (
+                self.coordinator.data.get("energy", {})
+                .get(self._value_group, {})
+                .get(self.field)
+            )
+            return float(value) if value is not None else None
+        value = self.coordinator.data["current"].get(self.field)
         inventory = self.coordinator.data.get("planning", {}).get("inventory")
         if inventory is not None:
             balance = float(inventory["balance_kwh"])
@@ -57,7 +117,9 @@ class PGESensor(CoordinatorEntity, SensorEntity):
 
     @property
     def available(self):
-        return self.coordinator.data["current"][self.key] is not None
+        return (
+            self.coordinator.data.get("loaded", True) and self.native_value is not None
+        )
 
     @property
     def extra_state_attributes(self):

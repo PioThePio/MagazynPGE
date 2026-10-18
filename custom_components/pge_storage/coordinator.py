@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import (
+    async_track_point_in_utc_time,
     async_track_state_change_event,
     async_track_time_interval,
 )
@@ -23,13 +24,24 @@ from .const import (
     SIGNAL_LEDGER_UPDATED,
     STORAGE_VERSION,
     TIME_ZONE,
+    VERSION,
 )
-from .history import async_read_counters, sample_from_state
+from .energy import (
+    ROLES,
+    energy_snapshot,
+    energy_sources,
+    refresh_energy_cache,
+    valid_source,
+    validate_energy_cache,
+    validate_energy_config,
+)
+from .history import async_read_counters, async_read_samples, sample_from_state
 from .ledger import (
     WARSAW,
     LedgerError,
     Sample,
     Settlement,
+    boundary,
     calculate,
     check_counter_progression,
     combine_counters,
@@ -38,6 +50,7 @@ from .ledger import (
     optional_energy,
     validate_records,
 )
+from .overview import async_usage, usage_target
 from .planning import (
     inventory_now,
     planning_snapshot,
@@ -64,6 +77,13 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.planning_history_error = None
         self.checkpoint_cache = {"anchor_id": None, "samples": {}}
         self.daily_cache = {}
+        self.energy_config = validate_energy_config({})
+        self.energy_cache = {}
+        self.comparison = []
+        self._energy_unsub = None
+        self.usage_error = None
+        self.usage_baseline = None
+        self._midnight_cancel = None
 
     @property
     def max_age_hours(self) -> int:
@@ -87,8 +107,21 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self.daily_cache = validate_daily_cache(
                 data.get("daily_cache", {}), dt_util.utcnow()
             )
+        if data is not None:
+            self.energy_config = validate_energy_config(data.get("energy_config", {}))
+            self.energy_cache = validate_energy_cache(data.get("energy_cache", {}))
         await self.async_refresh_planning_history()
+        await self.async_refresh_energy()
+        await self.async_refresh_usage()
+        self._watch_energy()
+        self.entry.async_on_unload(
+            lambda: self._energy_unsub() if self._energy_unsub else None
+        )
         self.publish()
+        self._schedule_midnight()
+        self.entry.async_on_unload(
+            lambda: self._midnight_cancel() if self._midnight_cancel else None
+        )
         self.entry.async_on_unload(
             async_track_state_change_event(
                 self.hass, list(self.sources.values()), self._source_changed
@@ -99,6 +132,18 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 self.hass, self._planning_tick, timedelta(hours=1)
             )
         )
+
+    def _schedule_midnight(self):
+        when = boundary(
+            dt_util.utcnow().astimezone(WARSAW).date().isoformat()
+        ) + timedelta(seconds=2)
+
+        @callback
+        def refresh(now):
+            self.hass.async_create_task(self._planning_tick(now))
+            self._schedule_midnight()
+
+        self._midnight_cancel = async_track_point_in_utc_time(self.hass, refresh, when)
 
     async def _planning_tick(self, _now):
         day = (
@@ -115,6 +160,132 @@ class LedgerCoordinator(DataUpdateCoordinator):
             except Exception:
                 _LOGGER.exception("Cannot archive PGE daily reading")
         await self.async_refresh_planning_history()
+        await self.async_refresh_energy()
+        await self.async_refresh_usage()
+        self.publish()
+
+    def _watch_energy(self):
+        if self._energy_unsub:
+            self._energy_unsub()
+        ids = energy_sources(self.energy_config) - set(self.sources.values())
+        self._energy_unsub = (
+            async_track_state_change_event(self.hass, list(ids), self._source_changed)
+            if ids
+            else None
+        )
+
+    async def async_refresh_energy(self):
+        try:
+            async with self.lock:
+                updated = await refresh_energy_cache(
+                    self.hass,
+                    self.energy_config,
+                    self.sources,
+                    self.energy_cache,
+                    self.max_age_hours,
+                )
+                if updated != self.energy_cache:
+                    await self.store.async_save(
+                        {**self._payload(), "energy_cache": updated}
+                    )
+                    self.energy_cache = updated
+        except Exception:
+            _LOGGER.exception("Cannot refresh optional PGE energy boundaries")
+
+    async def async_refresh_usage(self):
+        try:
+            now = dt_util.utcnow()
+            self.comparison = await async_usage(
+                self.hass,
+                self.sources["import"],
+                usage_target(self.planning, self.records, now),
+                now,
+            )
+            self.usage_error = None
+            month_start = now.astimezone(WARSAW).date().replace(day=1)
+            day = (month_start - timedelta(days=1)).isoformat()
+            frozen = self.daily_cache.get(day) or self.checkpoint_cache["samples"].get(
+                day
+            )
+            frozen = next(
+                (asdict(row.sample) for row in self.records if row.day == day), frozen
+            )
+            self.usage_baseline = None
+            if frozen:
+                sample = Sample(**frozen)
+                self.usage_baseline = (
+                    month_start.strftime("%Y-%m"),
+                    sample.components["import"]["value"],
+                )
+            else:
+                try:
+                    samples = await async_read_samples(
+                        self.hass,
+                        {"import": self.sources["import"]},
+                        day,
+                        self.max_age_hours,
+                        now,
+                    )
+                    self.usage_baseline = (
+                        month_start.strftime("%Y-%m"),
+                        samples["import"].value,
+                    )
+                except LedgerError:
+                    pass
+        except Exception:
+            self.comparison = []
+            self.usage_error = "Brak historii poboru."
+            _LOGGER.exception("Cannot read PGE annual consumption")
+
+    def _payload(self):
+        return {
+            "sources": self.sources,
+            "revision": self.revision,
+            "records": [row.to_dict() for row in self.records],
+            "planning": self.planning,
+            "checkpoint_cache": self.checkpoint_cache,
+            "daily_cache": self.daily_cache,
+            "energy_config": self.energy_config,
+            "energy_cache": self.energy_cache,
+        }
+
+    async def async_put_energy(self, raw, revision):
+        async with self.lock:
+            self._check_revision(revision)
+            config = validate_energy_config(raw)
+            from homeassistant.helpers import entity_registry as er
+
+            registry = er.async_get(self.hass)
+            for entity_id in energy_sources(config):
+                registered = registry.async_get(entity_id)
+                if registered and registered.platform == DOMAIN:
+                    raise LedgerError(
+                        "invalid_energy",
+                        "Wybierz źródłowy sensor, nie encję obliczoną przez Magazyn PGE.",
+                    )
+            for role, entity_id in config["sources"].items():
+                if not valid_source(
+                    self.hass,
+                    entity_id,
+                    ROLES[role][1],
+                    role in ("grid_power", "battery_power"),
+                ):
+                    raise LedgerError(
+                        "invalid_energy",
+                        f"Sprawdź wartość i jednostkę: {ROLES[role][0]} ({entity_id}). Dla mocy ze znakiem wybierz wariant +/−, a dla osobnych kierunków wartości nieujemne.",
+                    )
+            for consumer in config["consumers"]:
+                for key, unit in (("power", "W"), ("energy", "kWh")):
+                    if consumer.get(key) and not valid_source(
+                        self.hass, consumer[key], unit
+                    ):
+                        raise LedgerError(
+                            "invalid_energy",
+                            f"Sprawdź źródło odbiorcy: {consumer['name']}.",
+                        )
+            await self._commit(self.records, energy_config=config)
+            self._watch_energy()
+        await self.async_refresh_energy()
         self.publish()
 
     async def _archive_daily(self, samples):
@@ -131,6 +302,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
                     "planning": self.planning,
                     "checkpoint_cache": self.checkpoint_cache,
                     "daily_cache": updated,
+                    "energy_config": self.energy_config,
+                    "energy_cache": self.energy_cache,
                 }
             )
             self.daily_cache = updated
@@ -175,6 +348,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
                         "planning": self.planning,
                         "checkpoint_cache": cache,
                         "daily_cache": self.daily_cache,
+                        "energy_config": self.energy_config,
+                        "energy_cache": self.energy_cache,
                     }
                 )
                 self.checkpoint_cache = cache
@@ -261,8 +436,23 @@ class LedgerCoordinator(DataUpdateCoordinator):
                     ),
                 }
             )
+        effective = self.planning
+        if self.comparison:
+            effective = {
+                **self.planning,
+                "profile": [
+                    {
+                        "month": int(row["month"][5:]),
+                        "import_kwh": row["previous_kwh"],
+                        "export_kwh": "0",
+                        "source_month": row["previous_month"],
+                    }
+                    for row in self.comparison
+                    if row["previous_kwh"] is not None
+                ],
+            }
         snapshot["planning"] = planning_snapshot(
-            self.planning,
+            effective,
             self.records,
             self.checkpoints,
             sample.components if sample and current is not None else None,
@@ -270,10 +460,33 @@ class LedgerCoordinator(DataUpdateCoordinator):
             dt_util.utcnow(),
             self.planning_history_error,
         )
+        snapshot["planning"]["config"] = self.planning
+        snapshot["comparison"] = [dict(row) for row in self.comparison]
+        if self.usage_baseline and source_values.get("import") is not None:
+            key, baseline = self.usage_baseline
+            delta = energy(source_values["import"]) - energy(baseline)
+            for row in snapshot["comparison"]:
+                if row["month"] == key:
+                    row["current_kwh"] = energy_text(delta) if delta >= 0 else None
+        snapshot["energy"] = energy_snapshot(
+            self.hass, self.energy_config, self.sources, self.energy_cache
+        )
+        from homeassistant.helpers import entity_registry as er
+
+        registry = er.async_get(self.hass)
+        from .sensor import SENSOR_DEFINITIONS
+
+        snapshot["entities"] = {
+            key: registry.async_get_entity_id(
+                "sensor", DOMAIN, f"{self.entry.entry_id}_{key}"
+            )
+            for key in SENSOR_DEFINITIONS
+        }
         snapshot.update(
             {
                 "entry_id": self.entry.entry_id,
                 "loaded": True,
+                "version": VERSION,
                 "sources": self.sources,
                 "source_values": source_values,
                 "source_error": source_error,
@@ -299,6 +512,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
         planning=None,
         checkpoint_cache=None,
         daily_cache=None,
+        energy_config=None,
+        energy_cache=None,
     ) -> None:
         records = self._validated([row.to_dict() for row in records])
         planning = self.planning if planning is None else validate_plan(planning)
@@ -311,6 +526,16 @@ class LedgerCoordinator(DataUpdateCoordinator):
             if daily_cache is None
             else validate_daily_cache(daily_cache, dt_util.utcnow())
         )
+        energy_config = (
+            self.energy_config
+            if energy_config is None
+            else validate_energy_config(energy_config)
+        )
+        energy_cache = (
+            self.energy_cache
+            if energy_cache is None
+            else validate_energy_cache(energy_cache)
+        )
         revision = self.revision + 1
         # Persist first. A failed write must not change the running ledger.
         await self.store.async_save(
@@ -321,6 +546,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 "planning": planning,
                 "checkpoint_cache": cache,
                 "daily_cache": daily_cache,
+                "energy_config": energy_config,
+                "energy_cache": energy_cache,
             }
         )
         self.records = records
@@ -328,7 +555,10 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.planning = planning
         self.checkpoint_cache = cache
         self.daily_cache = daily_cache
+        self.energy_config = energy_config
+        self.energy_cache = energy_cache
         await self._async_refresh_planning_history()
+        await self.async_refresh_usage()
         self.publish()
 
     async def async_put_plan(self, raw, revision):
@@ -459,6 +689,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
             "planning": self.planning,
             "checkpoint_cache": self.checkpoint_cache,
             "daily_cache": self.daily_cache,
+            "energy_config": self.energy_config,
+            "energy_cache": self.energy_cache,
         }
 
     async def async_import(self, document: dict, revision: int) -> None:
@@ -480,4 +712,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 document.get("planning", {}),
                 validate_checkpoints(document.get("checkpoint_cache"), records),
                 validate_daily_cache(document.get("daily_cache", {}), dt_util.utcnow()),
+                validate_energy_config(document.get("energy_config", {})),
+                validate_energy_cache(document.get("energy_cache", {})),
             )
+            self._watch_energy()

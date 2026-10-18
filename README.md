@@ -1,6 +1,6 @@
 # Magazyn energii PGE dla Home Assistant
 
-Wirtualny magazyn energii z historią faktur i kartą Lovelace. Wersja 0.2 odczytuje **dwa oddzielne liczniki energii sieciowej** i samodzielnie oblicza `eksport × 0,8 − import`. Gotowy sensor bilansu `export-import` nie jest źródłem. Wszystkie istniejące sensory, ich historia i statystyki pozostają tylko do odczytu.
+Wirtualny magazyn energii z historią faktur i kartą Lovelace. Integracja odczytuje **dwa oddzielne liczniki energii sieciowej** i samodzielnie oblicza `eksport × 0,8 − import`. Gotowy sensor bilansu `export-import` nie jest źródłem. Wszystkie istniejące sensory, ich historia i statystyki pozostają tylko do odczytu.
 
 To integracja lokalna: bez konta PGE, bez chmury zewnętrznej, bez Pyscript, AppDaemon, MQTT i dodatkowej bazy danych. Nie pobiera faktur z PGE.
 
@@ -19,7 +19,7 @@ Oba liczniki muszą obejmować ten sam punkt przyłączenia do sieci, mieć nara
 
 Natywne szablony dobrze wyliczają różnice, ale nie zarządzają trwałą, edytowalną listą dowolnej długości ani historycznymi odczytami Recorder. `utility_meter` nadaje się do cykli i taryf, ale nie zapewnia tego rejestru zmiennych dat, faktur i korekt. Helper dla każdego okresu oznaczałby rozrastającą się ręczną konfigurację.
 
-Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, pięciu sensorów wynikowych i jednej karty z formularzem, tabelą oraz wykresem. Nie powstają nowe encje dla kolejnych faktur. Szczegóły i źródła API: [architektura](docs/ARCHITEKTURA.md).
+Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, 24 stałych sensorów i niezależnych modułów Lovelace. Nie powstają nowe encje dla kolejnych faktur. Szczegóły i źródła API: [architektura](docs/ARCHITEKTURA.md).
 
 ## Zgodność i ograniczenia
 
@@ -28,7 +28,7 @@ Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, p
 - Każdy licznik musi mieć nieujemny liczbowy stan w **Wh, kWh lub MWh**; odczyty przeliczamy do kWh. Obliczony bilans i bilanse okresów mogą być dodatnie albo ujemne. Spadek licznika pomiędzy granicami jest błędem ciągłości. Resetu ukrytego pomiędzy próbkami nie da się wykryć wyłącznie z odczytów granicznych, dlatego wymagamy liczników bez resetów.
 - Odtwarzamy **ostatni zapisany stan**, nie dokładną fizyczną wartość w chwili północy. Czas każdej z dwóch próbek jest widoczny; liczniki nie muszą aktualizować się jednocześnie. Dokładność zależy od częstotliwości źródła i ciągłości rejestracji.
 - Gdy Recorder usunął wymagane dane, integracja odmawia utworzenia odczytu. Statystyki długoterminowe nie przywrócą dokładnej wartości końcowej. Nie ma interpolacji ani wpisywania zmyślonych wartości.
-- Wersja 0.3 dodaje dzienne przepływy, model partii FIFO i sezonowy scenariusz zużycia. Terminy opierają się na partiach z faktury; domyślna reguła to 12 miesięcy od końca miesiąca wprowadzenia. Od wersji 0.4 projekcja odejmuje od obecnego zapasu wyłącznie pobór z sieci z odpowiednich miesięcy poprzedniego roku, rozłożony równomiernie na dni. Nie dodaje przyszłego eksportu ani wzrostu zużycia i pozostaje scenariuszem, nie prognozą pogody ani potwierdzonym saldem PGE.
+- Wersje 0.3–0.5 dodają dzienne przepływy, partie FIFO i osobne moduły energii. Terminy opierają się na partiach z faktury; domyślna reguła to 12 miesięcy od końca miesiąca wprowadzenia. Od wersji 0.4 projekcja odejmuje od obecnego zapasu wyłącznie pobór z sieci z odpowiednich miesięcy poprzedniego roku, rozłożony równomiernie na dni. Nie dodaje przyszłego eksportu ani wzrostu zużycia i pozostaje scenariuszem, nie prognozą pogody ani potwierdzonym saldem PGE.
 
 ## Instalacja w Twoim HA
 
@@ -54,30 +54,62 @@ Poniżej pozostaje alternatywna instalacja ręczna:
 
 Nie trzeba zmieniać `configuration.yaml`, definicji obecnych sensorów ani konfiguracji Recorder. Ewentualne wydłużenie retencji jest osobną, świadomą decyzją i nie przywraca już usuniętych danych.
 
-## MAGAZYN, odczyty dzienne i prognoza zimy
+## Osobne moduły dashboardu (0.5)
 
-**MAGAZYN — do odbioru** pokazuje kWh po opuście. Obok **Wprowadzona — przed opustem** pokazuje odpowiednik pozostałego zapasu przed potrąceniem: `MAGAZYN / 0,8`. Przy przeliczaniu wstecz to 25% więcej; 20% jest potrącane od energii oddanej. Liczby na karcie i sugerowany format sensorów są zaokrąglane do pełnych kWh. Obliczenia i zapis zachowują pełną precyzję.
+Po aktualizacji **obecna karta `custom:pge-storage-card` staje się responsywnym zestawem oddzielnych kart**. Zachowujesz jej YAML i integrację. Moduły mają osobne obramowania i można używać ich niezależnie: **Edytuj dashboard → Dodaj kartę → wyszukaj PGE**. Kafelki można też dodać jako standardowe karty encji HA.
 
-W sekcji **Wpłaty i pobory** kliknij miesiąc, aby rozwinąć dni. Pięć kolumn to data, wprowadzono po opuście, pobrano, różnica i saldo na koniec dnia. Pobrano oznacza obciążenie konta magazynu importem z sieci; saldo może być ujemne, gdy zabrakło zapasu. Różnica to eksport × 0,8 minus import. Po wczytaniu dni nagłówek miesiąca pokazuje sumy i końcowe saldo. Brak któregokolwiek dnia oznacza nieznaną sumę miesiąca. Dzisiaj jest dniem niepełnym. Dzień faktury może ustalić nowe saldo niezależnie od przepływów, a wygaśnięcie zmniejszyć saldo. Bieżący i poprzednie miesiące są zwinięte; starszy można wybrać polem **Inny miesiąc**. Dane są pobierane po kliknięciu, bez odpytywania Recorder przy każdej zmianie sensora.
+| Moduł w selektorze | Typ YAML | Przeznaczenie |
+|---|---|---|
+| PGE · Energia w domu | `custom:pge-energy-card` | Schemat PV, domu, sieci, akumulatora i magazynu PGE; Teraz / Dzisiaj; opcjonalni odbiorcy |
+| PGE · Pojedynczy kafelek | `custom:pge-balance-card` | Jedna wybrana wartość, kliknięcie otwiera encję HA |
+| PGE · Miesiące i dni | `custom:pge-history-card` | Miesięczne podsumowanie i wykres; kliknięcie miesiąca otwiera dni i wykres dzienny |
+| PGE · Projekcja magazynu | `custom:pge-projection-card` | Pobór rok wcześniej, obecnie i projekcja salda do rozliczenia |
+| PGE · Konfigurator | `custom:pge-settings-card` | Przyciski otwierające okno źródeł, faktur i partii |
+| PGE · Gotowy dashboard | `custom:pge-storage-card` | Responsywny zestaw powyższych modułów, bez jednej zewnętrznej karty |
 
-Znalezione odczyty zakończonych dni są utrwalane we własnym Store. Integracja co godzinę próbuje również zamrozić odczyt poprzedniego dnia, jeśli go jeszcze nie ma. Zachowane dni przeżywają usunięcie historii Recorder; już usuniętych odczytów nie odtwarzamy. Bieżący dzień odśwież przyciskiem — tabela nie odpytuje bazy przy każdej zmianie sensora.
+Przy jednej integracji nie trzeba podawać `entry_id`. Przy kilku wybierz identyfikator w edytorze każdej karty. Kafelek ma w edytorze GUI wybór wartości: magazyn, niedobór, zmiana od faktury, saldo po fakturze, pobrano i oddano od faktury. Przykład samodzielnej karty:
 
-W **Ustaw datę rozliczenia, historię poboru i partie**:
+```yaml
+type: custom:pge-balance-card
+metric: available_energy
+```
 
-1. Wybierz ostatnie rozliczenie z wpisanym saldem z faktury.
-2. Wpisz partie w formacie `RRRR-MM; pozostały eksport przed opustem [kWh]; ważne do RRRR-MM-DD`, po jednej na linię. Możesz użyć **Wczytaj partie z pliku**: JSON z `anchor_day` i listą `lots` (pola `month`, `export_kwh`, `expires_on`). Wczytanie wypełnia formularz; nie zastępuje rejestru faktur.
-3. Suma partii × 0,8 musi być równa dodatniemu saldu wybranej faktury. Dla salda zerowego lub ujemnego lista partii jest pusta. Terminy mają przypadać na koniec miesiąca; pusty termin w formularzu wylicza 12 miesięcy od końca miesiąca wprowadzenia. Są ważne do wskazanego dnia włącznie.
-4. Ustaw datę następnego rozliczenia. Domyślnie przyjmujemy sześć miesięcy po ostatniej fakturze; koniec miesiąca pozostaje końcem miesiąca (30 września → 31 marca). Datę można zmienić, maksymalnie dwa lata naprzód. Zapisana wcześniej data pozostaje zachowana.
-5. Kliknij **Wczytaj pobór z historii HA**. Potrzebny jest tylko import z sieci, bez eksportu. Wczytujemy ostatnie 12 zakończonych miesięcy z pełną siatką godzinowych sum i poprzedzającą sumą. Różnica sum w kWh jest historycznym poborem w całym miesiącu. Data źródła jest pokazana w formularzu i w projekcji. Nie używamy danych sprzed dwóch lat zamiast poprzedniego roku i nie zastępujemy braków zerami. Dane te nie zastępują rzeczywistych stanów na granicach faktur lub dni.
-6. Sekcja **Pobór z sieci w poprzednim roku** zastępuje dawny profil importu/eksportu. Brakujące wartości można uzupełnić ręcznie; zero wpisz jawnie. Kliknij **Zapisz plan i przelicz prognozę**. Po aktualizacji z 0.3 ponownie wczytaj historię, aby przypisać zapisanym wartościom rzeczywiste miesiące źródłowe; stare wartości bez daty są opisane jako zapisane, a nie jako potwierdzona historia.
+Wartości `metric`: `available_energy`, `deficit`, `period_balance`, `carried_balance`, `import_since_settlement`, `credited_since_settlement`. Przykład układu z natywnymi sekcjami HA: [dashboards/pge.yaml](dashboards/pge.yaml).
 
-Tabela **Obecny magazyn do następnego rozliczenia** zawiera tylko miesiąc, prognozowany pobór i saldo po poborze. Każdy przyszły miesiąc korzysta z tego samego miesiąca rok wcześniej. Z obecnego zapasu odejmowany jest pobór, bez przyszłych doładowań i bez zwiększania zużycia. Znane wygaśnięcia również zmniejszają saldo. Bieżący miesiąc obejmuje tylko czas od teraz, a miesiąc rozliczenia kończy się we wskazanym dniu. Ujemne saldo oznacza niedobór. Po pierwszej luce historii saldo pozostaje nieznane, choć pobór kolejnych znanych miesięcy nadal jest widoczny. To projekcja wykorzystania obecnego zapasu, a nie prognoza produkcji ani pogody. Terminy pozostałych partii są w osobnej rozwijanej tabeli.
+### Konfigurator źródeł
 
-Partie są zużywane od najstarszego terminu. Od faktury odtwarzamy **osobno import i eksport**, dzięki czemu dodatni bilans netto nie zostawia sztucznie całej starej partii. Do nowych miesięcy potrzebne są rzeczywiste odczyty ich końców; utrwalamy je we własnym Store. Model replay jest miesięczny: po wygaśnięciach na początku miesiąca dodaje kredyt miesiąca i odejmuje import FIFO. Projekcja przyszłości zużywa aktualne partie dzień po dniu według historycznego poboru, bez tworzenia nowych partii. Odczyty HA mogą różnić się od sumarycznego godzinowego bilansowania operatora. Przy nowej fakturze uzupełnij jej nowe partie — stare terminy nie są przypisywane do nowego salda automatycznie.
+Kliknij **Źródła energii**. W oknie wybierz z listy istniejących encji: produkcję PV, zużycie domu, lokalny akumulator i opcjonalne moce sieci. Import i eksport energii pozostają wybraną wcześniej parą liczników. Nie prosimy o przepisywanie entity_id ani zmianę źródłowych sensorów.
 
-Nowy eksport JSON ma `format_version: 3` i zawiera także plan, miesięczne odczyty oraz archiwum dzienne. Import starych kopii wersji 2 zachowuje ich rozliczenia i pozostawia plan oraz archiwa puste. Store i Config Flow nadal mają wersję 2: aktualizacja z 0.2 nie wymaga usuwania integracji. Przed powrotem do 0.2 zachowaj kopię wersji 3; starszy kod nie obsługuje nowych danych planowania.
+- Moce W/kW: PV, dom, sieć, ładowanie i rozładowanie. Sieć i akumulator obsługują jeden sensor ze znakiem +/− albo dwa osobne kierunki. Dla źródła ze znakiem wybierasz znaczenie wartości dodatniej.
+- Liczniki produkcji, zużycia i ładowania: narastające Wh/kWh/MWh **bez resetów**. Dzisiaj = aktualny odczyt minus ostatni rzeczywisty odczyt przed północą. Brak odczytu granicznego oznacza brak wartości, nie zero. Dziennych liczników resetujących się nie traktujemy jako narastających.
+- Lokalny akumulator: poziom %, opcjonalnie bieżąca energia zgromadzona w kWh. Energia zgromadzona jest stanem, nie licznikiem ładowania.
+- **Odbiorcy w domu**: do 16 nazwanych urządzeń lub obwodów z mocą i/lub licznikiem energii. Widać ich bieżące wartości i dzisiejszą energię; nie dodajemy ich automatycznie do zużycia domu, aby nie liczyć tej samej energii dwa razy.
 
-Dla szerszego widoku karty zmień typ widoku dashboardu na **Panel** (edytuj dashboard → edytuj widok → typ Panel). Dostarczany `dashboards/pge.yaml` używa tego układu. W sekcjach karta zgłasza pełną szerokość. Aktualizacja HACS nie nadpisuje Twojego istniejącego dashboardu.
+Zapis aktualizuje moduły i encje **bez restartu HA**. Nie wybieraj encji obliczonych przez sam Magazyn PGE jako jego źródeł; backend odrzuca takie zapętlenie.
+
+### Encje do użycia poza kartami
+
+Integracja zachowuje pięć dotychczasowych encji i dodaje kolejne: **łącznie 24 stałe sensory** niezależnie od liczby faktur i odbiorców. Nowe wartości to pobór/oddanie od faktury, moce PV/domu/sieci/akumulatora, poziom i stan lokalnego akumulatora oraz dzisiejsze energie PV/domu/sieci/ładowania/rozładowania i kredyt PGE po opuście. Niepodłączone źródła mają stan niedostępny. HA może nadawać różne entity_id zależnie od wcześniejszych nazw; wybierz encję w **Ustawienia → Urządzenia i usługi → Magazyn PGE → Encje**.
+
+Można używać ich w standardowych kafelkach, automatyzacjach i innych kartach. Źródłowe liczniki pozostają bez zmian. Dzienne energie i saldo nie udają narastających liczników: nie mają `state_class: total_increasing`. Do natywnego panelu Energia wybieraj źródłowe liczniki narastające. Encje odbiorców są ich istniejącymi encjami, nie tworzymy duplikatów każdego urządzenia.
+
+### Rozliczenie miesięczne i dni
+
+Najpierw widzisz **miesięczne sumy i wykres**. Kliknij nazwę miesiąca, aby zobaczyć dni. Kolejność kolumn: **pobrano z magazynu, oddano do magazynu, magazyn na koniec dnia, zmiana netto**. Oddanie jest już po opuście 20%. Pobrano obciąża konto magazynu importem; ujemne saldo oznacza niedobór. Brak rozwijanych czasów i uwag przy dniach. Miesięczny bilans liczymy z granicznych odczytów — brak pojedynczych dni nie musi kasować znanej sumy miesiąca. Dzień faktury może ustalić nowe saldo, a wygaśnięcie je zmniejszyć niezależnie od przepływów.
+
+Wykres ma osobną oś magazynu, aby jego duży zapas nie spłaszczał poborów. Znalezione odczyty zakończonych dni pozostają archiwizowane we własnym Store, bez zapisów do Recorder. Dzisiaj jest niepełnym dniem.
+
+### Porównanie i projekcja
+
+Karta pokazuje trzy serie: **pobór rok wcześniej**, **pobór obecnie** i **projekcję magazynu do rozliczenia**. Pobory korzystają z lewej osi, magazyn z prawej; wszystkie wartości w kWh. Przyszłe wartości obecnego roku oraz luki pozostają puste. Bieżący miesiąc jest niepełny. Dane statystyczne są pobierane automatycznie; nie trzeba wpisywać dawnego profilu. Wymagana jest kompletna siatka godzinowych sum i poprzedzająca suma dla całego historycznego miesiąca, z konwersją do kWh.
+
+Projekcja zużywa **obecny zapas**, bez przyszłych doładowań i bez zwiększania poboru. Uwzględnia znane wygaśnięcia. Brak historii propaguje nieznane saldo od pierwszej luki; nie rysujemy zerowej linii ani zapewnienia, że zapasu wystarczy. Liczby są pod wykresem w rozwijanej tabeli. Termin rozliczenia pozostaje edytowalny; domyślnie ostatnia faktura + 6 miesięcy z zachowaniem końca miesiąca.
+
+### Faktury i partie w osobnym oknie
+
+Kliknij **Faktury**, aby dodawać, poprawiać i usuwać rozliczenia oraz pobierać/przywracać kopię JSON. **Plan i partie** otwiera datę następnego rozliczenia i partie z ostatniej faktury. Suma surowych partii × 0,8 musi odpowiadać saldu faktury. Domyślna ważność to 12 miesięcy od końca miesiąca wprowadzenia, edytowalna zgodnie z rozliczeniem. FIFO zużywa najstarsze partie; od faktury odtwarzamy osobno pobór i doładowanie. Dodatni bilans netto nie zachowuje sztucznie całej starej partii.
+
+Aktualizacja zachowuje rejestr, partie, archiwa i nazwy istniejących encji. JSON formatu 3 obejmuje również opcjonalne `energy_config` i `energy_cache`; starsze kopie 2/3 bez tych pól nadal działają. Przed powrotem do starszego kodu zachowaj kopię.
 
 ## Co oznaczają pola
 
@@ -141,7 +173,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.4.0.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.5.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 

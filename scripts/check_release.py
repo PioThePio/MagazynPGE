@@ -71,6 +71,16 @@ def main():
         failures.append("Brakuje ikony PNG wymaganej przez HACS.")
     if not (integration / "frontend" / "pge-storage-card.js").is_file():
         failures.append("Brakuje karty Lovelace w katalogu instalowanym przez HACS.")
+    frontend = (integration / "frontend" / "pge-storage-card.js").read_text()
+    if (
+        f'const VERSION = "{version}";' not in frontend
+        or f'"./pge-settings.js?v={version}"' not in frontend
+    ):
+        failures.append(
+            "Wersja frontendu i import konfiguratora muszą odpowiadać wydaniu."
+        )
+    if not (integration / "frontend" / "pge-settings.js").is_file():
+        failures.append("Brakuje modułu konfiguratora Lovelace.")
     if failures:
         raise SystemExit("\n".join(failures))
     print(f"Wydanie v{version}: metadane HACS, wersje i pliki instalacyjne są spójne.")
