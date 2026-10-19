@@ -66,6 +66,7 @@ from .planning import (
     validate_plan,
 )
 from .planning_history import async_checkpoints, async_daily
+from .power import PowerWindows
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.energy_config = validate_energy_config({})
         self.energy_cache = {}
         self.energy_statistics = {}
+        self.power_windows = PowerWindows()
         self.energy_import_warnings = []
         self.energy_panel_defaults = None
         self.comparison = []
@@ -129,6 +131,9 @@ class LedgerCoordinator(DataUpdateCoordinator):
             lambda: self._energy_unsub() if self._energy_unsub else None
         )
         self.publish()
+        self.entry.async_on_unload(
+            async_track_time_interval(self.hass, self._power_tick, timedelta(seconds=1))
+        )
         self._schedule_midnight()
         self.entry.async_on_unload(
             lambda: self._midnight_cancel() if self._midnight_cancel else None
@@ -188,6 +193,11 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self._schedule_midnight()
 
         self._midnight_cancel = async_track_point_in_utc_time(self.hass, refresh, when)
+
+    @callback
+    def _power_tick(self, _now):
+        if self.energy_config["sources"] or self.energy_config["consumers"]:
+            self.publish()
 
     async def _energy_statistics_tick(self, _now):
         if self.energy_config.get("statistics") or any(
@@ -583,6 +593,14 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self.energy_statistics,
             self.energy_panel_defaults,
         )
+        energy_view = snapshot["energy"]
+        energy_view["power_windows"] = self.power_windows.update(
+            energy_view, dt_util.utcnow().timestamp(), repr(self.energy_config)
+        )
+        stable = energy_view["power_windows"]["15"]
+        energy_view["home_power_live"] = energy_view["values"].get("home_power")
+        if stable["covered_seconds"] >= 15:
+            energy_view["values"]["home_power"] = str(stable["home_power_w"])
         snapshot["energy"]["import_warnings"] = self.energy_import_warnings
         snapshot["energy"]["import_report"] = (
             self.energy_panel_defaults["report"] if self.energy_panel_defaults else []

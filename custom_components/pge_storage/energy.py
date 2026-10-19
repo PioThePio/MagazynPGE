@@ -295,7 +295,7 @@ def consumer_summary(consumers, home_power_w, home_kwh, energy_key="today_kwh"):
 
     def tracked(metric, field):
         selected = [item.get(field) for item in consumers if item[f"counted_{metric}"]]
-        return aggregate(selected) if selected else "0"
+        return aggregate([value for value in selected if value is not None]) or "0"
 
     power, kwh = tracked("power", "power_w"), tracked("energy", energy_key)
 
@@ -565,7 +565,13 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
                 power_zero_fallback[key] = absent
         if key.endswith("_energy"):
             today[key] = (
-                aggregate([stat_values.get(stat) for stat in config["statistics"][key]])
+                aggregate(
+                    [
+                        stat_values[stat]
+                        for stat in config["statistics"][key]
+                        if stat_values.get(stat) is not None
+                    ]
+                )
                 if key in config.get("statistics", {})
                 else aggregate([delta(value) for value in source_ids(entity_id)])
             )
@@ -722,6 +728,13 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
             "missing": missing,
             "negative": result is not None and result < 0,
         }
+    if (
+        stat_values
+        and stats.get("home_energy") is not None
+        and not config["sources"].get("home_energy")
+        and not config["statistics"].get("home_energy")
+    ):
+        today["home_energy"] = stats["home_energy"]
     totals = consumer_summary(
         consumers, values.get("home_power"), today.get("home_energy")
     )

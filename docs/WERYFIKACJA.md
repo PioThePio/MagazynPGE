@@ -1,3 +1,5 @@
+Wersja 0.10.0: 125 testów Python i 21 testów DOM. Testy średnich potwierdzają ważenie czasem zamiast liczbą raportów, ograniczenie krótkiego skoku przy asynchronicznych PV/sieci, odjęcie ładowania baterii, brak podwójnego liczenia podliczników, reset okna po zmianie źródeł i po cofnięciu zegara. Natywny Recorder sprawdza rok z historią zaczynającą się dopiero w październiku oraz rzeczywiste wiersze StatisticsShortTerm z konwersją Wh/kWh: PV 0,75 kWh, dom 1,4375 kWh i odbiorca 0,5 kWh w pierwszych 15 minutach dnia. Chromium sprawdza nowe sortowanie, wybór średniej, zwykły wiersz nieśledzonego, stabilne przewijanie i brak stopki diagramu. Widoki 390/500/1440 px obejrzane. Testy dziennych tabel potwierdzają najnowszy dzień na początku przy chronologicznym wykresie.
+
 Wersja 0.9.1: test regresji na natywnym Recorder potwierdza dzisiejsze liczniki przy opóźnionej ostatniej godzinie oraz wspólny czas bilansu. Chromium sprawdza zachowanie pozycji przewijania i tego samego elementu karty podczas aktualizacji mocy. Test baterii potwierdza: 2000 W PV + 1000 W sieci − 1500 W ładowania = 1500 W domu; przy 500 W śledzonych nieśledzone wynosi 1000 W. Analogicznie 20 + 10 − 15 − 5 = 10 kWh nieśledzonych. Nieśledzone jest zwykłym wierszem listy.
 
 Wersja 0.9.0: 115 testów Python i 18 testów DOM. Nowe testy Recorder potwierdzają kalendarzowe okresy, 23/25-godzinne dni zmiany czasu, rok przestępny, sumy Wh przeliczane na kWh i zewnętrzne statystyki. Dla różnych fizycznych i rozliczeniowych liczników sprawdzono oddzielny bilans domu, opust PGE dokładnie raz oraz pobranie pokryte zapasem. Luka jednego PV nie psuje danych pozostałych przepływów. Testy hierarchii obejmują rodziców i dzieci, brak podwójnego liczenia osobno dla W i kWh, ujemne nieśledzone zużycie, cykle, brakujących rodziców i migrację starych ustawień bez utraty ręcznych źródeł. Sprawdzono pojemność Ah × napięcie nominalne oraz SOC. Chromium sprawdza natywny dashboard, daty okresów, folder AC i podliczniki, sumę oraz resztę z dokładnością 0,1, zapis 99 Ah/51,2 V z zachowaniem rodziców, strzałki i brak przepełnienia przy 390/500/1440 px. Obejrzano nowe widoki desktop i mobile. Brakujące historyczne kWh pozostają nieznane; testy nie zastępują ich zerami.
@@ -28,8 +30,8 @@ Sprawdzono w odizolowanym środowisku chmurowym, bez dostępu do produkcyjnego H
 |---|---|
 | Python 3.14.8, Home Assistant Core 2026.10.0 | Zainstalowane i uruchomione |
 | `uv sync --frozen`, `npm ci` | Wykonane, także ponownie bez zmian lockfile |
-| pytest | 117 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
-| Testy karty w DOM / Node 24 | 19 zaliczonych, 0 niezaliczonych |
+| pytest | 125 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
+| Testy karty w DOM / Node 24 | 21 zaliczonych, 0 niezaliczonych |
 | Chromium: pełny dashboard HA i ponowne ładowanie strony | Zaliczony (wśród 115 testów pytest) |
 | Ruff check i format | Bez błędów |
 | Składnia JS | Poprawna |

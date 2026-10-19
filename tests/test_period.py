@@ -28,10 +28,10 @@ def test_calendar_bounds_use_warsaw_and_real_dst_hours(kind, anchor, start, end,
     assert not bounds.is_current
 
 
-def test_current_period_stops_at_last_complete_hour_and_rejects_future():
+def test_current_period_uses_five_minute_boundary_and_rejects_future():
     now = datetime(2026, 10, 19, 11, 47, tzinfo=UTC)
     current = period_bounds("month", "2026-10-01", now)
-    assert current.as_of == now.replace(minute=0)
+    assert current.as_of == now.replace(minute=45)
     assert current.is_current
     for kind, anchor in [("day", "2026-10-20"), ("month", "2026-11-01"), ("no", "bad")]:
         with pytest.raises(LedgerError):

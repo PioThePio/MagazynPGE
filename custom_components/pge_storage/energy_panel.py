@@ -1,13 +1,10 @@
 """Read the native Energy preferences; never update its configuration or sources."""
 
 from copy import deepcopy
-from datetime import UTC, datetime, time, timedelta
-from functools import partial
+from datetime import UTC, datetime, time
 
 from homeassistant.components.energy.data import async_get_manager
-from homeassistant.components.recorder import statistics
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
 from .ledger import WARSAW, LedgerError
@@ -353,7 +350,7 @@ async def async_statistics_today(hass, config):
     midnight = datetime.combine(
         now.astimezone(WARSAW).date(), time(), WARSAW
     ).astimezone(UTC)
-    end = now.replace(minute=0, second=0, microsecond=0)
+    end = now.replace(minute=now.minute // 5 * 5, second=0, microsecond=0)
     ids = {stat for values in config["statistics"].values() for stat in values}
     ids |= {item["statistic"] for item in config["consumers"] if item.get("statistic")}
     if not ids:
@@ -362,29 +359,38 @@ async def async_statistics_today(hass, config):
             "as_of": None,
             "values": {},
         }
-    rows = await get_instance(hass).async_add_executor_job(
-        partial(
-            statistics.statistics_during_period,
-            hass,
-            midnight - timedelta(hours=1),
-            end,
-            ids,
-            "hour",
-            {"energy": "kWh"},
-            {"sum"},
-        )
-    )
-    from .period import pending_statistics_hour, sum_delta
+    from .energy_statistics import async_available_statistics, balanced_total
 
-    points = {
-        stat: {int(item["start"]): item.get("sum") for item in rows.get(stat, [])}
-        for stat in ids
+    points, coverage = await async_available_statistics(hass, ids, midnight, end)
+    terms = {
+        "pv_energy": 1,
+        "grid_import_energy": 1,
+        "grid_export_energy": -1,
+        "battery_charge_energy": -1,
+        "battery_discharge_energy": 1,
     }
-    if pending_statistics_hour(points, end):
-        end -= timedelta(hours=1)
-    values = {stat: sum_delta(points[stat], midnight, end) for stat in ids}
+    signed = {
+        stat: sign
+        for role, sign in terms.items()
+        for stat in config["statistics"].get(role, [])
+    }
+    home = balanced_total(
+        {stat: points.get(stat, {}) for stat in signed}, signed, midnight, end
+    )
+    # Only supply a derived home value if all configured energy inputs are
+    # represented in the statistics used for this common time window.
+    covered = all(
+        not config["sources"].get(role) or config["statistics"].get(role)
+        for role in terms
+    )
+    if not config["statistics"].get("grid_import_energy"):
+        covered = False
     return {
         "day": now.astimezone(WARSAW).date().isoformat(),
         "as_of": end.isoformat(),
-        "values": values,
+        "values": {
+            stat: row["value"] if row else None for stat, row in coverage.items()
+        },
+        "coverage": coverage,
+        "home_energy": home["value"] if home and covered else None,
     }

@@ -183,7 +183,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                             node => node.getBoundingClientRect().toJSON()),
                         nodes: [...element.querySelectorAll('.node')].map(
                             node => node.getBoundingClientRect().toJSON()),
-                        captionTop: element.nextElementSibling.getBoundingClientRect().top,
+                        cardBottom: element.closest('ha-card').getBoundingClientRect().bottom,
                         card: {
                             width: element.closest('ha-card').clientWidth,
                             scrollWidth: element.closest('ha-card').scrollWidth,
@@ -197,7 +197,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 bounds = geometry["bounds"]
                 assert (
                     max(node["bottom"] for node in geometry["nodes"]) + 4
-                    <= (geometry["captionTop"])
+                    <= (geometry["cardBottom"])
                 ), geometry
                 for index, circle in enumerate(geometry["circles"]):
                     assert circle["width"] > 0
@@ -483,6 +483,18 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             hass.states.async_set(
                 "sensor.browser_pv_power", "2500", {"unit_of_measurement": "W"}
             )
+            await page.locator('pge-consumers-card [data-sort="name"]').click()
+            await expect(
+                page.locator('pge-consumers-card [data-sort="name"]')
+            ).to_have_attribute("aria-pressed", "true")
+            await page.locator('pge-consumers-card [data-average="10"]').click()
+            await expect(
+                page.locator('pge-consumers-card [data-average="10"]')
+            ).to_have_attribute("aria-pressed", "true")
+            await expect(
+                page.locator("pge-consumers-card .untracked .device-average")
+            ).to_contain_text("W")
+            await expect(page.locator("pge-energy-card .period-note")).to_have_count(0)
             await page.locator("pge-settings-card #open-sources").click()
             await page.locator("pge-settings-card [data-capacity-mode]").select_option(
                 "ah"

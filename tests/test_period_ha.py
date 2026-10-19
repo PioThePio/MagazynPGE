@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 from homeassistant.components.recorder import statistics
 from homeassistant.components.recorder.core import SynchronizeTask
+from homeassistant.components.recorder.db_schema import StatisticsShortTerm
 from homeassistant.components.recorder.models.statistics import StatisticMeanType
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
@@ -150,13 +151,143 @@ async def test_native_period_sums_units_parent_totals_stock_and_missing_history(
             today = await async_statistics_today(hass, manager.energy_config)
     assert current["values"]["home_energy"] == "126.5"
     assert current["values"]["pv_energy"] == "66"
-    assert current["as_of"] == (begin + timedelta(hours=22)).isoformat()
+    assert (
+        current["coverage"]["period:pv"]["end"]
+        == (begin + timedelta(hours=22)).isoformat()
+    )
     assert today["values"]["period:pv"] == "66"
     assert today["as_of"] == current["as_of"]
     config["statistics"]["pv_energy"] = ["period:broken"]
     await manager.async_put_energy(config, manager.revision)
     result = await async_energy_period(manager, "day", "2026-10-01", now)
-    assert result["values"]["pv_energy"] is None
-    assert result["values"]["home_energy"] is None
+    assert result["values"]["pv_energy"] == "24"
+    assert result["values"]["home_energy"] == "90"
     assert result["values"]["pge_credited_energy"] == "38.4"
     assert result["values"]["pge_withdrawn_energy"] == "24"
+
+
+async def test_year_uses_available_history_and_today_uses_native_five_minute_rows(ha):
+    hass, _ = ha
+    begin = datetime(2026, 10, 1, tzinfo=WARSAW).astimezone(UTC)
+    rates = {
+        "fresh:pv": 3000,
+        "fresh:grid_i": 4000,
+        "fresh:grid_e": 500,
+        "fresh:charge": 1000,
+        "fresh:out": 250,
+        "fresh:ac": 2000,
+    }
+    for stat, rate in rates.items():
+        async_add_external_statistics(
+            hass,
+            {
+                "statistic_id": stat,
+                "source": "fresh",
+                "name": None,
+                "unit_class": "energy",
+                "unit_of_measurement": "Wh",
+                "mean_type": StatisticMeanType.NONE,
+                "has_sum": True,
+            },
+            [
+                {
+                    "start": begin + timedelta(hours=i - 1),
+                    "sum": 100000 + i * rate,
+                    "state": i % 2 * 1000,
+                }
+                for i in range(25)
+            ],
+        )
+    await hass.async_block_till_done()
+    future = hass.loop.create_future()
+    get_instance(hass).queue_task(SynchronizeTask(future))
+    await asyncio.wait_for(future, 10)
+    for entity in ("sensor.fresh_i", "sensor.fresh_e"):
+        hass.states.async_set(entity, "0", {"unit_of_measurement": "kWh"})
+    flow = await hass.config_entries.flow.async_init(
+        "pge_storage", context={"source": "user"}
+    )
+    configured = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {
+            "import_entity_id": "sensor.fresh_i",
+            "export_entity_id": "sensor.fresh_e",
+            "max_age_hours": 24,
+        },
+    )
+    await hass.async_block_till_done()
+    manager = configured["result"].runtime_data
+    await manager.async_put_energy(
+        {
+            "sources": {},
+            "statistics": {
+                "pv_energy": ["fresh:pv"],
+                "grid_import_energy": ["fresh:grid_i"],
+                "grid_export_energy": ["fresh:grid_e"],
+                "battery_charge_energy": ["fresh:charge"],
+                "battery_discharge_energy": ["fresh:out"],
+            },
+            "consumers": [{"id": "AC", "name": "AC", "statistic": "fresh:ac"}],
+        },
+        manager.revision,
+    )
+    year = await async_energy_period(
+        manager, "year", "2026-01-01", datetime(2026, 10, 19, 12, tzinfo=UTC)
+    )
+    assert year["values"]["pv_energy"] == "72"
+    assert year["values"]["home_energy"] == "138"
+    assert year["consumers"][0]["period_kwh"] == "48"
+    assert year["partial"] is True
+
+    # Actual native short-term rows use the same sums as hourly statistics.
+    recorder = get_instance(hass)
+    metadata = await recorder.async_add_executor_job(
+        lambda: statistics.get_metadata(
+            hass,
+            statistic_ids={
+                "fresh:pv",
+                "fresh:grid_i",
+                "fresh:grid_e",
+                "fresh:charge",
+                "fresh:out",
+                "fresh:ac",
+            },
+        )
+    )
+
+    def insert_short():
+        with recorder.get_session() as session:
+            for stat, rate in {
+                "fresh:pv": 3000,
+                "fresh:grid_i": 4000,
+                "fresh:grid_e": 500,
+                "fresh:charge": 1000,
+                "fresh:out": 250,
+                "fresh:ac": 2000,
+            }.items():
+                for i in range(4):
+                    session.add(
+                        StatisticsShortTerm.from_stats(
+                            metadata[stat][0],
+                            {
+                                "start": begin + timedelta(minutes=5 * i - 5),
+                                "sum": 100000 + i * rate / 12,
+                                "state": i % 2 * 1000,
+                            },
+                            begin.timestamp(),
+                        )
+                    )
+            session.commit()
+
+    await recorder.async_add_executor_job(insert_short)
+    now = begin + timedelta(minutes=17)
+    result = await async_energy_period(manager, "day", "2026-10-01", now)
+    assert result["values"]["pv_energy"] == "0.75"
+    assert float(result["values"]["home_energy"]) == pytest.approx(1.4375)
+    assert result["consumers"][0]["period_kwh"] == "0.5"
+    with patch(
+        "custom_components.pge_storage.energy_panel.dt_util.utcnow", return_value=now
+    ):
+        today = await async_statistics_today(hass, manager.energy_config)
+    assert today["values"]["fresh:pv"] == "0.75"
+    assert float(today["home_energy"]) == pytest.approx(1.4375)

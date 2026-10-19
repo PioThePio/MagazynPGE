@@ -1,6 +1,6 @@
 """Read-only calendar-period energy totals from native Recorder statistics."""
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from functools import partial
 
@@ -8,7 +8,8 @@ from homeassistant.components.recorder import history, statistics
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
-from .energy import aggregate, consumer_summary, source_ids
+from .energy import consumer_summary, source_ids
+from .energy_statistics import async_available_statistics, balanced_total
 from .history import async_read_counters, sample_from_state
 from .ledger import WARSAW, LedgerError, Sample, calculate, energy, energy_text
 from .planning import inventory_now
@@ -68,7 +69,12 @@ def period_bounds(kind, anchor_day, now):
         stop,
         begin,
         end,
-        min(end, now.astimezone(UTC).replace(minute=0, second=0, microsecond=0)),
+        min(
+            end,
+            now.astimezone(UTC).replace(
+                minute=now.minute // 5 * 5, second=0, microsecond=0
+            ),
+        ),
         start <= today < stop,
     )
 
@@ -306,15 +312,11 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
         stat: {int(row["start"]): row.get("sum") for row in values}
         for stat, values in rows.items()
     }
-    if bounds.is_current and pending_statistics_hour(points, bounds.as_of):
-        bounds = replace(bounds, as_of=bounds.as_of - timedelta(hours=1))
+    observed, coverage = await async_available_statistics(
+        hass, statistical, bounds.begin, bounds.as_of, rows
+    )
     values_by_id = {
-        stat: sum_delta(
-            points.get(stat, {}),
-            bounds.begin,
-            bounds.as_of,
-        )
-        for stat in statistical
+        stat: row["value"] if row else None for stat, row in coverage.items()
     }
     raw = manual - statistical
     if raw:
@@ -329,10 +331,20 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
                 and energy(stop) >= energy(start)
                 else None
             )
-    values = {
-        role: aggregate([values_by_id.get(source) for source in mappings[role]])
-        for role in ENERGY_ROLES
-    }
+
+    def partial_sum(ids):
+        known = [
+            values_by_id[source]
+            for source in ids
+            if values_by_id.get(source) is not None
+        ]
+        return (
+            energy_text(sum((energy(value) for value in known), energy(0)))
+            if known
+            else None
+        )
+
+    values = {role: partial_sum(mappings[role]) for role in ENERGY_ROLES}
     for role in (
         "pv_energy",
         "battery_charge_energy",
@@ -349,7 +361,20 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
             "battery_discharge_energy": 1,
             "battery_charge_energy": -1,
         }
-        if all(values[role] is not None for role in terms):
+        if all(source in statistical for role in terms for source in mappings[role]):
+            signed = {
+                source: sign
+                for role, sign in terms.items()
+                for source in mappings[role]
+            }
+            balanced = balanced_total(
+                {source: observed.get(source, {}) for source in signed},
+                signed,
+                bounds.begin,
+                bounds.as_of,
+            )
+            values["home_energy"] = balanced["value"] if balanced else None
+        elif all(values[role] is not None for role in terms):
             home = sum(
                 (energy(values[role]) * sign for role, sign in terms.items()), energy(0)
             )
@@ -406,6 +431,9 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
         "is_current": bounds.is_current,
         "as_of": bounds.as_of.isoformat(),
         "values": values,
+        "coverage": coverage,
+        "partial": any(row is None or row["partial"] for row in coverage.values())
+        or any(values_by_id.get(source) is None for source in ids),
         "consumers": consumers,
         "consumer_totals": totals,
         "pv_arrays": arrays,

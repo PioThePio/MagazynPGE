@@ -230,7 +230,7 @@ def test_all_native_pv_entries_remain_visible_when_one_live_entity_is_missing():
             },
             native,
         )
-        assert result["today"]["pv_energy"] is None
+        assert result["today"]["pv_energy"] == "5"
 
 
 def test_battery_power_config_precedence_and_registered_renamed_transform():

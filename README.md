@@ -21,6 +21,14 @@ Natywne szablony dobrze wyliczają różnice, ale nie zarządzają trwałą, edy
 
 Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, 24 stałych sensorów i niezależnych modułów Lovelace. Nie powstają nowe encje dla kolejnych faktur. Szczegóły i źródła API: [architektura](docs/ARCHITEKTURA.md).
 
+## Moc, średnie i historia energii
+
+Diagram i encja zużycia domu pokazują moc z okna 15 s, ważoną czasem; szybciej raportujący licznik nie dostaje większej wagi. Pierwsze 15 s po uruchomieniu lub zmianie źródeł służy zebraniu okna. Źródło mocy bez odczytu wnosi 0 W, również wyłączony nocą falownik. Okno ogranicza skutki różnych czasów odczytu; bez wspólnych znaczników czasu urządzeń nie gwarantuje całkowitego usunięcia każdego skoku.
+
+Lista odbiorców pokazuje moc chwilową, wybraną średnią 1/5/10/15 s oraz kWh wybranego dnia, tygodnia, miesiąca lub roku. Sortowanie obejmuje nazwę, moc, średnią i energię, także dla nieśledzonego zużycia. Podliczniki pozostają pod rodzicem. Moc i średnie odświeżają się co sekundę i przy zmianach źródeł. Kolejność jest utrzymywana przez co najmniej 5 s, przy średniej 10/15 s odpowiednio przez 10/15 s; ręczna zmiana sortowania działa od razu.
+
+Dla kWh sumujemy dostępne odczyty statystyk w wybranym okresie. Brak stycznia nie usuwa danych z czerwca–października. Niepełną historię oznacza etykieta przy wyborze okresu. Dzisiejsze kWh korzystają również ze statystyk pięciominutowych, odświeżanych co 5 minut. Energia nie wynika z całkowania wygładzonej mocy. Obliczenia domu odejmują ładowanie baterii; faktury i rozliczenia PGE zachowują niezależne, wymagane odczyty graniczne.
+
 ## Zgodność i ograniczenia
 
 - **Przetestowana wersja: Home Assistant Core 2026.10.0, Python 3.14.8.** Środowisko deweloperskie jest przypięte do tej wersji. Ta wersja HA wymaga Python ≥3.14.2.
@@ -62,7 +70,7 @@ Dotychczasowa `custom:pge-storage-card` pozostaje zgodnym zestawem modułów, do
 
 | Moduł w selektorze | Typ YAML | Przeznaczenie |
 |---|---|---|
-| PGE · Odbiorcy w domu | `custom:pge-consumers-card` | Osobna lista urządzeń, moc teraz i energia dzisiaj |
+| PGE · Odbiorcy w domu | `custom:pge-consumers-card` | Osobna lista urządzeń, moc, średnia 1/5/10/15 s i energia okresu |
 | PGE · Energia w domu | `custom:pge-energy-card` | Schemat PV, domu, sieci, akumulatora i magazynu PGE; moc teraz + energia dzisiaj jednocześnie |
 | PGE · Pojedynczy kafelek | `custom:pge-balance-card` | Jedna wybrana wartość, kliknięcie otwiera encję HA |
 | PGE · Miesiące i dni | `custom:pge-history-card` | Miesięczne podsumowanie i wykres; kliknięcie miesiąca otwiera dni i wykres dzienny |
@@ -219,7 +227,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.9.1.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.10.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 

@@ -189,7 +189,7 @@ async def test_plan_daily_api_and_durable_month_boundaries(ha):
             )
             await page.locator('pge-history-card [data-month="2026-09"] button').click()
             await expect(
-                page.locator('pge-history-card [data-days="2026-09"] tbody tr').first
+                page.locator('pge-history-card [data-days="2026-09"] tbody tr').last
             ).to_contain_text("203", timeout=30000)
             hass.states.async_set(
                 "sensor.planning_pv_power", "5000", {"unit_of_measurement": "W"}
@@ -247,7 +247,7 @@ async def test_plan_daily_api_and_durable_month_boundaries(ha):
                 page.locator("pge-projection-card svg.chart polyline")
             ).to_have_count(2)
             await expect(
-                page.locator('pge-history-card [data-days="2026-09"] tbody tr').first
+                page.locator('pge-history-card [data-days="2026-09"] tbody tr').last
             ).to_contain_text("203")
             await page.locator("pge-energy-card").scroll_into_view_if_needed()
             await page.screenshot(path="/tmp/pge-modules-desktop.png", full_page=True)

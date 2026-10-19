@@ -124,7 +124,19 @@ class PGESensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         inventory = self.coordinator.data.get("planning", {}).get("inventory")
+        power_attributes = {}
+        if self.key == "home_power":
+            view = self.coordinator.data.get("energy", {})
+            power_attributes = {
+                "instantaneous_power_w": view.get("home_power_live"),
+                "averaging_seconds": 15,
+                "power_average_w": {
+                    seconds: row["home_power_w"]
+                    for seconds, row in view.get("power_windows", {}).items()
+                },
+            }
         return {
+            **power_attributes,
             "sources": self.coordinator.sources,
             "start_day": self.coordinator.data["current"]["start_day"],
             "revision": self.coordinator.revision,

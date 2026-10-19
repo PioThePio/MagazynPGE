@@ -112,8 +112,8 @@ def test_consumer_hierarchy_counts_ancestors_per_metric_and_exposes_signed_remai
     assert result["consumer_totals"]["overcount_energy"] is True
     assert all(item["counted_power"] is False for item in result["consumers"][1:3])
     result = snapshot(config, ac_kwh=None)
-    assert result["consumer_totals"]["tracked_kwh"] is None
-    assert result["consumer_totals"]["untracked_kwh"] is None
+    assert result["consumer_totals"]["tracked_kwh"] == "2"
+    assert result["consumer_totals"]["untracked_kwh"] == "23"
     assert "sensor.ac" in energy_sources(config)
     assert None not in energy_sources(config)
 

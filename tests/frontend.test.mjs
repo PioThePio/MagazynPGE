@@ -234,11 +234,12 @@ test("month settlement expands to compact days with balance before net and real 
   const rows = root.querySelectorAll('[data-days="2026-10"] tbody tr');
   assert.equal(rows.length, 2);
   assert.equal(rows[0].children.length, 5);
-  assert.equal(rows[0].children[1].textContent, "5");
-  assert.equal(rows[0].children[2].textContent, "8");
-  assert.equal(rows[0].children[3].textContent, "2167");
-  assert.equal(rows[0].children[4].textContent, "3");
-  assert.match(rows[1].textContent, /—/);
+  assert.match(rows[0].textContent, /—/);
+  assert.equal(rows[1].children[1].textContent, "5");
+  assert.equal(rows[1].children[2].textContent, "8");
+  assert.equal(rows[1].children[3].textContent, "2167");
+  assert.equal(rows[1].children[4].textContent, "3");
+  assert.ok(rows[0].children[0].textContent > rows[1].children[0].textContent);
   assert.equal(root.querySelectorAll("svg.chart").length, 2);
   assert.doesNotMatch(root.textContent, /Czasy|niepokryty|przed opustem/);
   await window.happyDOM.close();
@@ -730,4 +731,49 @@ test("live power updates preserve mounted cards, controls and consumer rows", as
     assert.equal(root.querySelector(".untracked"), untracked);
   }
   window.happyDOM.abort();
+});
+
+test("consumer sort includes untracked and offers time-window means without breaking folders", async () => {
+  const { window, root, emit } = await setup("pge-consumers-card");
+  const data = snapshot();
+  data.revision = 15;
+  data.energy.values.home_power = "1000";
+  data.energy.consumers = [
+    { id: "a", name: "Alfa", power: "sensor.a", energy: "sensor.a_e", power_w: "600", today_kwh: "2" },
+    { id: "b", name: "Beta", power: "sensor.b", energy: "sensor.b_e", power_w: "100", today_kwh: "8" },
+  ];
+  data.energy.power_windows = Object.fromEntries([1,5,10,15].map(seconds => [String(seconds), {
+    home_power_w: 1000, tracked_power_w: 800, untracked_power_w: 200,
+    consumers: {a: 100, b: 700}, covered_seconds: seconds,
+  }]));
+  emit(data);
+  await tick();
+  const names = () => [...root.querySelectorAll(".devices > .device .device-name")].map(n => n.textContent);
+  assert.deepEqual(names(), ["Alfa", "Nieśledzone zużycie", "Beta"]);
+  root.querySelector('[data-sort="name"]').click();
+  assert.deepEqual(names(), ["Alfa", "Beta", "Nieśledzone zużycie"]);
+  root.querySelector('[data-sort="average"]').click();
+  assert.deepEqual(names(), ["Beta", "Nieśledzone zużycie", "Alfa"]);
+  assert.equal(root.querySelectorAll("[data-average]").length, 4);
+  root.querySelector('[data-average="15"]').click();
+  assert.match(root.querySelector('[data-consumer-id="b"] .device-average').textContent, /700,0 W/);
+  assert.match(root.querySelector(".untracked .device-average").textContent, /200,0 W/);
+  root.querySelector('[data-sort="energy"]').click();
+  assert.equal(names()[0], "Beta");
+  assert.equal(root.querySelector('[data-average="15"]').getAttribute("aria-pressed"), "true");
+  await window.happyDOM.close();
+});
+
+test("diagram uses aligned mature power windows and has no timing footer", async () => {
+  const { window, root, emit } = await setup("pge-energy-card");
+  const data = snapshot();
+  data.energy.power_windows = {"15": {covered_seconds: 15,
+    values: {pv_power: 1800, home_power: 700, grid_import_power: 0, grid_export_power: 1100},
+    pv_arrays: {},
+  }};
+  emit(data);
+  assert.match(root.querySelector(".node-pv strong").textContent, /1800 W/);
+  assert.match(root.querySelector(".node-home strong").textContent, /700 W/);
+  assert.equal(root.querySelector(".period-note"), null);
+  await window.happyDOM.close();
 });
