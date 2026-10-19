@@ -223,7 +223,12 @@ def aggregate(values):
 
 
 def source_reading(hass, ids, unit, signed=False):
-    return aggregate([reading(hass, value, unit, signed) for value in source_ids(ids)])
+    values = [reading(hass, value, unit, signed) for value in source_ids(ids)]
+    # Live power is a sum of available readings, with each absent input set to
+    # zero. Counter/history readings retain their strict completeness rules.
+    if unit == "W":
+        return energy_text(sum((energy(value or "0") for value in values), energy(0)))
+    return aggregate(values)
 
 
 def reading(hass, entity_id, unit, signed=False):
@@ -353,7 +358,7 @@ async def refresh_energy_cache(hass, config, core, cache, max_age):
 
 def energy_snapshot(hass, config, core, cache, stats=None, native=None):
     day = (dt_util.utcnow().astimezone(WARSAW).date() - timedelta(days=1)).isoformat()
-    values, today = {}, {}
+    values, today, power_zero_fallback = {}, {}, {}
     stats = stats or {}
     stat_values = (
         stats.get("values", {})
@@ -373,6 +378,15 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
         values[key] = source_reading(
             hass, entity_id, unit, key in ("grid_power", "battery_power")
         )
+        if unit == "W":
+            absent = [
+                source_status(hass, item, key)
+                for item in source_ids(entity_id)
+                if reading(hass, item, unit, key in ("grid_power", "battery_power"))
+                is None
+            ]
+            if absent:
+                power_zero_fallback[key] = absent
         if key.endswith("_energy"):
             today[key] = (
                 aggregate([stat_values.get(stat) for stat in config["statistics"][key]])
@@ -380,29 +394,27 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
                 else aggregate([delta(value) for value in source_ids(entity_id)])
             )
     if native:
-        # A partial PV power reading is not the whole installation. An explicit
-        # manual aggregate power selection may replace the native per-array map.
-        native_config = native["config"]
-        native_pv = set(source_ids(native_config["sources"].get("pv_power")))
-        selected_pv = set(source_ids(config["sources"].get("pv_power")))
-        same_energy = set(config.get("statistics", {}).get("pv_energy", [])) == set(
-            native_config["statistics"].get("pv_energy", [])
-        )
-        if (
-            same_energy
-            and selected_pv == native_pv
-            and any(
-                item["type"] == "solar" and "pv_power" in item["missing"]
-                for item in native.get("report", [])
-            )
-        ):
-            values["pv_power"] = None
+        for item in native.get("report", []):
+            for role in item.get("missing", []):
+                if set(source_ids(config["sources"].get(role))) != set(
+                    source_ids(native.get("config", {}).get("sources", {}).get(role))
+                ):
+                    continue
+                power_zero_fallback.setdefault(role, []).append(
+                    {
+                        "id": None,
+                        "role": role,
+                        "name": item["name"],
+                        "status": "unconfigured",
+                        "origin": item.get("missing_power_origin"),
+                    }
+                )
     for kind, positive, negative in (
         ("grid", "import", "export"),
         ("battery", "charge", "discharge"),
     ):
         value = values.get(f"{kind}_power")
-        if value is not None:
+        if config["sources"].get(f"{kind}_power"):
             signed = energy(value) * (
                 1 if config["directions"][kind] == positive else -1
             )
@@ -428,7 +440,7 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
     consumers = [
         {
             **item,
-            "power_w": reading(hass, item.get("power"), "W"),
+            "power_w": source_reading(hass, item.get("power"), "W"),
             "today_kwh": stat_values.get(item["statistic"])
             if item.get("statistic")
             else delta(item.get("energy"))
@@ -437,7 +449,18 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
         }
         for item in config["consumers"]
     ]
+    for item in consumers:
+        if item.get("power") and reading(hass, item["power"], "W") is None:
+            power_zero_fallback.setdefault("consumers", []).append(
+                {
+                    **source_status(hass, item["power"], "home_power"),
+                    "name": item["name"],
+                }
+            )
     calculation = {}
+    battery_stored_basis = (
+        "sensor" if config["sources"].get("battery_stored") else "unconfigured"
+    )
     if (
         values.get("battery_stored") is None
         and values.get("battery_soc") is not None
@@ -446,6 +469,7 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
         values["battery_stored"] = energy_text(
             energy(values["battery_soc"]) * energy(config["battery_capacity_kwh"]) / 100
         )
+        battery_stored_basis = "soc_capacity"
     for group, _unit, home, solar, imported, exported, discharged, charged in (
         (
             values,
@@ -512,7 +536,9 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
             else None
         )
         group[home] = (
-            energy_text(result) if result is not None and result >= 0 else None
+            energy_text(max(energy(0), result))
+            if result is not None and (_unit == "W" or result >= 0)
+            else None
         )
         calculation[home] = {
             "basis": "balance",
@@ -525,6 +551,8 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
         "today": today,
         "consumers": consumers,
         "calculation": calculation,
+        "power_zero_fallback": power_zero_fallback,
+        "battery_stored_basis": battery_stored_basis,
         "as_of": stats.get("as_of") if stat_values else None,
         "source_status": {
             role: [

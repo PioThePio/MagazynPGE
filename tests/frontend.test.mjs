@@ -193,15 +193,24 @@ test("balance tile rounds whole kWh and opens its reusable HA entity", async () 
   assert.equal(id, "sensor.balance");
   await window.happyDOM.close();
 });
-test("energy diagram distinguishes daily energy, live power and missing values", async () => {
-  const { window, root, card } = await setup("pge-energy-card");
-  assert.match(root.querySelector(".node-pv").textContent, /7 kWh/);
-  assert.match(root.querySelector(".node-grid").textContent, /8 kWh/);
+test("energy diagram shows live power and daily energy together without a toggle", async () => {
+  const { window, root } = await setup("pge-energy-card");
+  assert.match(root.querySelector(".node-pv strong").textContent, /2500 W/);
+  assert.match(
+    root.querySelector(".node-pv .node-today").textContent,
+    /Dziś 7 kWh/,
+  );
+  assert.match(root.querySelector(".node-home strong").textContent, /1200 W/);
+  assert.match(
+    root.querySelector(".node-home .node-today").textContent,
+    /Dziś 15 kWh/,
+  );
+  assert.match(
+    root.querySelector(".node-grid .node-today").textContent,
+    /8.*2 kWh/,
+  );
   assert.match(root.querySelector(".node-pge").textContent, /2197 kWh/);
-  root.querySelector('[data-mode="power"]').click();
-  assert.match(root.querySelector(".node-pv").textContent, /2500 W/);
-  assert.match(root.querySelector(".node-grid").textContent, /— W/);
-  assert.equal(card.mode, "power");
+  assert.equal(root.querySelector("[data-mode]"), null);
   await window.happyDOM.close();
 });
 test("month settlement expands to compact days with balance before net and real gaps", async () => {
@@ -431,7 +440,6 @@ test("consumers are independent of flow and dashboard creation exposes a native 
   assert.doesNotMatch(flow.root.textContent, /Pompa/);
   assert.match(device.root.textContent, /Pompa/);
   assert.match(device.root.textContent, /8 kWh/);
-  device.root.querySelector('[data-mode="power"]').click();
   assert.match(device.root.textContent, /900 W/);
   settings.hass.callWS = async (command) => {
     assert.equal(command.type, "pge_storage/create_dashboard");
@@ -446,4 +454,91 @@ test("consumers are independent of flow and dashboard creation exposes a native 
   assert.ok(settings.root.querySelector("#open-dashboard"));
   for (const value of [flow, device, settings])
     await value.window.happyDOM.close();
+});
+
+test("PV provenance pairs native energy and power, while battery capacity previews without a stored sensor", async () => {
+  const { window, card, root, hass, emit } = await setup("pge-settings-card");
+  hass.states["sensor.soc"] = {
+    state: "15",
+    attributes: { unit_of_measurement: "%", friendly_name: "Victron SOC" },
+  };
+  const data = snapshot();
+  data.energy.config = {
+    sources: {
+      pv_energy: ["sensor.solar_total_kwh", "sensor.pv_energy"],
+      pv_power: "sensor.pv",
+      battery_soc: "sensor.soc",
+    },
+    consumers: [],
+    statistics: { pv_energy: ["sensor.solar_total_kwh", "sensor.pv_energy"] },
+    directions: { grid: "import", battery: "discharge" },
+  };
+  data.energy.import_report = [
+    {
+      type: "solar",
+      name: "Druga instalacja",
+      energy: [
+        {
+          id: "sensor.solar_total_kwh",
+          name: "Druga instalacja kWh",
+          role: "pv_energy",
+          origin: { path: "energy_sources[0].stat_energy_from" },
+        },
+      ],
+      power: [],
+      soc: [],
+    },
+    {
+      type: "solar",
+      name: "MPPT250/70",
+      energy: [
+        {
+          id: "sensor.pv_energy",
+          role: "pv_energy",
+          name: "MPPT yield",
+          origin: { path: "energy_sources[1].stat_energy_from" },
+        },
+      ],
+      power: [
+        {
+          id: "sensor.pv",
+          role: "pv_power",
+          name: "MPPT power",
+          origin: { path: "energy_sources[1].stat_rate" },
+        },
+      ],
+      soc: [],
+    },
+  ];
+  emit(data);
+  card.open("sources");
+  assert.match(
+    root.querySelector("#pv-import-report").textContent,
+    /Brak pomiaru w Energii → 0 W/,
+  );
+  assert.match(
+    root.querySelector("#pv-import-report").textContent,
+    /MPPT power/,
+  );
+  assert.match(
+    root.querySelector('[data-remove-source="pv_power"]').parentElement
+      .textContent,
+    /Źródło: Energia.*MPPT250\/70.*Moc/,
+  );
+  assert.equal(root.querySelector('[data-source="battery_stored"]').value, "");
+  const capacity = root.querySelector("[data-capacity]");
+  capacity.value = "10";
+  capacity.dispatchEvent(new window.Event("input"));
+  assert.match(
+    root.querySelector("#battery-estimate").textContent,
+    /15%.*10 kWh = 1,5 kWh/,
+  );
+  const saved = card.readSources();
+  assert.equal(saved.battery_capacity_kwh, "10");
+  assert.equal(saved.sources.battery_stored, undefined);
+  assert.match(
+    root.querySelector('[data-source="battery_stored"]').textContent,
+    /Z SOC i pojemności/,
+  );
+  await window.happyDOM.close();
 });

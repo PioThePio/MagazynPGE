@@ -1,7 +1,7 @@
 {
   "domain": "pge_storage",
   "name": "Magazyn energii PGE",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "config_flow": true,
   "documentation": "https://github.com/PioThePio/MagazynPGE",
   "issue_tracker": "https://github.com/PioThePio/MagazynPGE/issues",

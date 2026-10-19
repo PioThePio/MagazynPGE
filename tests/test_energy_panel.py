@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from homeassistant.core import State
 
 from custom_components.pge_storage.energy import energy_snapshot, validate_energy_config
@@ -85,7 +86,7 @@ def test_panel_mapping_home_balance_and_external_consumers():
     assert result["calculation"]["home_power"]["basis"] == "balance"
 
 
-def test_missing_measurement_is_not_assumed_zero_and_manual_home_wins():
+def test_missing_power_contributes_zero_and_manual_home_wins():
     hass = hass_with({"sensor.grid": (1000, "W"), "sensor.home": (2, "kW")})
     config = validate_energy_config(
         {
@@ -96,8 +97,9 @@ def test_missing_measurement_is_not_assumed_zero_and_manual_home_wins():
     result = energy_snapshot(
         hass, config, {"import": "sensor.i", "export": "sensor.e"}, {}
     )
-    assert result["values"]["home_power"] is None
-    assert "pv_power" in result["calculation"]["home_power"]["missing"]
+    assert result["values"]["home_power"] == "1000"
+    assert result["values"]["pv_power"] == "0"
+    assert result["calculation"]["home_power"]["missing"] == []
     config["sources"]["home_power"] = "sensor.home"
     assert (
         energy_snapshot(hass, config, {"import": "sensor.i", "export": "sensor.e"}, {})[
@@ -191,6 +193,12 @@ def test_all_native_pv_entries_remain_visible_when_one_live_entity_is_missing():
     assert len(native["report"]) == 2
     assert native["report"][0]["energy"][0]["status"] == "missing"
     assert native["report"][0]["missing"] == ["pv_power"]
+    assert native["report"][0]["missing_power_origin"] == {
+        "path": "energy_sources[0].stat_rate"
+    }
+    assert native["report"][1]["power"][0]["origin"] == {
+        "path": "energy_sources[1].stat_rate"
+    }
     with patch(
         "custom_components.pge_storage.energy.dt_util.utcnow",
         return_value=datetime(2026, 10, 18, 12, tzinfo=UTC),
@@ -207,7 +215,9 @@ def test_all_native_pv_entries_remain_visible_when_one_live_entity_is_missing():
             native,
         )
         assert result["today"]["pv_energy"] == "15"
-        assert result["values"]["pv_power"] is None
+        assert result["values"]["pv_power"] == "2000"
+        assert result["values"]["home_power"] == "2000"
+        assert result["power_zero_fallback"]["pv_power"][0]["status"] == "unconfigured"
         assert result["source_status"]["pv_energy"][0]["id"] == "sensor.solar_total_kwh"
         result = energy_snapshot(
             hass,
@@ -261,3 +271,96 @@ def test_battery_power_config_precedence_and_registered_renamed_transform():
         battery = next(item for item in imported["report"] if item["type"] == "battery")
         assert battery["power"][0]["status"] == "available"
         assert battery["soc"][0]["status"] == "available"
+        assert battery["power"][0]["origin"] == {
+            "path": "energy_sources[2].power_config",
+            "transform": "energy_helper",
+            "inputs": power,
+            "resolved_by": "entity_registry",
+        }
+
+
+@pytest.mark.parametrize("missing", ["missing", "unknown", "unavailable", "invalid"])
+def test_power_sums_each_array_with_zero_for_an_absent_reading(missing):
+    values = {"sensor.pv_one": (2, "kW")}
+    if missing != "missing":
+        values["sensor.pv_two"] = (
+            ("1", "kWh") if missing == "invalid" else (missing, "W")
+        )
+    hass = hass_with(values)
+    config = validate_energy_config(
+        {"sources": {"pv_power": ["sensor.pv_one", "sensor.pv_two"]}}
+    )
+    result = energy_snapshot(
+        hass, config, {"import": "sensor.i", "export": "sensor.e"}, {}
+    )
+    assert result["values"]["pv_power"] == "2000"
+    assert result["values"]["home_power"] == "2000"
+    assert result["power_zero_fallback"]["pv_power"][0]["id"] == "sensor.pv_two"
+    assert result["power_zero_fallback"]["pv_power"][0]["status"] == missing
+    hass.states.get = lambda _id: None
+    result = energy_snapshot(
+        hass, config, {"import": "sensor.i", "export": "sensor.e"}, {}
+    )
+    assert result["values"]["pv_power"] == "0"
+    assert result["values"]["home_power"] == "0"
+    assert len(result["power_zero_fallback"]["pv_power"]) == 2
+    assert result["values"]["battery_soc"] is None
+    assert result["values"]["battery_stored"] is None
+    assert result["today"]["pv_energy"] is None
+
+
+def test_zero_pv_with_grid_and_discharge_computes_home_without_direction_overwrite():
+    hass = hass_with(
+        {
+            "sensor.grid_import": (720, "W"),
+            "sensor.battery_discharge": (5, "W"),
+            "sensor.pv": ("unavailable", "W"),
+            "sensor.pump": ("unknown", "W"),
+        }
+    )
+    config = validate_energy_config(
+        {
+            "sources": {
+                "grid_import_power": "sensor.grid_import",
+                "battery_discharge_power": "sensor.battery_discharge",
+                "pv_power": "sensor.pv",
+            },
+            "consumers": [{"name": "Pompa", "power": "sensor.pump"}],
+        }
+    )
+    result = energy_snapshot(
+        hass, config, {"import": "sensor.i", "export": "sensor.e"}, {}
+    )
+    assert result["values"]["grid_import_power"] == "720"
+    assert result["values"]["grid_export_power"] == "0"
+    assert result["values"]["battery_discharge_power"] == "5"
+    assert result["values"]["battery_charge_power"] == "0"
+    assert result["values"]["home_power"] == "725"
+    assert result["consumers"][0]["power_w"] == "0"
+    assert result["power_zero_fallback"]["consumers"][0]["status"] == "unknown"
+
+
+def test_signed_grid_and_battery_derive_zero_on_absent_sensor_and_clamp_house():
+    hass = hass_with({"sensor.grid": (-500, "W"), "sensor.battery": (-100, "W")})
+    config = validate_energy_config(
+        {
+            "sources": {"grid_power": "sensor.grid", "battery_power": "sensor.battery"},
+            "directions": {"grid": "import", "battery": "discharge"},
+        }
+    )
+    result = energy_snapshot(
+        hass, config, {"import": "sensor.i", "export": "sensor.e"}, {}
+    )
+    assert result["values"]["grid_export_power"] == "500"
+    assert result["values"]["battery_charge_power"] == "100"
+    assert result["values"]["home_power"] == "0"
+    assert result["calculation"]["home_power"]["negative"] is True
+    hass.states.get = lambda _id: None
+    result = energy_snapshot(
+        hass, config, {"import": "sensor.i", "export": "sensor.e"}, {}
+    )
+    assert result["values"]["grid_import_power"] == "0"
+    assert result["values"]["grid_export_power"] == "0"
+    assert result["values"]["battery_charge_power"] == "0"
+    assert result["values"]["battery_discharge_power"] == "0"
+    assert result["values"]["home_power"] == "0"

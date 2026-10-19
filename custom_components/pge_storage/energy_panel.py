@@ -41,7 +41,7 @@ def panel_config(hass, prefs):
         entry = registry.async_get(value) if value.startswith("sensor.") else None
         return not (entry and entry.platform == "pge_storage")
 
-    def add(role, value, statistic=False):
+    def add(role, value, statistic=False, origin=None):
         if not usable(value):
             return
         if statistic:
@@ -54,12 +54,15 @@ def panel_config(hass, prefs):
                 ids.append(value)
         if current is not None:
             key = "soc" if role == "battery_soc" else "energy" if statistic else "power"
-            current[key].append(source_status(hass, value, role, statistic))
+            detail = source_status(hass, value, role, statistic)
+            if origin:
+                detail["origin"] = origin
+            current[key].append(detail)
 
-    def power_source(source, kind):
+    def power_source(source, kind, path):
         power = source.get("power_config", {})
         if power.get("stat_rate"):
-            return power["stat_rate"]
+            return power["stat_rate"], {"path": f"{path}.power_config.stat_rate"}
         if power:
             from homeassistant.components.energy.helpers import (
                 generate_power_sensor_entity_id,
@@ -67,16 +70,23 @@ def panel_config(hass, prefs):
             )
 
             unique_id = generate_power_sensor_unique_id(kind, power)
-            return registry.async_get_entity_id(
-                "sensor", "energy", unique_id
-            ) or generate_power_sensor_entity_id(kind, power)
-        return source.get("stat_rate")
+            registered = registry.async_get_entity_id("sensor", "energy", unique_id)
+            return registered or generate_power_sensor_entity_id(kind, power), {
+                "path": f"{path}.power_config",
+                "transform": "energy_helper",
+                "inputs": dict(power),
+                "resolved_by": "entity_registry"
+                if registered
+                else "generated_entity_id",
+            }
+        return source.get("stat_rate"), {"path": f"{path}.stat_rate"}
 
     entries = prefs.get("energy_sources", [])
     for kind in ("solar", "battery"):
         config["presence"][kind] = any(source.get("type") == kind for source in entries)
-    for source in entries:
+    for index, source in enumerate(entries):
         kind = source.get("type")
+        path = f"energy_sources[{index}]"
         current = {
             "type": kind,
             "name": "",
@@ -84,22 +94,49 @@ def panel_config(hass, prefs):
             "power": [],
             "soc": [],
             "missing": [],
+            "origin": {"path": path},
         }
         if kind == "solar":
-            add("pv_energy", source.get("stat_energy_from"), True)
-            add("pv_power", source.get("stat_rate"))
+            add(
+                "pv_energy",
+                source.get("stat_energy_from"),
+                True,
+                {"path": f"{path}.stat_energy_from"},
+            )
+            add(
+                "pv_power",
+                source.get("stat_rate"),
+                origin={"path": f"{path}.stat_rate"},
+            )
             if not current["power"]:
                 current["missing"].append("pv_power")
+                current["missing_power_origin"] = {"path": f"{path}.stat_rate"}
         elif kind == "battery":
-            add("battery_discharge_energy", source.get("stat_energy_from"), True)
-            add("battery_charge_energy", source.get("stat_energy_to"), True)
+            add(
+                "battery_discharge_energy",
+                source.get("stat_energy_from"),
+                True,
+                {"path": f"{path}.stat_energy_from"},
+            )
+            add(
+                "battery_charge_energy",
+                source.get("stat_energy_to"),
+                True,
+                {"path": f"{path}.stat_energy_to"},
+            )
             # HA normalizes inverted/two-sensor configurations into stat_rate.
+            power, origin = power_source(source, "battery", path)
             add(
                 "battery_power",
-                power_source(source, "battery"),
+                power,
+                origin=origin,
             )
             if len([item for item in entries if item.get("type") == "battery"]) == 1:
-                add("battery_soc", source.get("stat_soc"))
+                add(
+                    "battery_soc",
+                    source.get("stat_soc"),
+                    origin={"path": f"{path}.stat_soc"},
+                )
                 if source.get("capacity") is not None:
                     config["battery_capacity_kwh"] = str(source["capacity"])
             elif source.get("stat_soc"):
@@ -107,24 +144,51 @@ def panel_config(hass, prefs):
                     "Przy kilku akumulatorach wybierz ręcznie encję łącznego poziomu naładowania."
                 )
         elif kind == "grid":
-            add("grid_import_energy", source.get("stat_energy_from"), True)
-            add("grid_export_energy", source.get("stat_energy_to"), True)
-            for item in source.get("flow_from", []):
-                add("grid_import_energy", item.get("stat_energy_from"), True)
-            for item in source.get("flow_to", []):
-                add("grid_export_energy", item.get("stat_energy_to"), True)
+            add(
+                "grid_import_energy",
+                source.get("stat_energy_from"),
+                True,
+                {"path": f"{path}.stat_energy_from"},
+            )
+            add(
+                "grid_export_energy",
+                source.get("stat_energy_to"),
+                True,
+                {"path": f"{path}.stat_energy_to"},
+            )
+            for item_index, item in enumerate(source.get("flow_from", [])):
+                add(
+                    "grid_import_energy",
+                    item.get("stat_energy_from"),
+                    True,
+                    {"path": f"{path}.flow_from[{item_index}].stat_energy_from"},
+                )
+            for item_index, item in enumerate(source.get("flow_to", [])):
+                add(
+                    "grid_export_energy",
+                    item.get("stat_energy_to"),
+                    True,
+                    {"path": f"{path}.flow_to[{item_index}].stat_energy_to"},
+                )
+            power, origin = power_source(source, "grid", path)
             add(
                 "grid_power",
-                power_source(source, "grid"),
+                power,
+                origin=origin,
             )
-            for item in source.get("power", []):
-                add("grid_power", power_source(item, "grid"))
+            for item_index, item in enumerate(source.get("power", [])):
+                power, origin = power_source(
+                    item, "grid", f"{path}.power[{item_index}]"
+                )
+                add("grid_power", power, origin=origin)
         else:
             continue
         if kind == "battery" and not current["power"]:
             current["missing"].append("battery_power")
+            current["missing_power_origin"] = origin
         if kind == "grid" and not current["power"]:
             current["missing"].append("grid_power")
+            current["missing_power_origin"] = origin
         details = current["energy"] or current["power"] or current["soc"]
         current["name"] = source.get("name") or (
             details[0]["name"] if details else kind
@@ -170,13 +234,15 @@ def panel_config(hass, prefs):
                     + (
                         "Zachowano identyfikator statystyki z panelu Energia; historia może nadal istnieć."
                         if detail["statistic"]
-                        else "Odczyt pozostaje niedostępny do czasu poprawienia źródła."
+                        else "Poziom naładowania pozostaje nieznany."
+                        if detail["role"] == "battery_soc"
+                        else "W bieżącym bilansie mocy ta encja wnosi 0 W."
                     )
                 )
         if item["missing"]:
             warnings.append(
                 f"{item['name']}: panel Energia nie ma pomiaru bieżącej mocy. "
-                "Energia kWh nie zastępuje mocy W."
+                "Ta instalacja wnosi 0 W; pozostałe pomiary mocy są nadal sumowane."
             )
     if not config["presence"]["battery"]:
         warnings.append(

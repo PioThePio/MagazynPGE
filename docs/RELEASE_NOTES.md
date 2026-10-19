@@ -1,9 +1,9 @@
-MagazynPGE 0.7.0 — osobne karty HA, czytelne źródła PV i ustawienia Victrona.
+MagazynPGE 0.8.0 — moc teraz i energia dzisiaj razem; brak mocy oznacza 0 W.
 
-- „Utwórz dashboard z osobnych kart” tworzy natywny dashboard Lovelace z ośmioma niezależnymi kartami. Każdą przesuniesz i edytujesz ołówkiem HA. Ponowne wywołanie zachowuje Twoje zmiany i inne dashboardy.
-- Nowa osobna karta „Odbiorcy w domu”. Schemat przepływów pokazuje wyłącznie PV, sieć, dom, akumulator i magazyn PGE. Dotychczasowy zestaw modułów reaguje na szerokość karty, także na szerokim ekranie; koła i podpisy nie nachodzą na siebie.
-- Wszystkie PV są jawnie widoczne jako wybrane źródła. Brakujący sensor importowany z Energii nie blokuje zapisu, a historyczne statystyki pozostają dostępne. Brak historii pozostaje brakiem danych. Częściowa moc PV nie udaje sumy całej instalacji.
-- Prosty wybór pomiaru mocy: jeden sensor +/− albo dwa kierunki. Opisy kWh, mocy, SOC, energii w akumulatorze i pojemności. Naprawiony import nazw pomocniczych sensorów mocy i pierwszeństwa power_config Energii.
-- Konfiguracja źródłowej Energii, sensory i faktury pozostają zachowane.
+- Diagram i odbiorcy pokazują obie wartości jednocześnie: główna moc W i mniejsze dzisiejsze kWh. Usunięto przełącznik Teraz/Dzisiaj. Akumulator pokazuje SOC, moc i dzisiejsze ładowanie/rozładowanie.
+- Każdy brakujący, unknown, unavailable lub niepoprawny odczyt mocy daje 0 W dla tego źródła; pozostałe źródła nadal się sumują. Obie instalacje PV bez odczytu dają 0 W, a dom uwzględnia działającą sieć i baterię. Usunięto blokowanie mocy PV przez brak drugiego pomiaru w Energii. Wartości mocy domu są nieujemne.
+- Konfigurator pokazuje dla każdej instalacji PV osobne przypisania kWh/W oraz pochodzenie z Energii. Nie dobiera nieznanych sensorów mocy po nazwie licznika energii.
+- Własny sensor zapasu akumulatora jest wyraźnie opcjonalny; podgląd SOC × pojemność pokazuje wynik przed zapisem. Zapas kWh nie blokuje mocy domu.
+- Historia kWh, faktury i oryginalne sensory pozostają zachowane. Brakujący odczyt narastającego licznika nie jest zastępowany zerem w rozliczeniu.
 
-Aktualizacja: HACS → 0.7.0 → restart HA → Ctrl+F5. Następnie „Utwórz dashboard z osobnych kart” i „Otwórz dashboard”. Źródła energii → Wczytaj z panelu Energia → Zapisz źródła. Dalsze zmiany ustawień działają bez restartu.
+Aktualizacja: HACS → 0.8.0 → restart HA → Ctrl+F5. Nowy widok działa na istniejących kartach, a zapisane źródła pozostają zachowane. Ręczne zmiany konfiguracji działają bez restartu.

@@ -246,8 +246,8 @@ async def test_missing_imported_pv_keeps_statistics_and_can_be_saved(ha):
     ]
     await ledger.async_put_energy(config, ledger.revision)
     assert ledger.data["energy"]["today"]["pv_energy"] == str(count * 3)
-    assert ledger.data["energy"]["values"]["pv_power"] is None
-    assert ledger.data["energy"]["values"]["home_power"] is None
+    assert ledger.data["energy"]["values"]["pv_power"] == "1000"
+    assert ledger.data["energy"]["values"]["home_power"] == "1000"
     assert ledger.data["energy"]["source_status"]["pv_energy"][0]["status"] == "missing"
     assert (
         len(
@@ -263,4 +263,32 @@ async def test_missing_imported_pv_keeps_statistics_and_can_be_saved(ha):
     manual["sources"]["pv_power"] = "sensor.does_not_exist"
     with pytest.raises(LedgerError, match="Sprawdź wartość"):
         await ledger.async_put_energy(manual, ledger.revision)
+    # A failed array contributes zero without hiding other arrays or the house.
+    for entity_id, value in (
+        ("sensor.first_pv_power", "unavailable"),
+        ("sensor.grid_import_power", "720"),
+        ("sensor.battery_discharge_power", "5"),
+    ):
+        hass.states.async_set(entity_id, value, {"unit_of_measurement": "W"})
+    config["sources"].update(
+        {
+            "pv_power": ["sensor.first_pv_power", "sensor.mppt_power"],
+            "grid_import_power": "sensor.grid_import_power",
+            "battery_discharge_power": "sensor.battery_discharge_power",
+        }
+    )
+    await ledger.async_put_energy(config, ledger.revision)
+    assert ledger.data["energy"]["values"]["pv_power"] == "1000"
+    assert ledger.data["energy"]["values"]["home_power"] == "1725"
+    hass.states.async_set(
+        "sensor.mppt_power", "unavailable", {"unit_of_measurement": "W"}
+    )
+    await hass.async_block_till_done()
+    assert ledger.data["energy"]["values"]["pv_power"] == "0"
+    assert ledger.data["energy"]["values"]["home_power"] == "725"
+    assert ledger.data["energy"]["today"]["pv_energy"] == str(count * 3)
+    home_entity = er.async_get(hass).async_get_entity_id(
+        "sensor", "pge_storage", f"{ledger.entry.entry_id}_home_power"
+    )
+    assert float(hass.states.get(home_entity).state) == 725
     assert native.data == original
