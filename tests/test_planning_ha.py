@@ -213,7 +213,7 @@ async def test_plan_daily_api_and_durable_month_boundaries(ha):
                 "5000 W"
             )
             await expect(page.locator("pge-energy-card .node-pv")).to_contain_text(
-                "Dziś"
+                "kWh"
             )
             hass.states.async_set(
                 "sensor.planning_pv_power", "6000", {"unit_of_measurement": "W"}

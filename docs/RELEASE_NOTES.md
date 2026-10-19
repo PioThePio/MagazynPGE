@@ -1,9 +1,9 @@
-MagazynPGE 0.8.0 — moc teraz i energia dzisiaj razem; brak mocy oznacza 0 W.
+MagazynPGE 0.9.0 — okresy energii, foldery odbiorców i nowy diagram przepływów.
 
-- Diagram i odbiorcy pokazują obie wartości jednocześnie: główna moc W i mniejsze dzisiejsze kWh. Usunięto przełącznik Teraz/Dzisiaj. Akumulator pokazuje SOC, moc i dzisiejsze ładowanie/rozładowanie.
-- Każdy brakujący, unknown, unavailable lub niepoprawny odczyt mocy daje 0 W dla tego źródła; pozostałe źródła nadal się sumują. Obie instalacje PV bez odczytu dają 0 W, a dom uwzględnia działającą sieć i baterię. Usunięto blokowanie mocy PV przez brak drugiego pomiaru w Energii. Wartości mocy domu są nieujemne.
-- Konfigurator pokazuje dla każdej instalacji PV osobne przypisania kWh/W oraz pochodzenie z Energii. Nie dobiera nieznanych sensorów mocy po nazwie licznika energii.
-- Własny sensor zapasu akumulatora jest wyraźnie opcjonalny; podgląd SOC × pojemność pokazuje wynik przed zapisem. Zapas kWh nie blokuje mocy domu.
-- Historia kWh, faktury i oryginalne sensory pozostają zachowane. Brakujący odczyt narastającego licznika nie jest zastępowany zerem w rozliczeniu.
+- Suma W i kWh domu, śledzone oraz nieśledzone zużycie. Urządzenia mają jedną cyfrę po przecinku. Relacja nadrzędna z Energii tworzy rozwijane foldery, np. AC / AC-Dół / AC-Góra; sumy nie dublują podliczników. Stare zaimportowane konfiguracje otrzymują hierarchię przy zachowaniu ręcznych źródeł.
+- Wybór dnia, tygodnia, miesiąca i roku oraz nawigacja dat strzałkami i kalendarzem. W pozostają bieżące, kWh odnoszą się do wybranego okresu. Statystyki Recorder obsługują resetowane liczniki, konwersję Wh/kWh, zewnętrzne statystyki i zmianę czasu.
+- Czytelniejsze koła: moc główna, energia pod spodem, jedna podpisana moc sieci, kierunkowe strzałki. Suma PV i oddzielne moce instalacji. PGE ma zapas, wpłatę energii po opuście i pobranie z magazynu. Akumulator pokazuje moc, mały SOC oraz energię ładowania i rozładowania.
+- Pojemność baterii można podać w kWh albo w Ah i napięciu nominalnym. Bez napięcia nie przeliczamy samych Ah. Własna encja zapasu kWh jest opcjonalna; podgląd oblicza zapas z SOC i pojemności.
+- Zachowane faktury i źródła. Brak mocy nadal wnosi 0 W; brak historycznej energii pozostaje brakiem danych.
 
-Aktualizacja: HACS → 0.8.0 → restart HA → Ctrl+F5. Nowy widok działa na istniejących kartach, a zapisane źródła pozostają zachowane. Ręczne zmiany konfiguracji działają bez restartu.
+Aktualizacja: HACS → 0.9.0 → restart HA → Ctrl+F5. Karty aktualizują się w istniejących dashboardach. W razie ręcznych źródeł relacje nadrzędne możesz wybrać w konfiguratorze. Kolejne zmiany ustawień działają bez restartu.

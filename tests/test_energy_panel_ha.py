@@ -292,3 +292,81 @@ async def test_missing_imported_pv_keeps_statistics_and_can_be_saved(ha):
     )
     assert float(hass.states.get(home_entity).state) == 725
     assert native.data == original
+
+
+async def test_native_consumer_hierarchy_upgrades_without_replacing_manual_sources(ha):
+    hass, _port = ha
+    for entity_id, value, unit in (
+        ("sensor.hierarchy_import", "100", "kWh"),
+        ("sensor.hierarchy_export", "200", "kWh"),
+        ("sensor.hierarchy_ac", "100", "kWh"),
+        ("sensor.hierarchy_child", "60", "kWh"),
+        ("sensor.hierarchy_ac_w", "500", "W"),
+        ("sensor.hierarchy_child_w", "200", "W"),
+        ("sensor.hierarchy_manual_child_w", "250", "W"),
+        ("sensor.hierarchy_home_w", "800", "W"),
+        ("sensor.hierarchy_soc", "50", "%"),
+    ):
+        hass.states.async_set(entity_id, value, {"unit_of_measurement": unit})
+    manager = await async_get_manager(hass)
+    await manager.async_update(
+        {
+            "energy_sources": [
+                {
+                    "type": "grid",
+                    "stat_energy_from": "sensor.hierarchy_import",
+                    "stat_energy_to": "sensor.hierarchy_export",
+                }
+            ],
+            "device_consumption": [
+                {
+                    "stat_consumption": "sensor.hierarchy_ac",
+                    "stat_rate": "sensor.hierarchy_ac_w",
+                    "name": "AC",
+                },
+                {
+                    "stat_consumption": "sensor.hierarchy_child",
+                    "stat_rate": "sensor.hierarchy_child_w",
+                    "included_in_stat": "sensor.hierarchy_ac",
+                    "name": "AC Dół",
+                },
+            ],
+        }
+    )
+    original = deepcopy(manager.data)
+    flow = await hass.config_entries.flow.async_init(
+        "pge_storage", context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {
+            "import_entity_id": "sensor.hierarchy_import",
+            "export_entity_id": "sensor.hierarchy_export",
+            "max_age_hours": 24,
+        },
+    )
+    await hass.async_block_till_done()
+    entry = result["result"]
+    ledger = entry.runtime_data
+    config = deepcopy(ledger.energy_config)
+    assert config["consumers"][1]["parent_id"] == "sensor.hierarchy_ac"
+    config["consumers"][1].pop("parent_id")
+    config["consumers"][1]["power"] = "sensor.hierarchy_manual_child_w"
+    config["sources"]["home_power"] = "sensor.hierarchy_home_w"
+    config["sources"]["battery_soc"] = "sensor.hierarchy_soc"
+    config["battery_capacity_ah"] = "99"
+    config["battery_voltage"] = "51.2"
+    await ledger.async_put_energy(config, ledger.revision)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    ledger = entry.runtime_data
+    assert ledger.energy_config["consumers"][1]["parent_id"] == "sensor.hierarchy_ac"
+    assert (
+        ledger.energy_config["consumers"][1]["power"]
+        == "sensor.hierarchy_manual_child_w"
+    )
+    assert ledger.data["energy"]["consumer_totals"]["tracked_power_w"] == "500"
+    assert ledger.data["energy"]["consumer_totals"]["untracked_power_w"] == "300"
+    assert ledger.data["energy"]["values"]["battery_stored"] == "2.5344"
+    assert ledger.energy_config["battery_capacity_kwh"] is None
+    assert manager.data == original

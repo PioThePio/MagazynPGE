@@ -81,6 +81,7 @@ async function setup(tag = "pge-storage-card", admin = true) {
       setTimeout,
       confirm: () => true,
     });
+  let latest = snapshot();
   const listeners = new Set(),
     calls = [];
   let subscriptions = 0,
@@ -106,7 +107,7 @@ async function setup(tag = "pge-storage-card", admin = true) {
         subscriptions++;
         calls.push(msg);
         listeners.add(fn);
-        fn(snapshot());
+        fn(latest);
         return () => {
           listeners.delete(fn);
           stopped++;
@@ -115,6 +116,18 @@ async function setup(tag = "pge-storage-card", admin = true) {
     },
     callWS: async (cmd) => {
       calls.push(cmd);
+      if (cmd.type === "pge_storage/energy_period")
+        return {
+          period: cmd.period,
+          anchor_day: cmd.anchor_day,
+          label: cmd.anchor_day,
+          values: latest.energy.today,
+          consumers: latest.energy.consumers.map((c, i) => ({
+            ...c,
+            id: c.id || c.statistic || c.energy || c.power || String(i),
+            period_kwh: c.today_kwh,
+          })),
+        };
       if (cmd.type === "pge_storage/months")
         return {
           rows: [
@@ -161,6 +174,7 @@ async function setup(tag = "pge-storage-card", admin = true) {
     calls,
     hass,
     emit: (data) => {
+      latest = data;
       for (const fn of listeners) fn(data);
     },
     subscriptions: () => subscriptions,
@@ -197,17 +211,17 @@ test("energy diagram shows live power and daily energy together without a toggle
   const { window, root } = await setup("pge-energy-card");
   assert.match(root.querySelector(".node-pv strong").textContent, /2500 W/);
   assert.match(
-    root.querySelector(".node-pv .node-today").textContent,
-    /Dziś 7 kWh/,
+    root.querySelector(".node-pv .node-energy").textContent,
+    /6,6 kWh/,
   );
   assert.match(root.querySelector(".node-home strong").textContent, /1200 W/);
   assert.match(
-    root.querySelector(".node-home .node-today").textContent,
-    /Dziś 15 kWh/,
+    root.querySelector(".node-home .node-energy").textContent,
+    /14,7 kWh/,
   );
   assert.match(
-    root.querySelector(".node-grid .node-today").textContent,
-    /8.*2 kWh/,
+    root.querySelector(".node-grid .node-energy").textContent,
+    /\+6,7 kWh/,
   );
   assert.match(root.querySelector(".node-pge").textContent, /2197 kWh/);
   assert.equal(root.querySelector("[data-mode]"), null);
@@ -435,12 +449,14 @@ test("consumers are independent of flow and dashboard creation exposes a native 
       energy: "sensor.pv_energy",
     },
   ];
+  data.revision = 4;
   flow.emit(data);
   device.emit(data);
+  await tick();
   assert.doesNotMatch(flow.root.textContent, /Pompa/);
   assert.match(device.root.textContent, /Pompa/);
-  assert.match(device.root.textContent, /8 kWh/);
-  assert.match(device.root.textContent, /900 W/);
+  assert.match(device.root.textContent, /7,8 kWh/);
+  assert.match(device.root.textContent, /900,0 W/);
   settings.hass.callWS = async (command) => {
     assert.equal(command.type, "pge_storage/create_dashboard");
     return { created: true, url: "/pge-energia-abc/magazyn" };
@@ -540,5 +556,160 @@ test("PV provenance pairs native energy and power, while battery capacity previe
     root.querySelector('[data-source="battery_stored"]').textContent,
     /Z SOC i pojemności/,
   );
+  await window.happyDOM.close();
+});
+
+test("consumer folders exclude children from tracked totals and preserve decimal precision", async () => {
+  const { window, root, emit } = await setup("pge-consumers-card");
+  const data = snapshot();
+  data.revision = 8;
+  data.energy.values.home_power = "1000";
+  data.energy.today.home_energy = "12";
+  data.energy.consumers = [
+    {
+      id: "ac",
+      name: "AC",
+      power: "sensor.ac",
+      energy: "sensor.ac_e",
+      power_w: "500.2",
+      today_kwh: "6.2",
+    },
+    {
+      id: "down",
+      parent_id: "ac",
+      name: "AC-Dół",
+      power: "sensor.down",
+      energy: "sensor.down_e",
+      power_w: "200.1",
+      today_kwh: "2.1",
+    },
+    {
+      id: "up",
+      parent_id: "ac",
+      name: "AC-Góra",
+      power: "sensor.up",
+      energy: "sensor.up_e",
+      power_w: "300.1",
+      today_kwh: "4.1",
+    },
+    {
+      id: "fridge",
+      name: "Lodówka",
+      power: "sensor.fridge",
+      energy: "sensor.fridge_e",
+      power_w: "100",
+      today_kwh: "1",
+    },
+  ];
+  emit(data);
+  await tick();
+  assert.match(
+    root.querySelector(".consumer-summary").textContent,
+    /600,2 W.*7,2 kWh/,
+  );
+  assert.match(
+    root.querySelector(".untracked").textContent,
+    /399,8 W.*4,8 kWh/,
+  );
+  assert.match(root.textContent, /200,1 W/);
+  assert.equal(root.querySelectorAll(".device").length, 4);
+  root.querySelector('[data-folder="ac"]').click();
+  assert.equal(root.querySelectorAll(".device").length, 2);
+  root.querySelector('[data-folder="ac"]').click();
+  assert.equal(root.querySelectorAll(".device").length, 4);
+  assert.match(root.querySelector(".consumer-total").textContent, /1.?000,0 W/);
+  await window.happyDOM.close();
+});
+test("period navigation changes energy while current power and arrow direction remain live", async () => {
+  const { window, card, root, hass, emit } = await setup("pge-energy-card");
+  hass.callWS = async (cmd) => ({
+    period: cmd.period,
+    label: cmd.anchor_day,
+    values: {
+      pv_energy: cmd.period === "year" ? "1234" : "20",
+      home_energy: "30",
+      grid_import_energy: "15",
+      grid_export_energy: "5",
+      pge_credited_energy: "4",
+      pge_withdrawn_energy: "10",
+    },
+    consumers: [],
+  });
+  const data = snapshot();
+  data.revision = 9;
+  data.energy.values.grid_import_power = "0";
+  data.energy.values.grid_export_power = "500";
+  data.energy.values.battery_charge_power = "50";
+  data.energy.values.battery_discharge_power = "0";
+  data.energy.pv_arrays = [
+    {
+      id: "one",
+      name: "Pierwsza instalacja",
+      power_w: "1000",
+      power_entity: "sensor.pv",
+    },
+    { id: "two", name: "Druga instalacja", power_w: "1500" },
+  ];
+  emit(data);
+  await tick();
+  assert.match(root.querySelector(".node-grid strong").textContent, /-500,0 W/);
+  assert.ok(
+    root.querySelector('[data-flow="grid"]').hasAttribute("marker-start"),
+  );
+  assert.ok(
+    root.querySelector('[data-flow="battery"]').hasAttribute("marker-end"),
+  );
+  assert.equal(root.querySelectorAll(".pv-installation").length, 2);
+  root.querySelector('[data-period="year"]').click();
+  await tick();
+  assert.match(
+    root.querySelector(".node-pv .node-energy").textContent,
+    /1.?234,0 kWh/,
+  );
+  assert.match(root.querySelector(".node-pv strong").textContent, /2500 W/);
+  const old = card.anchor;
+  root.querySelector('[data-shift="-1"]').click();
+  await tick();
+  assert.equal(Number(card.anchor.slice(0, 4)), Number(old.slice(0, 4)) - 1);
+  assert.equal(root.querySelectorAll("[data-period]").length, 4);
+  assert.doesNotMatch(root.querySelector(".flow-map").textContent, /Dziś/);
+  await window.happyDOM.close();
+});
+test("battery Ah conversion requires nominal voltage and settings retain parent references", async () => {
+  const { window, card, root, hass, emit } = await setup("pge-settings-card");
+  hass.states["sensor.soc"] = {
+    state: "50",
+    attributes: { unit_of_measurement: "%" },
+  };
+  const data = snapshot();
+  data.energy.config = {
+    sources: { battery_soc: "sensor.soc" },
+    consumers: [
+      { id: "ac", name: "AC", energy: "sensor.ac" },
+      { id: "child", parent_id: "ac", name: "AC-Dół", energy: "sensor.child" },
+    ],
+  };
+  emit(data);
+  card.open("sources");
+  const mode = root.querySelector("[data-capacity-mode]");
+  mode.value = "ah";
+  mode.dispatchEvent(new window.Event("change"));
+  root.querySelector("[data-capacity-ah]").value = "99";
+  root
+    .querySelector("[data-capacity-ah]")
+    .dispatchEvent(new window.Event("input"));
+  assert.match(
+    root.querySelector("#battery-estimate").textContent,
+    /napięcie nominalne/,
+  );
+  root.querySelector("[data-voltage]").value = "51.2";
+  root.querySelector("[data-voltage]").dispatchEvent(new window.Event("input"));
+  assert.match(root.querySelector("#battery-estimate").textContent, /5,07 kWh/);
+  assert.match(root.querySelector("#battery-estimate").textContent, /2,53 kWh/);
+  const saved = card.readSources();
+  assert.equal(saved.battery_capacity_kwh, null);
+  assert.equal(saved.battery_capacity_ah, "99");
+  assert.equal(saved.battery_voltage, "51.2");
+  assert.equal(saved.consumers[1].parent_id, "ac");
   await window.happyDOM.close();
 });

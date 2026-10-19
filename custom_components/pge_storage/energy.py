@@ -38,6 +38,8 @@ def validate_energy_config(raw):
             "presence",
             "imported_from_energy",
             "battery_capacity_kwh",
+            "battery_capacity_ah",
+            "battery_voltage",
         }:
             raise ValueError
         sources, consumers = raw.get("sources", {}), raw.get("consumers", [])
@@ -111,11 +113,14 @@ def validate_energy_config(raw):
         imported = raw.get("imported_from_energy", False)
         if type(imported) is not bool:
             raise ValueError
-        capacity = raw.get("battery_capacity_kwh")
-        if capacity is not None:
-            capacity = energy_text(energy(capacity))
-            if energy(capacity) <= 0:
-                raise ValueError
+        capacities = {}
+        for key in ("battery_capacity_kwh", "battery_capacity_ah", "battery_voltage"):
+            value = raw.get(key)
+            if value is not None:
+                value = energy_text(energy(value))
+                if energy(value) <= 0:
+                    raise ValueError
+            capacities[key] = value
         items = []
         for item in consumers:
             if not isinstance(item, dict) or set(item) - {
@@ -123,6 +128,8 @@ def validate_energy_config(raw):
                 "power",
                 "energy",
                 "statistic",
+                "id",
+                "parent_id",
             }:
                 raise ValueError
             name = item.get("name", "").strip()
@@ -136,7 +143,17 @@ def validate_energy_config(raw):
                 raise ValueError
             items.append(
                 {
+                    "id": statistic(consumer_id(item)),
                     "name": name,
+                    **(
+                        {
+                            "parent_id": statistic(item["parent_id"])
+                            if item["parent_id"]
+                            else None
+                        }
+                        if "parent_id" in item
+                        else {}
+                    ),
                     **(
                         {"statistic": statistic(item["statistic"])}
                         if item.get("statistic")
@@ -149,6 +166,25 @@ def validate_energy_config(raw):
                     },
                 }
             )
+        by_id = {item["id"]: item for item in items}
+        if len(by_id) != len(items):
+            raise LedgerError(
+                "invalid_energy", "Każdy odbiorca musi mieć inny identyfikator."
+            )
+        for item in items:
+            seen = {item["id"]}
+            parent = item.get("parent_id")
+            while parent:
+                if parent not in by_id:
+                    raise LedgerError(
+                        "invalid_energy", "Wybierz istniejącego odbiorcę nadrzędnego."
+                    )
+                if parent in seen:
+                    raise LedgerError(
+                        "invalid_energy", "Powiązania odbiorców nie mogą tworzyć pętli."
+                    )
+                seen.add(parent)
+                parent = by_id[parent].get("parent_id")
         directions = raw.get("directions", {})
         if not isinstance(directions, dict) or set(directions) - {"grid", "battery"}:
             raise ValueError
@@ -176,7 +212,7 @@ def validate_energy_config(raw):
             "statistics": statistics,
             "presence": presence,
             "imported_from_energy": imported,
-            "battery_capacity_kwh": capacity,
+            **capacities,
         }
     except (TypeError, ValueError, AttributeError) as err:
         raise LedgerError(
@@ -186,6 +222,16 @@ def validate_energy_config(raw):
 
 def source_ids(value):
     return value if isinstance(value, list) else [value] if value else []
+
+
+def consumer_id(item):
+    """Stable across ordering and names; imported IDs match native statistics."""
+    return (
+        item.get("id")
+        or item.get("statistic")
+        or item.get("energy")
+        or item.get("power")
+    )
 
 
 def energy_sources(config):
@@ -198,7 +244,7 @@ def energy_sources(config):
         value
         for item in config["consumers"]
         for key, value in item.items()
-        if key not in ("name", "statistic")
+        if key in ("power", "energy")
     }
     ids |= {
         stat
@@ -220,6 +266,136 @@ def aggregate(values):
         if values and all(v is not None for v in values)
         else None
     )
+
+
+def consumer_summary(consumers, home_power_w, home_kwh, energy_key="today_kwh"):
+    """Count a metered ancestor once, falling back to children per metric."""
+    by_id = {consumer_id(item): item for item in consumers}
+    parents = {item.get("parent_id") for item in consumers if item.get("parent_id")}
+    for item in consumers:
+        item["id"] = consumer_id(item)
+        item["parent_id"] = item.get("parent_id")
+        item["has_children"] = item["id"] in parents
+        for metric, field in (("power", "power"), ("energy", "energy")):
+            configured = bool(
+                item.get(field) or (metric == "energy" and item.get("statistic"))
+            )
+            parent = item.get("parent_id")
+            visited = {item["id"]}
+            while parent and parent in by_id and parent not in visited:
+                visited.add(parent)
+                ancestor = by_id[parent]
+                if ancestor.get(field) or (
+                    metric == "energy" and ancestor.get("statistic")
+                ):
+                    configured = False
+                    break
+                parent = ancestor.get("parent_id")
+            item[f"counted_{metric}"] = configured
+
+    def tracked(metric, field):
+        selected = [item.get(field) for item in consumers if item[f"counted_{metric}"]]
+        return aggregate(selected) if selected else "0"
+
+    power, kwh = tracked("power", "power_w"), tracked("energy", energy_key)
+
+    def remainder(total, measured):
+        return (
+            energy_text(energy(total) - energy(measured))
+            if total is not None and measured is not None
+            else None
+        )
+
+    untracked_power, untracked_kwh = (
+        remainder(home_power_w, power),
+        remainder(home_kwh, kwh),
+    )
+    return {
+        "home_power_w": home_power_w,
+        "home_kwh": home_kwh,
+        "tracked_power_w": power,
+        "tracked_kwh": kwh,
+        "untracked_power_w": untracked_power,
+        "untracked_kwh": untracked_kwh,
+        "overcount_power": untracked_power is not None and energy(untracked_power) < 0,
+        "overcount_energy": untracked_kwh is not None and energy(untracked_kwh) < 0,
+    }
+
+
+def battery_capacity(config):
+    """Nominal energy needs both Ah and V; never guess a battery voltage."""
+    explicit = config.get("battery_capacity_kwh")
+    ah, voltage = config.get("battery_capacity_ah"), config.get("battery_voltage")
+    return {
+        "kwh": explicit
+        if explicit
+        else energy_text(energy(ah) * energy(voltage) / 1000)
+        if ah and voltage
+        else None,
+        "basis": "kwh"
+        if explicit
+        else "ah_voltage"
+        if ah and voltage
+        else "incomplete",
+        "ah": ah,
+        "voltage": voltage,
+    }
+
+
+def pv_arrays(hass, config, native=None):
+    """Expose per-array live readings without reading outside selected sources."""
+    powers = source_ids(config["sources"].get("pv_power"))
+    statistics = config.get("statistics", {}).get("pv_energy") or source_ids(
+        config["sources"].get("pv_energy")
+    )
+    rows = []
+    native_config = native.get("config", {}) if native else {}
+    if (
+        native
+        and set(powers)
+        == set(source_ids(native_config.get("sources", {}).get("pv_power")))
+        and set(statistics)
+        == set(native_config.get("statistics", {}).get("pv_energy", []))
+    ):
+        for item in native.get("report", []):
+            if item["type"] != "solar":
+                continue
+            stat = next((source["id"] for source in item["energy"]), None)
+            power = next((source["id"] for source in item["power"]), None)
+            rows.append(
+                {
+                    "id": stat or power or item["origin"]["path"],
+                    "name": item["name"],
+                    "power_w": source_reading(hass, power, "W"),
+                    "energy_statistic": stat,
+                    "power_entity": power,
+                }
+            )
+        return rows
+    for index in range(len(powers) or len(statistics)):
+        power = powers[index] if powers else None
+        # Manual power and energy lists are independent. Do not invent which
+        # counter belongs to a power sensor merely from their array positions.
+        stat = statistics[index] if not powers else None
+        entity_id = stat or power
+        state = hass.states.get(entity_id) if entity_id else None
+        rows.append(
+            {
+                "id": entity_id,
+                "name": state.attributes.get("friendly_name", entity_id)
+                if state
+                else entity_id,
+                "power_w": source_reading(hass, power, "W"),
+                "energy_statistic": stat,
+                "power_entity": power,
+                "energy_statistics": statistics
+                if len(powers) == 1
+                else [stat]
+                if stat
+                else [],
+            }
+        )
+    return rows
 
 
 def source_reading(hass, ids, unit, signed=False):
@@ -458,16 +634,17 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
                 }
             )
     calculation = {}
+    capacity = battery_capacity(config)
     battery_stored_basis = (
         "sensor" if config["sources"].get("battery_stored") else "unconfigured"
     )
     if (
         values.get("battery_stored") is None
         and values.get("battery_soc") is not None
-        and config.get("battery_capacity_kwh")
+        and capacity["kwh"]
     ):
         values["battery_stored"] = energy_text(
-            energy(values["battery_soc"]) * energy(config["battery_capacity_kwh"]) / 100
+            energy(values["battery_soc"]) * energy(capacity["kwh"]) / 100
         )
         battery_stored_basis = "soc_capacity"
     for group, _unit, home, solar, imported, exported, discharged, charged in (
@@ -545,14 +722,20 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
             "missing": missing,
             "negative": result is not None and result < 0,
         }
+    totals = consumer_summary(
+        consumers, values.get("home_power"), today.get("home_energy")
+    )
     return {
         "config": config,
         "values": values,
         "today": today,
         "consumers": consumers,
+        "consumer_totals": totals,
+        "pv_arrays": pv_arrays(hass, config, native),
         "calculation": calculation,
         "power_zero_fallback": power_zero_fallback,
         "battery_stored_basis": battery_stored_basis,
+        "battery_capacity": capacity,
         "as_of": stats.get("as_of") if stat_values else None,
         "source_status": {
             role: [

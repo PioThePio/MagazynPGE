@@ -222,7 +222,32 @@ def panel_config(hass, prefs):
                 consumer["energy"] = stat
         if usable(power) and power.startswith("sensor."):
             consumer["power"] = power
+        if usable(item.get("included_in_stat")):
+            consumer["parent_id"] = item["included_in_stat"]
         config["consumers"].append(consumer)
+    # A parent outside the imported selection must not make all sources fail.
+    from .energy import consumer_id
+
+    consumer_ids = {consumer_id(item) for item in config["consumers"]}
+    for item in config["consumers"]:
+        if item.get("parent_id") and item["parent_id"] not in consumer_ids:
+            warnings.append(
+                f"{item['name']}: urządzenie nadrzędne nie jest wśród wczytanych odbiorców; pokazano osobno."
+            )
+            item.pop("parent_id")
+    by_id = {consumer_id(item): item for item in config["consumers"]}
+    for item in config["consumers"]:
+        seen = {consumer_id(item)}
+        parent = item.get("parent_id")
+        while parent:
+            if parent in seen:
+                warnings.append(
+                    f"{item['name']}: cykl urządzeń w panelu Energia; usunięto powiązanie nadrzędne."
+                )
+                item.pop("parent_id", None)
+                break
+            seen.add(parent)
+            parent = by_id[parent].get("parent_id")
     for role, ids in config["sources"].items():
         if len(ids) == 1:
             config["sources"][role] = ids[0]
@@ -295,8 +320,30 @@ def merge_panel_config(existing, imported):
             result["directions"][kind] = imported["directions"][kind]
     if not existing["consumers"]:
         result["consumers"] = imported["consumers"]
-    if existing.get("battery_capacity_kwh") is None:
+    if existing.get("battery_capacity_kwh") is None and not (
+        existing.get("battery_capacity_ah") and existing.get("battery_voltage")
+    ):
         result["battery_capacity_kwh"] = imported.get("battery_capacity_kwh")
+    return result
+
+
+def upgrade_consumer_parents(existing, imported):
+    """Add newly supported native hierarchy without changing manual bindings."""
+    from .energy import consumer_id
+
+    result = deepcopy(existing)
+    if not existing.get("imported_from_energy"):
+        return result
+    by_id = {consumer_id(item): item for item in imported["consumers"]}
+    selected = {consumer_id(item) for item in existing["consumers"]}
+    for item in result["consumers"]:
+        native = by_id.get(consumer_id(item))
+        parent = native.get("parent_id") if native else None
+        same_counter = native and (item.get("statistic") or item.get("energy")) == (
+            native.get("statistic") or native.get("energy")
+        )
+        if same_counter and parent in selected and "parent_id" not in item:
+            item["parent_id"] = parent
     return result
 
 

@@ -1,6 +1,7 @@
 """Exercise native Lovelace storage and the complete HA frontend in Chromium."""
 
 import json
+import re
 import shutil
 import time
 from unittest.mock import patch
@@ -174,11 +175,11 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             await page.locator("pge-settings-card #close-dialog").click()
 
             async def check_flow_geometry():
-                flow = page.locator("pge-energy-card .flow")
+                flow = page.locator("pge-energy-card .flow-map")
                 geometry = await flow.evaluate(
                     """element => ({
                         bounds: element.getBoundingClientRect().toJSON(),
-                        circles: [...element.querySelectorAll('.orb')].map(
+                        circles: [...element.querySelectorAll('.node')].map(
                             node => node.getBoundingClientRect().toJSON()),
                         nodes: [...element.querySelectorAll('.node')].map(
                             node => node.getBoundingClientRect().toJSON()),
@@ -242,7 +243,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 "2500 W"
             )
             await expect(page.locator("pge-energy-card .node-pv")).to_contain_text(
-                "Dziś"
+                "kWh"
             )
             await expect(page.locator("pge-energy-card .node-pv")).to_contain_text(
                 "kWh"
@@ -251,7 +252,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 "3400 W"
             )
             await expect(page.locator("pge-consumers-card .device")).to_contain_text(
-                "800 W"
+                "800,0 W"
             )
             await expect(page.locator("pge-consumers-card .device")).to_contain_text(
                 "kWh"
@@ -307,7 +308,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
                 "900 W"
             )
-            await page.screenshot(path="/tmp/pge-08-pv-outage.png", full_page=True)
+            await page.screenshot(path="/tmp/pge-09-pv-outage.png", full_page=True)
             hass.states.async_set(
                 "sensor.browser_pv_power", "2500", {"unit_of_measurement": "W"}
             )
@@ -329,7 +330,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 page.locator("pge-settings-card #battery-estimate")
             ).to_contain_text("1,5 kWh")
             await page.screenshot(
-                path="/tmp/pge-08-battery-settings.png", full_page=True
+                path="/tmp/pge-09-battery-settings.png", full_page=True
             )
             await page.locator("pge-settings-card #save-sources").click()
             await expect(
@@ -337,13 +338,13 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             ).to_contain_text("Źródła zapisane")
             await page.locator("pge-settings-card #close-dialog").click()
             await expect(page.locator("pge-energy-card .node-battery")).to_contain_text(
-                "15 %"
+                "15%"
             )
             await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
                 "3400 W"
             )
             await check_flow_geometry()
-            await page.screenshot(path="/tmp/pge-08-desktop.png", full_page=True)
+            await page.screenshot(path="/tmp/pge-09-desktop.png", full_page=True)
 
             # This reproduces the user's desktop screenshot: a narrow HA card
             # in a wide browser must follow its own width, not the viewport.
@@ -357,11 +358,11 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             )
             await check_legacy_stack()
             await check_flow_geometry()
-            await page.screenshot(path="/tmp/pge-08-narrow.png", full_page=True)
+            await page.screenshot(path="/tmp/pge-09-narrow.png", full_page=True)
             await page.set_viewport_size({"width": 390, "height": 844})
             await check_legacy_stack()
             await check_flow_geometry()
-            await page.screenshot(path="/tmp/pge-08-mobile.png", full_page=True)
+            await page.screenshot(path="/tmp/pge-09-mobile.png", full_page=True)
 
             await page.set_viewport_size({"width": 1440, "height": 1000})
             await page.locator("pge-settings-card #create-dashboard").click()
@@ -400,13 +401,86 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 "3400 W"
             )
             await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
-                "Dziś"
+                "kWh"
             )
             await check_flow_geometry()
-            await page.screenshot(path="/tmp/pge-08-native-desktop.png", full_page=True)
+            await page.locator('pge-energy-card [data-period="month"]').click()
+            await expect(
+                page.locator('pge-energy-card [data-period="month"]')
+            ).to_have_attribute("aria-pressed", "true")
+            current_month = await page.locator("pge-energy-card").evaluate(
+                "node => node.anchor.slice(0,7)"
+            )
+            await page.locator('pge-energy-card [data-shift="-1"]').click()
+            previous_month = await page.locator("pge-energy-card").evaluate(
+                "node => node.anchor.slice(0,7)"
+            )
+            assert current_month != previous_month
+            await expect(
+                page.locator("pge-energy-card .node-home strong")
+            ).to_have_text("3400 W")
+            await page.locator("pge-energy-card [data-current]").click()
+            await page.locator('pge-energy-card [data-period="day"]').click()
+            for entity_id, value in {
+                "sensor.ac": "300.2",
+                "sensor.ac_down": "100.1",
+                "sensor.ac_up": "200.1",
+            }.items():
+                hass.states.async_set(entity_id, value, {"unit_of_measurement": "W"})
+            await manager.async_put_energy(
+                {
+                    **manager.energy_config,
+                    "consumers": [
+                        *manager.energy_config["consumers"],
+                        {"id": "ac", "name": "AC", "power": "sensor.ac"},
+                        {
+                            "id": "ac_down",
+                            "name": "AC-Dół",
+                            "power": "sensor.ac_down",
+                            "parent_id": "ac",
+                        },
+                        {
+                            "id": "ac_up",
+                            "name": "AC-Góra",
+                            "power": "sensor.ac_up",
+                            "parent_id": "ac",
+                        },
+                    ],
+                },
+                manager.revision,
+            )
+            await page.locator('pge-consumers-card [data-folder="ac"]').click()
+            await expect(
+                page.locator('pge-consumers-card [data-consumer-id="ac_down"]')
+            ).to_contain_text("100,1 W")
+            await expect(
+                page.locator("pge-consumers-card .consumer-summary")
+            ).to_contain_text(re.compile(r"1\s?100,2 W"))
+            await expect(page.locator("pge-consumers-card .untracked")).to_contain_text(
+                re.compile(r"2\s?299,8 W")
+            )
+            await page.locator("pge-settings-card #open-sources").click()
+            await page.locator("pge-settings-card [data-capacity-mode]").select_option(
+                "ah"
+            )
+            await page.locator("pge-settings-card [data-capacity-ah]").fill("99")
+            await expect(
+                page.locator("pge-settings-card #battery-estimate")
+            ).to_contain_text("napięcie nominalne")
+            await page.locator("pge-settings-card [data-voltage]").fill("51.2")
+            await expect(
+                page.locator("pge-settings-card #battery-estimate")
+            ).to_contain_text("5,07 kWh")
+            await page.locator("pge-settings-card #save-sources").click()
+            await expect(
+                page.locator("pge-settings-card #source-status")
+            ).to_contain_text("Źródła zapisane")
+            assert manager.energy_config["consumers"][-1]["parent_id"] == "ac"
+            await page.locator("pge-settings-card #close-dialog").click()
+            await page.screenshot(path="/tmp/pge-09-native-desktop.png", full_page=True)
             await page.set_viewport_size({"width": 390, "height": 844})
             await check_flow_geometry()
-            await page.screenshot(path="/tmp/pge-08-native-mobile.png", full_page=True)
+            await page.screenshot(path="/tmp/pge-09-native-mobile.png", full_page=True)
             assert not errors, errors
         finally:
             await browser.close()

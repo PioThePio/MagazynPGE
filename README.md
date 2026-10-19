@@ -54,7 +54,7 @@ Poniżej pozostaje alternatywna instalacja ręczna:
 
 Nie trzeba zmieniać `configuration.yaml`, definicji obecnych sensorów ani konfiguracji Recorder. Ewentualne wydłużenie retencji jest osobną, świadomą decyzją i nie przywraca już usuniętych danych.
 
-## Osobne moduły dashboardu (0.8)
+## Osobne moduły dashboardu (0.9)
 
 Po aktualizacji kliknij **Rozliczenia i ustawienia → Utwórz dashboard z osobnych kart → Otwórz dashboard**. Powstaje natywny dashboard HA z ośmioma niezależnymi kartami: trzy kafelki, przepływy, odbiorcy, projekcja, historia i konfigurator. **Ołówek HA** pozwala przenosić i edytować każdą kartę osobno. Ponowne kliknięcie przycisku otwiera ten sam dashboard i zachowuje Twoje zmiany.
 
@@ -97,13 +97,23 @@ Ten sam bilans liczymy oddzielnie dla mocy W i energii kWh. Ręcznie wybrana enc
 
 Zapis aktualizuje moduły i encje **bez restartu HA**. Nie wybieraj encji obliczonych przez sam Magazyn PGE jako jego źródeł; backend odrzuca takie zapętlenie.
 
-### Teraz i dzisiaj jednocześnie
+### Moc, energia i wybór okresu
 
-Diagram i odbiorcy pokazują moc W jako główną wartość oraz dzisiejsze kWh mniejszym tekstem, bez przełączania widoku. Akumulator pokazuje bieżący SOC, moc ładowania/rozładowania i dzisiejsze kWh. Magazyn PGE pokazuje zapas do odbioru.
+Diagram oraz odbiorcy pokazują W na żywo i kWh z wybranego okresu. Wybierz **dzień, tydzień, miesiąc lub rok**, następnie zmieniaj daty strzałkami albo kalendarzem. Zmiana historycznej daty zmienia kWh; moc, SOC i obecny zapas PGE pozostają aktualne. Tygodnie zaczynają się w poniedziałek; granice okresów są liczone w Europe/Warsaw, także w dni zmiany czasu. Statystyki wymagają pokrycia wybranego zakresu — braki pozostają puste.
 
-W konfiguratorze każda instalacja PV ma jawne źródło licznika kWh i mocy W z panelu Energia. Dwa liczniki kWh mogą mieć tylko jeden przypisany pomiar W: kopiujemy dokładnie osobne pola Energii, bez dobierania sensorów po nazwie. Przy źródłach widać pochodzenie, a wskazanie źródła pokazuje dokładną ścieżkę preferencji HA.
+W kołach główna wartość to moc W, poniżej energia kWh. Sieć ma jedną moc: **plus = pobieranie, minus = oddawanie**. Strzałki zmieniają kierunek według bieżącego przepływu. Słońce pokazuje sumę, a po bokach moce poszczególnych instalacji. PGE pokazuje aktualny zapas oraz dodaną energię po opuście i energię pobraną z magazynu w wybranym okresie. Pobranie z PGE wymaga znanego salda początkowego i historii magazynu; import z sieci nie jest automatycznie uznawany za pobranie z zapasu.
 
-„Własna encja zapasu kWh” baterii jest opcjonalna. Pozostaw ją pustą, wybierz SOC i wpisz pojemność użytkową, jeśli chcesz obliczać kWh. Podgląd pokaże np. 15% × 10 kWh = 1,5 kWh. Sam SOC wystarcza do pokazania procentów, a zapas kWh nie jest potrzebny do bilansu mocy domu.
+### Odbiorcy, foldery i nieśledzone zużycie
+
+Na górze są suma mocy domu i energia domu z wybranego okresu. Urządzenia pokazują jedną cyfrę po przecinku. Relacje **urządzenie nadrzędne** z panelu Energia są importowane automatycznie, np. **AC → AC-Dół, AC-Góra**. Foldery można rozwijać i zwijać; ustawienia źródeł pozwalają ręcznie zmienić rodzica.
+
+Śledzone zużycie sumujemy bez podwójnego doliczania podliczników. Dla W oraz kWh osobno wybierany jest skonfigurowany pomiar nadrzędny; gdy rodzic nie ma skonfigurowanej danej wielkości, liczą się jego dzieci. **Nieśledzone = cały dom − śledzone**. Ujemny wynik pozostaje widoczny z informacją o przekroczeniu, aby nie ukrywać różnic między punktami pomiarowymi.
+
+### Pojemność baterii: kWh albo Ah i V
+
+„Własna encja zapasu kWh” to opcjonalny sensor pokazujący bieżącą energię w baterii. Zostaw go pustego, jeśli nie masz takiej encji. Wybierz SOC oraz pojemność, a zapas obliczy się jako SOC × pojemność / 100.
+
+Pojemność można wpisać bezpośrednio w kWh albo wybrać **Ah + napięcie nominalne**. Obowiązuje `kWh = Ah × V / 1000`. Samo 99 Ah nie określa energii. Przykładowo 99 Ah przy napięciu nominalnym 51,2 V daje 5,0688 kWh; użyj rzeczywistego napięcia nominalnego całego zestawu z dokumentacji, a nie chwilowego napięcia podczas ładowania. Podgląd pokazuje przeliczenie przed zapisaniem. Przy braku napięcia nie zgadujemy pojemności. SOC oraz moc baterii działają niezależnie od tego opcjonalnego ustawienia.
 
 ### Sieć i lokalny akumulator — co wybrać
 
@@ -209,7 +219,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.8.0.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.9.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 

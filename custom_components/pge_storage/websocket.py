@@ -16,6 +16,7 @@ from .energy_panel import async_panel_config
 from .history import async_read_counters, async_statistics_metadata
 from .ledger import LedgerError
 from .overview import async_months
+from .period import PERIODS, async_energy_period
 from .planning_history import async_seasonal_profile
 
 _LOGGER = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ def async_register(hass):
         put_energy,
         energy_defaults,
         create_dashboard,
+        energy_period,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -356,5 +358,26 @@ async def create_dashboard(hass, connection, msg):
             "dashboard_failed",
             "Nie udało się utworzyć dashboardu. Sprawdź log Home Assistant.",
         )
+    else:
+        connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "pge_storage/energy_period",
+        **ENTRY,
+        vol.Required("period"): vol.In(PERIODS),
+        vol.Required("anchor_day"): str,
+    }
+)
+@websocket_api.async_response
+async def energy_period(hass, connection, msg):
+    coordinator = _get(hass, connection, msg)
+    try:
+        result = await async_energy_period(
+            coordinator, msg["period"], msg["anchor_day"]
+        )
+    except LedgerError as err:
+        connection.send_error(msg["id"], err.code, str(err))
     else:
         connection.send_result(msg["id"], result)

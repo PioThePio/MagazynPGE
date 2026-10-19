@@ -36,7 +36,12 @@ from .energy import (
     validate_energy_cache,
     validate_energy_config,
 )
-from .energy_panel import async_panel_config, async_statistics_today, merge_panel_config
+from .energy_panel import (
+    async_panel_config,
+    async_statistics_today,
+    merge_panel_config,
+    upgrade_consumer_parents,
+)
 from .history import async_read_counters, async_read_samples, sample_from_state
 from .ledger import (
     WARSAW,
@@ -152,10 +157,15 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.energy_panel_defaults = result
         self.energy_import_warnings = result["warnings"]
         if self.energy_config.get("imported_from_energy"):
-            return
-        config = validate_energy_config(
-            merge_panel_config(self.energy_config, result["config"])
-        )
+            config = validate_energy_config(
+                upgrade_consumer_parents(self.energy_config, result["config"])
+            )
+            if config == self.energy_config:
+                return
+        else:
+            config = validate_energy_config(
+                merge_panel_config(self.energy_config, result["config"])
+            )
         async with self.lock:
             await self.store.async_save(
                 {
