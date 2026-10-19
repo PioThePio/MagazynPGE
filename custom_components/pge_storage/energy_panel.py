@@ -10,7 +10,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.util import dt as dt_util
 
-from .ledger import WARSAW, LedgerError, energy, energy_text
+from .ledger import WARSAW, LedgerError
 
 
 def panel_config(hass, prefs):
@@ -374,21 +374,15 @@ async def async_statistics_today(hass, config):
             {"sum"},
         )
     )
-    values = {}
-    for stat in ids:
-        points = {int(item["start"]): item.get("sum") for item in rows.get(stat, [])}
-        try:
-            sequence = [
-                energy(points[stamp])
-                for stamp in range(
-                    int(midnight.timestamp()) - 3600, int(end.timestamp()), 3600
-                )
-            ]
-            if any(b < a for a, b in zip(sequence, sequence[1:], strict=False)):
-                raise ValueError
-            values[stat] = energy_text(sequence[-1] - sequence[0])
-        except KeyError, TypeError, ValueError, LedgerError:
-            values[stat] = None
+    from .period import pending_statistics_hour, sum_delta
+
+    points = {
+        stat: {int(item["start"]): item.get("sum") for item in rows.get(stat, [])}
+        for stat in ids
+    }
+    if pending_statistics_hour(points, end):
+        end -= timedelta(hours=1)
+    values = {stat: sum_delta(points[stat], midnight, end) for stat in ids}
     return {
         "day": now.astimezone(WARSAW).date().isoformat(),
         "as_of": end.isoformat(),

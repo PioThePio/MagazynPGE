@@ -1,8 +1,10 @@
 import asyncio
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import pytest
+from homeassistant.components.recorder import statistics
 from homeassistant.components.recorder.core import SynchronizeTask
 from homeassistant.components.recorder.models.statistics import StatisticMeanType
 from homeassistant.components.recorder.statistics import (
@@ -13,6 +15,7 @@ from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import State
 from homeassistant.helpers.recorder import get_instance
 
+from custom_components.pge_storage.energy_panel import async_statistics_today
 from custom_components.pge_storage.ledger import WARSAW
 from custom_components.pge_storage.period import async_energy_period
 
@@ -125,6 +128,31 @@ async def test_native_period_sums_units_parent_totals_stock_and_missing_history(
     assert result["consumer_totals"]["tracked_kwh"] == "48"
     assert result["consumer_totals"]["untracked_kwh"] == "90"
     assert manager.export() == saved
+    # The latest completed hour is not yet compiled; every component uses
+    # the same preceding boundary rather than hiding all today's counters.
+    current_time = begin + timedelta(hours=23, minutes=15)
+    original = statistics.statistics_during_period
+
+    def pending(*args, **kwargs):
+        rows = original(*args, **kwargs)
+        missing = int((begin + timedelta(hours=22)).timestamp())
+        return {
+            stat: [row for row in values if int(row["start"]) != missing]
+            for stat, values in rows.items()
+        }
+
+    with patch.object(statistics, "statistics_during_period", side_effect=pending):
+        current = await async_energy_period(manager, "day", "2026-10-01", current_time)
+        with patch(
+            "custom_components.pge_storage.energy_panel.dt_util.utcnow",
+            return_value=current_time,
+        ):
+            today = await async_statistics_today(hass, manager.energy_config)
+    assert current["values"]["home_energy"] == "126.5"
+    assert current["values"]["pv_energy"] == "66"
+    assert current["as_of"] == (begin + timedelta(hours=22)).isoformat()
+    assert today["values"]["period:pv"] == "66"
+    assert today["as_of"] == current["as_of"]
     config["statistics"]["pv_energy"] = ["period:broken"]
     await manager.async_put_energy(config, manager.revision)
     result = await async_energy_period(manager, "day", "2026-10-01", now)

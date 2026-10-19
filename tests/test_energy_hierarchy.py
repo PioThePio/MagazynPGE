@@ -243,3 +243,58 @@ def test_pv_arrays_show_every_native_array_and_selected_manual_power_without_dou
     assert [item["power_entity"] for item in rows] == ["sensor.total_pv_w"]
     assert rows[0]["energy_statistic"] is None
     assert rows[0]["energy_statistics"] == ["sensor.old_pv", "sensor.mppt"]
+
+
+def test_battery_charging_is_excluded_from_home_and_untracked_consumption():
+    sources = {
+        "pv_power": ("sensor.pv_w", "2000", "W"),
+        "grid_import_power": ("sensor.grid_w", "1000", "W"),
+        "grid_export_power": ("sensor.export_w", "0", "W"),
+        "battery_charge_power": ("sensor.charge_w", "1500", "W"),
+        "battery_discharge_power": ("sensor.out_w", "0", "W"),
+    }
+    states = {
+        entity: State(entity, value, {"unit_of_measurement": unit})
+        for entity, value, unit in sources.values()
+    }
+    states["sensor.load_w"] = State(
+        "sensor.load_w", "500", {"unit_of_measurement": "W"}
+    )
+    config = validate_energy_config(
+        {
+            "sources": {role: row[0] for role, row in sources.items()},
+            "statistics": {
+                "pv_energy": ["test:pv"],
+                "grid_import_energy": ["test:grid"],
+                "grid_export_energy": ["test:export"],
+                "battery_charge_energy": ["test:charge"],
+                "battery_discharge_energy": ["test:out"],
+            },
+            "consumers": [
+                {"name": "Load", "power": "sensor.load_w", "statistic": "test:load"}
+            ],
+        }
+    )
+    now = datetime(2026, 10, 19, 12, tzinfo=UTC)
+    with patch("custom_components.pge_storage.energy.dt_util.utcnow", return_value=now):
+        result = energy_snapshot(
+            SimpleNamespace(states=SimpleNamespace(get=states.get)),
+            config,
+            {"import": "sensor.i", "export": "sensor.e"},
+            {},
+            {
+                "day": "2026-10-19",
+                "values": {
+                    "test:pv": "20",
+                    "test:grid": "10",
+                    "test:export": "0",
+                    "test:charge": "15",
+                    "test:out": "0",
+                    "test:load": "5",
+                },
+            },
+        )
+    assert result["consumer_totals"]["home_power_w"] == "1500"
+    assert result["consumer_totals"]["untracked_power_w"] == "1000"
+    assert result["consumer_totals"]["home_kwh"] == "15"
+    assert result["consumer_totals"]["untracked_kwh"] == "10"

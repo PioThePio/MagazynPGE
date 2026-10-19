@@ -612,11 +612,11 @@ test("consumer folders exclude children from tracked totals and preserve decimal
     /399,8 W.*4,8 kWh/,
   );
   assert.match(root.textContent, /200,1 W/);
-  assert.equal(root.querySelectorAll(".device").length, 4);
+  assert.equal(root.querySelectorAll(".device").length, 5);
   root.querySelector('[data-folder="ac"]').click();
-  assert.equal(root.querySelectorAll(".device").length, 2);
+  assert.equal(root.querySelectorAll(".device").length, 3);
   root.querySelector('[data-folder="ac"]').click();
-  assert.equal(root.querySelectorAll(".device").length, 4);
+  assert.equal(root.querySelectorAll(".device").length, 5);
   assert.match(root.querySelector(".consumer-total").textContent, /1.?000,0 W/);
   await window.happyDOM.close();
 });
@@ -712,4 +712,22 @@ test("battery Ah conversion requires nominal voltage and settings retain parent 
   assert.equal(saved.battery_voltage, "51.2");
   assert.equal(saved.consumers[1].parent_id, "ac");
   await window.happyDOM.close();
+});
+
+test("live power updates preserve mounted cards, controls and consumer rows", async () => {
+  const { window, root, emit } = await setup("pge-consumers-card");
+  await tick();
+  const shell = root.querySelector("ha-card");
+  const control = root.querySelector("[data-anchor]");
+  const untracked = root.querySelector(".devices > .device.untracked");
+  assert.ok(untracked);
+  for (let i = 0; i < 5; i++) {
+    const data = snapshot();
+    data.energy.values.home_power = String(1200 + i);
+    emit(data);
+    assert.equal(root.querySelector("ha-card"), shell);
+    assert.equal(root.querySelector("[data-anchor]"), control);
+    assert.equal(root.querySelector(".untracked"), untracked);
+  }
+  window.happyDOM.abort();
 });

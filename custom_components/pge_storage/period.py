@@ -1,6 +1,6 @@
 """Read-only calendar-period energy totals from native Recorder statistics."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from functools import partial
 
@@ -70,6 +70,14 @@ def period_bounds(kind, anchor_day, now):
         end,
         min(end, now.astimezone(UTC).replace(minute=0, second=0, microsecond=0)),
         start <= today < stop,
+    )
+
+
+def pending_statistics_hour(series, end):
+    """Align all balance components to the same last compiled hour."""
+    last = int(end.timestamp()) - 3600
+    return any(
+        last not in points and last - 3600 in points for points in series.values()
     )
 
 
@@ -298,8 +306,14 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
         stat: {int(row["start"]): row.get("sum") for row in values}
         for stat, values in rows.items()
     }
+    if bounds.is_current and pending_statistics_hour(points, bounds.as_of):
+        bounds = replace(bounds, as_of=bounds.as_of - timedelta(hours=1))
     values_by_id = {
-        stat: sum_delta(points.get(stat, {}), bounds.begin, bounds.as_of)
+        stat: sum_delta(
+            points.get(stat, {}),
+            bounds.begin,
+            bounds.as_of,
+        )
         for stat in statistical
     }
     raw = manual - statistical

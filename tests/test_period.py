@@ -3,7 +3,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from custom_components.pge_storage.ledger import LedgerError
-from custom_components.pge_storage.period import period_bounds, sum_delta
+from custom_components.pge_storage.period import (
+    pending_statistics_hour,
+    period_bounds,
+    sum_delta,
+)
 
 
 @pytest.mark.parametrize(
@@ -43,3 +47,17 @@ def test_statistic_difference_needs_coverage_and_accepts_meter_resets():
     assert sum_delta(rows, start, start + timedelta(hours=3)) == "6"
     del rows[int((start + timedelta(hours=1)).timestamp())]
     assert sum_delta(rows, start, start + timedelta(hours=3)) is None
+
+
+def test_current_statistics_allow_only_the_pending_trailing_hour():
+    start = datetime(2026, 10, 19, tzinfo=UTC)
+    points = {
+        int((start + timedelta(hours=i)).timestamp()): str(100 + i)
+        for i in range(-1, 3)
+    }
+    end = start + timedelta(hours=4)
+    assert sum_delta(points, start, end) is None
+    assert pending_statistics_hour({"pv": points}, end)
+    assert sum_delta(points, start, end - timedelta(hours=1)) == "3"
+    del points[int((start + timedelta(hours=1)).timestamp())]
+    assert sum_delta(points, start, end - timedelta(hours=1)) is None

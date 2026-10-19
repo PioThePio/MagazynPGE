@@ -251,12 +251,12 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
                 "3400 W"
             )
-            await expect(page.locator("pge-consumers-card .device")).to_contain_text(
-                "800,0 W"
-            )
-            await expect(page.locator("pge-consumers-card .device")).to_contain_text(
-                "kWh"
-            )
+            await expect(
+                page.locator("pge-consumers-card .device:not(.untracked)")
+            ).to_contain_text("800,0 W")
+            await expect(
+                page.locator("pge-consumers-card .device:not(.untracked)")
+            ).to_contain_text("kWh")
             # Missing instantaneous W readings count as zero without hiding
             # the production measured by another PV installation.
             hass.states.async_set(
@@ -458,6 +458,30 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             ).to_contain_text(re.compile(r"1\s?100,2 W"))
             await expect(page.locator("pge-consumers-card .untracked")).to_contain_text(
                 re.compile(r"2\s?299,8 W")
+            )
+            untracked = page.locator("pge-consumers-card .untracked")
+            await untracked.scroll_into_view_if_needed()
+            before = await untracked.evaluate("""row => {
+              window.pgeScrollNodes = [];
+              for (let n = row; n; n = n.parentElement || n.getRootNode()?.host) {
+                if (n.scrollHeight > n.clientHeight + 1)
+                  window.pgeScrollNodes.push({node:n, top:n.scrollTop});
+              }
+              window.pgeMountedCard = row.getRootNode().querySelector('ha-card');
+              return window.pgeScrollNodes.map(x => x.top);
+            }""")
+            hass.states.async_set(
+                "sensor.browser_pv_power", "2600", {"unit_of_measurement": "W"}
+            )
+            await expect(untracked).to_contain_text(re.compile(r"2\s?399,8 W"))
+            after = await untracked.evaluate("""row => {
+              if (window.pgeMountedCard !== row.getRootNode().querySelector('ha-card'))
+                throw new Error('Live update replaced mounted card');
+              return window.pgeScrollNodes.map(x => x.node.scrollTop);
+            }""")
+            assert after == before
+            hass.states.async_set(
+                "sensor.browser_pv_power", "2500", {"unit_of_measurement": "W"}
             )
             await page.locator("pge-settings-card #open-sources").click()
             await page.locator("pge-settings-card [data-capacity-mode]").select_option(

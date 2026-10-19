@@ -1,3 +1,5 @@
+Wersja 0.9.1: test regresji na natywnym Recorder potwierdza dzisiejsze liczniki przy opóźnionej ostatniej godzinie oraz wspólny czas bilansu. Chromium sprawdza zachowanie pozycji przewijania i tego samego elementu karty podczas aktualizacji mocy. Test baterii potwierdza: 2000 W PV + 1000 W sieci − 1500 W ładowania = 1500 W domu; przy 500 W śledzonych nieśledzone wynosi 1000 W. Analogicznie 20 + 10 − 15 − 5 = 10 kWh nieśledzonych. Nieśledzone jest zwykłym wierszem listy.
+
 Wersja 0.9.0: 115 testów Python i 18 testów DOM. Nowe testy Recorder potwierdzają kalendarzowe okresy, 23/25-godzinne dni zmiany czasu, rok przestępny, sumy Wh przeliczane na kWh i zewnętrzne statystyki. Dla różnych fizycznych i rozliczeniowych liczników sprawdzono oddzielny bilans domu, opust PGE dokładnie raz oraz pobranie pokryte zapasem. Luka jednego PV nie psuje danych pozostałych przepływów. Testy hierarchii obejmują rodziców i dzieci, brak podwójnego liczenia osobno dla W i kWh, ujemne nieśledzone zużycie, cykle, brakujących rodziców i migrację starych ustawień bez utraty ręcznych źródeł. Sprawdzono pojemność Ah × napięcie nominalne oraz SOC. Chromium sprawdza natywny dashboard, daty okresów, folder AC i podliczniki, sumę oraz resztę z dokładnością 0,1, zapis 99 Ah/51,2 V z zachowaniem rodziców, strzałki i brak przepełnienia przy 390/500/1440 px. Obejrzano nowe widoki desktop i mobile. Brakujące historyczne kWh pozostają nieznane; testy nie zastępują ich zerami.
 
 Wersja 0.8.0: 94 testy Python i 15 testów DOM zaliczonych. Testy rzeczywistego HA potwierdzają sumowanie działających odczytów mocy przy brakujących źródłach, 0 W po utracie obu PV i bilans domu 725 W przy sieci 720 W oraz rozładowaniu baterii 5 W. Przypadki missing/unknown/unavailable/niepoprawnej wartości mają oddzielne sprawdzenia. Historia kWh i rozliczenia zachowują dotychczasowe odczyty. Chromium sprawdza W i dzisiejsze kWh jednocześnie, brak przełączników, działającą sumę przy awarii PV, formularz SOC 15% × 10 kWh = 1,5 kWh bez własnego sensora zapasu oraz zapis bez utraty bilansu domu. DOM sprawdza pochodzenie liczników i mocy każdej instalacji z Energii, brakującą moc jako 0 W oraz podgląd baterii. Obejrzano zrzuty desktopowe i mobilne wspólnego widoku oraz konfiguratora.
@@ -26,8 +28,8 @@ Sprawdzono w odizolowanym środowisku chmurowym, bez dostępu do produkcyjnego H
 |---|---|
 | Python 3.14.8, Home Assistant Core 2026.10.0 | Zainstalowane i uruchomione |
 | `uv sync --frozen`, `npm ci` | Wykonane, także ponownie bez zmian lockfile |
-| pytest | 115 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
-| Testy karty w DOM / Node 24 | 18 zaliczonych, 0 niezaliczonych |
+| pytest | 117 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
+| Testy karty w DOM / Node 24 | 19 zaliczonych, 0 niezaliczonych |
 | Chromium: pełny dashboard HA i ponowne ładowanie strony | Zaliczony (wśród 115 testów pytest) |
 | Ruff check i format | Bez błędów |
 | Składnia JS | Poprawna |

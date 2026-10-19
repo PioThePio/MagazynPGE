@@ -1,6 +1,6 @@
-/* PGE 0.9.0: independent Lovelace modules, no external libraries. */
-import "./pge-settings.js?v=0.9.0";
-const VERSION = "0.9.0";
+/* PGE 0.9.1: independent Lovelace modules, no external libraries. */
+import "./pge-settings.js?v=0.9.1";
+const VERSION = "0.9.1";
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -199,7 +199,33 @@ class PGEBase extends HTMLElement {
     });
   }
   frame(content) {
-    this.shadowRoot.innerHTML = `<style>${css}</style>${this.data?.error ? `<ha-card><div class="error">${esc(this.data.error)}</div></ha-card>` : content}`;
+    const template = window.document.createElement("template");
+    template.innerHTML = `<style>${css}</style>${this.data?.error ? `<ha-card><div class="error">${esc(this.data.error)}</div></ha-card>` : content}`;
+    if (this.localName === "pge-settings-card" || this.localName === "pge-admin-panel") {
+      this.shadowRoot.innerHTML = template.innerHTML;
+      return;
+    }
+    // Keep the card and its layout boxes mounted during live power updates.
+    const patch = (parent, next) => {
+      for (let i = 0; i < next.childNodes.length; i++) {
+        const fresh = next.childNodes[i], old = parent.childNodes[i];
+        if (!old) { parent.appendChild(fresh.cloneNode(true)); continue; }
+        if (old.nodeType !== fresh.nodeType || old.nodeName !== fresh.nodeName) {
+          old.replaceWith(fresh.cloneNode(true)); continue;
+        }
+        if (fresh.nodeType === 3) {
+          if (old.textContent !== fresh.textContent) old.textContent = fresh.textContent;
+        } else if (fresh.nodeType === 1) {
+          for (const attr of [...old.attributes])
+            if (!fresh.hasAttribute(attr.name)) old.removeAttribute(attr.name);
+          for (const attr of fresh.attributes)
+            if (old.getAttribute(attr.name) !== attr.value) old.setAttribute(attr.name, attr.value);
+          patch(old, fresh);
+        }
+      }
+      while (parent.childNodes.length > next.childNodes.length) parent.lastChild.remove();
+    };
+    patch(this.shadowRoot, template.content);
   }
   info(key) {
     const entity =
@@ -237,9 +263,7 @@ class BalanceCard extends PGEBase {
     this.frame(
       `<ha-card style="padding:16px"><button id="metric" style="width:100%;text-align:left;padding:0"><div class="row"><ha-icon icon="${icon}" style="color:${color};background:${color}15;border-radius:12px;padding:10px;box-sizing:content-box"></ha-icon><span class="sub">${esc(this.config.title || title)}</span></div><div style="font-size:clamp(22px,7cqw,32px);font-weight:700;margin-top:14px;white-space:nowrap">${fmt(value)} <small style="font-size:14px;font-weight:400">kWh</small></div></button></ha-card>`,
     );
-    this.shadowRoot
-      .getElementById("metric")
-      ?.addEventListener("click", () => this.info(key));
+    this.shadowRoot.getElementById("metric").onclick = () => this.info(key);
   }
 }
 const precise = (value) =>
@@ -593,7 +617,7 @@ class ConsumersCard extends PeriodCard {
         })
         .join("");
     this.frame(
-      `<style>${periodCSS}.consumer-total{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.consumer-total>div{background:var(--secondary-background-color,#f3f6f7);padding:13px;border-radius:13px}.consumer-total small{display:block;font-size:11px;color:var(--secondary-text-color)}.consumer-total strong{display:block;font-size:clamp(19px,5cqw,27px);margin-top:4px}.consumer-summary{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--secondary-text-color);padding:5px 0 12px}.device{padding:12px 0 10px calc(var(--depth,0)*14px);border-top:1px solid var(--divider-color,#e7edef)}.device-line{display:flex;align-items:center;gap:4px}.folder-button{display:flex;align-items:center;gap:2px;padding:2px;color:var(--pge-teal)}.folder-button ha-icon{--mdc-icon-size:17px}.tree-stem{font-size:13px;color:var(--divider-color);padding-right:4px}.device-content{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:0;width:100%;text-align:left;font-size:13px;min-width:0}.device-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.device-values{display:flex;gap:4px 12px;flex-wrap:wrap;align-items:baseline;justify-content:flex-end;min-width:115px}.device-values strong{font-size:16px;white-space:nowrap}.device-values small{font-size:11px;color:var(--secondary-text-color);white-space:nowrap}.bar{height:4px;margin-top:7px;background:var(--secondary-background-color,#edf2f3);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pge-teal)}.untracked{padding:12px;border-radius:12px;background:var(--secondary-background-color,#f3f6f7);margin-top:14px}.untracked .device-name{white-space:normal}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Odbiorcy w domu")}</h2><span class="chip">Moc na żywo</span></div>${this.periodHTML()}<div class="consumer-total"><div><small>Cały dom · teraz</small><strong>${precise(homeW)} W</strong></div><div><small>Cały dom · okres</small><strong>${precise(homeKwh)} kWh</strong></div></div><div class="consumer-summary"><span>Śledzone</span><span>${precise(trackedW)} W · ${precise(trackedKwh)} kWh</span></div><div class="devices">${rows(null) || '<div class="empty">Dodaj odbiorców w panelu Energia.</div>'}</div><div class="untracked"><div class="device-line"><span class="device-name">Nieśledzone zużycie</span>${values(untrackedW, untrackedKwh)}</div></div>${(untrackedW != null && untrackedW < -0.05) || (untrackedKwh != null && untrackedKwh < -0.05) ? '<div class="warn">Suma śledzonych przekracza bilans domu. Sprawdź powiązania i punkty pomiarowe.</div>' : ""}${this._periodError ? `<div class="warn">${esc(this._periodError)}</div>` : ""}</ha-card>`,
+      `<style>${periodCSS}.consumer-total{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.consumer-total>div{background:var(--secondary-background-color,#f3f6f7);padding:13px;border-radius:13px}.consumer-total small{display:block;font-size:11px;color:var(--secondary-text-color)}.consumer-total strong{display:block;font-size:clamp(19px,5cqw,27px);margin-top:4px}.consumer-summary{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--secondary-text-color);padding:5px 0 12px}.device{padding:12px 0 10px calc(var(--depth,0)*14px);border-top:1px solid var(--divider-color,#e7edef)}.device-line{display:flex;align-items:center;gap:4px}.folder-button{display:flex;align-items:center;gap:2px;padding:2px;color:var(--pge-teal)}.folder-button ha-icon{--mdc-icon-size:17px}.tree-stem{font-size:13px;color:var(--divider-color);padding-right:4px}.device-content{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:0;width:100%;text-align:left;font-size:13px;min-width:0}.device-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.device-values{display:flex;gap:4px 12px;flex-wrap:wrap;align-items:baseline;justify-content:flex-end;min-width:115px}.device-values strong{font-size:16px;white-space:nowrap}.device-values small{font-size:11px;color:var(--secondary-text-color);white-space:nowrap}.bar{height:4px;margin-top:7px;background:var(--secondary-background-color,#edf2f3);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pge-teal)}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Odbiorcy w domu")}</h2><span class="chip">Moc na żywo</span></div>${this.periodHTML()}<div class="consumer-total"><div><small>Cały dom · teraz</small><strong>${precise(homeW)} W</strong></div><div><small>Cały dom · okres</small><strong>${precise(homeKwh)} kWh</strong></div></div><div class="consumer-summary"><span>Śledzone</span><span>${precise(trackedW)} W · ${precise(trackedKwh)} kWh</span></div><div class="devices">${rows(null) || '<div class="empty">Dodaj odbiorców w panelu Energia.</div>'}${`<div class="device untracked"><div class="device-line"><div class="device-content"><span class="device-name">Nieśledzone zużycie</span>${values(untrackedW, untrackedKwh)}</div></div><div class="bar"><i style="width:${homeW > 0 ? Math.max(0, Math.min(100, untrackedW / homeW * 100)) : 0}%"></i></div></div>`}</div>${(untrackedW != null && untrackedW < -0.05) || (untrackedKwh != null && untrackedKwh < -0.05) ? '<div class="warn">Suma śledzonych przekracza bilans domu. Sprawdź powiązania i punkty pomiarowe.</div>' : ""}${this._periodError ? `<div class="warn">${esc(this._periodError)}</div>` : ""}</ha-card>`,
     );
     this.bindPeriod();
     for (const button of this.shadowRoot.querySelectorAll("[data-folder]"))
