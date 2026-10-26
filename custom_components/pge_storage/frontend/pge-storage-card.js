@@ -1,6 +1,6 @@
-/* PGE 0.10.0: independent Lovelace modules, no external libraries. */
-import "./pge-settings.js?v=0.10.0";
-const VERSION = "0.10.0";
+/* PGE 0.11.0: independent Lovelace modules, no external libraries. */
+import "./pge-settings.js?v=0.11.0";
+const VERSION = "0.11.0";
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -401,11 +401,20 @@ class PeriodCard extends PGEBase {
 }
 const periodCSS = `.period-picker{margin:8px 0 18px}.period-tabs{display:flex;gap:4px;padding:4px;border-radius:13px;background:var(--secondary-background-color,#f3f6f7)}.period-tabs button{flex:1;font-size:12px;padding:8px 4px}.period-tabs button.active{background:var(--card-background-color,#fff);box-shadow:0 1px 5px #0001}.period-nav{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:9px;font-size:12px}.period-nav>button{font-size:22px;padding:3px 12px}.period-nav button:disabled{opacity:.25;cursor:default}.period-nav label{position:relative;min-width:120px;text-align:center;font-weight:600}.period-nav input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer;padding:0}.period-note{font-size:11px;color:var(--secondary-text-color);text-align:center;line-height:1.5;margin-top:10px}`;
 class EnergyCard extends PeriodCard {
+  constructor() {
+    super();
+    this.flowAverageSeconds = 10;
+  }
+  setConfig(config) {
+    this.flowAverageSeconds = [1,5,10,15].includes(Number(config.average_seconds)) ? Number(config.average_seconds) : 10;
+    super.setConfig(config);
+  }
   render() {
     this.ensurePeriod();
     const e = this.data.energy || { values: {}, today: {} },
-      v = e.power_windows?.["15"]?.covered_seconds >= 15
-        ? { ...e.values, ...e.power_windows["15"].values } : e.values,
+      powerWindow = e.power_windows?.[String(this.flowAverageSeconds)],
+      v = powerWindow?.covered_seconds >= this.flowAverageSeconds
+        ? { ...e.values, ...powerWindow.values } : e.values,
       t = this.periodValues();
     const net = (a, b) =>
         a == null || b == null ? null : Number(a) - Number(b),
@@ -421,8 +430,8 @@ class EnergyCard extends PeriodCard {
           : null),
       pgeDraw = t.pge_withdrawn_energy;
     const pvArrays = (e.pv_arrays || []).map(array => ({...array,
-      power_w: e.power_windows?.["15"]?.covered_seconds >= 15
-        ? e.power_windows["15"].pv_arrays?.[array.id] ?? array.power_w : array.power_w}));
+      power_w: powerWindow?.covered_seconds >= this.flowAverageSeconds
+        ? powerWindow.pv_arrays?.[array.id] ?? array.power_w : array.power_w}));
     const nodes = [
       {
         key: "pv",
@@ -515,9 +524,12 @@ class EnergyCard extends PeriodCard {
         )
         .join("");
     this.frame(
-      `<style>${periodCSS}.flow-map{position:relative;container-type:inline-size;aspect-ratio:600/580;max-width:660px;margin:0 auto}.flow-map svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.flow-line{fill:none;stroke-width:3}[data-flow="pge"]{stroke-dasharray:4 5}.node{position:absolute;transform:translate(-50%,-50%);padding:0;width:27cqw;height:27cqw;border:2px solid var(--c);border-radius:50%;background:var(--card-background-color,#fff)!important;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;box-shadow:0 3px 16px #00000005}.node ha-icon{--mdc-icon-size:clamp(14px,3.8cqw,22px);color:var(--c)}.node .node-name{font-size:clamp(9px,2.7cqw,13px);color:var(--secondary-text-color);line-height:1.1}.node strong{font-size:clamp(13px,4.1cqw,25px);line-height:1.2;white-space:nowrap}.node .node-energy{font-size:clamp(10px,3cqw,16px);color:var(--secondary-text-color);white-space:nowrap}.node-home{border-width:3px}.node-pge strong{font-size:clamp(12px,3.8cqw,23px)}.flow-small{font-size:clamp(9px,2.5cqw,13px);white-space:nowrap}.soc{display:flex;align-items:center;gap:3px;font-size:clamp(10px,2.7cqw,14px);color:var(--c)}.soc ha-icon{--mdc-icon-size:clamp(11px,3cqw,17px)}.pv-installations{position:absolute;top:3%;width:29%;max-height:25cqw;overflow:auto;display:grid;gap:7px}.pv-left{left:0}.pv-right{right:0}.pv-installation{padding:7px 8px;background:var(--secondary-background-color,#f5f7f8);border-radius:11px;text-align:left;min-width:0}.pv-installation span{display:block;font-size:clamp(9px,2.5cqw,12px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pv-installation strong{font-size:clamp(11px,3.2cqw,17px)}.battery-stock{position:absolute;bottom:0;left:28%;right:28%;text-align:center;font-size:11px;color:var(--secondary-text-color)}@container(max-width:380px){.node{gap:2px}.pv-installation{padding:5px}.flow-small{font-size:9px}}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Energia w domu")}</h2><span class="chip">${e.power_windows?.["15"]?.covered_seconds >= 15 ? "Moc · 15 s" : "Moc na żywo"}</span></div>${this.periodHTML()}<div class="flow-map"><svg viewBox="0 0 600 580" aria-hidden="true"><defs>${defs}</defs>${arrow("pv", "#dd9a1a", "M300 180V200", Number(v.pv_power))}${arrow("grid", "#3287bd", "M174 290H215", Number(grid))}${arrow("battery", "#32aaa4", "M300 375V398", Number(battery))}${arrow("pge", "#7b61c4", "M385 290H426", grid < 0 ? -grid : Number(available) > 0 ? -grid : 0)}</svg><div class="pv-installations pv-left">${arrayList(0)}</div><div class="pv-installations pv-right">${arrayList(1)}</div>${nodes.map((n) => `<button class="node node-${n.key}" data-entity="${n.entity}" style="left:${n.x}%;top:${n.y}%;--c:${n.color}" title="${esc(n.title || n.name)}">${n.key === "battery" ? `<span class="soc"><ha-icon icon="${n.icon}"></ha-icon>${fmt(n.soc)}%</span>` : `<ha-icon icon="${n.icon}"></ha-icon>`}<span class="node-name">${n.name}</span><strong>${n.signed ? signed(n.value) : fmt(n.value)} ${n.unit}</strong>${n.key === "pge" || n.key === "battery" ? `<span class="flow-small" title="${n.key === "pge" ? "Wprowadzone po opuście" : "Władowano"}">↓ ${precise(n.credit)} kWh</span><span class="flow-small" title="${n.key === "pge" ? "Pobrano z magazynu" : "Wyładowano"}">↑ ${precise(n.draw)} kWh</span>` : `<span class="node-energy">${n.signed ? signed(n.energy) : precise(n.energy)} kWh</span>`}</button>`).join("")}${v.battery_stored != null ? `<div class="battery-stock">Zapas baterii: ${precise(v.battery_stored)} kWh</div>` : ""}</div>${this._periodError ? `<div class="warn">${esc(this._periodError)}</div>` : ""}</ha-card>`,
+      `<style>${periodCSS}.flow-average{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--secondary-text-color);white-space:nowrap}.flow-average select{width:auto;min-width:63px;padding:5px;border-radius:8px}.flow-map{position:relative;container-type:inline-size;aspect-ratio:600/580;max-width:660px;margin:0 auto}.flow-map svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.flow-line{fill:none;stroke-width:3}[data-flow="pge"]{stroke-dasharray:4 5}.node{position:absolute;transform:translate(-50%,-50%);padding:0;width:27cqw;height:27cqw;border:2px solid var(--c);border-radius:50%;background:var(--card-background-color,#fff)!important;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;box-shadow:0 3px 16px #00000005}.node ha-icon{--mdc-icon-size:clamp(14px,3.8cqw,22px);color:var(--c)}.node .node-name{font-size:clamp(9px,2.7cqw,13px);color:var(--secondary-text-color);line-height:1.1}.node strong{font-size:clamp(13px,4.1cqw,25px);line-height:1.2;white-space:nowrap}.node .node-energy{font-size:clamp(10px,3cqw,16px);color:var(--secondary-text-color);white-space:nowrap}.node-home{border-width:3px}.node-pge strong{font-size:clamp(12px,3.8cqw,23px)}.flow-small{font-size:clamp(9px,2.5cqw,13px);white-space:nowrap}.soc{display:flex;align-items:center;gap:3px;font-size:clamp(10px,2.7cqw,14px);color:var(--c)}.soc ha-icon{--mdc-icon-size:clamp(11px,3cqw,17px)}.pv-installations{position:absolute;top:3%;width:29%;max-height:25cqw;overflow:auto;display:grid;gap:7px}.pv-left{left:0}.pv-right{right:0}.pv-installation{padding:7px 8px;background:var(--secondary-background-color,#f5f7f8);border-radius:11px;text-align:left;min-width:0}.pv-installation span{display:block;font-size:clamp(9px,2.5cqw,12px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pv-installation strong{font-size:clamp(11px,3.2cqw,17px)}.battery-stock{position:absolute;bottom:0;left:28%;right:28%;text-align:center;font-size:11px;color:var(--secondary-text-color)}@container(max-width:380px){.node{gap:2px}.pv-installation{padding:5px}.flow-small{font-size:9px}}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Energia w domu")}</h2><label class="flow-average" title="Długość średniej mocy; częstotliwość odświeżania pozostaje niezależna">Średnia<select data-flow-average aria-label="Średnia mocy diagramu">${[1,5,10,15].map(n => `<option value="${n}" ${this.flowAverageSeconds === n ? "selected" : ""}>${n} s</option>`).join("")}</select></label></div>${this.periodHTML()}<div class="flow-map"><svg viewBox="0 0 600 580" aria-hidden="true"><defs>${defs}</defs>${arrow("pv", "#dd9a1a", "M300 180V200", Number(v.pv_power))}${arrow("grid", "#3287bd", "M174 290H215", Number(grid))}${arrow("battery", "#32aaa4", "M300 375V398", Number(battery))}${arrow("pge", "#7b61c4", "M385 290H426", grid < 0 ? -grid : Number(available) > 0 ? -grid : 0)}</svg><div class="pv-installations pv-left">${arrayList(0)}</div><div class="pv-installations pv-right">${arrayList(1)}</div>${nodes.map((n) => `<button class="node node-${n.key}" data-entity="${n.entity}" style="left:${n.x}%;top:${n.y}%;--c:${n.color}" title="${esc(n.title || n.name)}">${n.key === "battery" ? `<span class="soc"><ha-icon icon="${n.icon}"></ha-icon>${fmt(n.soc)}%</span>` : `<ha-icon icon="${n.icon}"></ha-icon>`}<span class="node-name">${n.name}</span><strong>${n.signed ? signed(n.value) : fmt(n.value)} ${n.unit}</strong>${n.key === "pge" || n.key === "battery" ? `<span class="flow-small" title="${n.key === "pge" ? "Wprowadzone po opuście" : "Władowano"}">↓ ${precise(n.credit)} kWh</span><span class="flow-small" title="${n.key === "pge" ? "Pobrano z magazynu" : "Wyładowano"}">↑ ${precise(n.draw)} kWh</span>` : `<span class="node-energy">${n.signed ? signed(n.energy) : precise(n.energy)} kWh</span>`}</button>`).join("")}${v.battery_stored != null ? `<div class="battery-stock">Zapas baterii: ${precise(v.battery_stored)} kWh</div>` : ""}</div>${this._periodError ? `<div class="warn">${esc(this._periodError)}</div>` : ""}</ha-card>`,
     );
     this.bindPeriod();
+    this.shadowRoot.querySelector("[data-flow-average]").onchange = event => {
+      this.flowAverageSeconds = Number(event.target.value); this.render();
+    };
     for (const button of this.shadowRoot.querySelectorAll("[data-entity]"))
       button.onclick = () => this.info(button.dataset.entity);
     for (const button of this.shadowRoot.querySelectorAll("[data-pv]"))
@@ -539,6 +551,7 @@ class ConsumersCard extends PeriodCard {
     super();
     this.averageSeconds = 5;
     this.sortMode = "power";
+    this.sortDirection = "desc";
     this._orders = new Map();
   }
   render() {
@@ -621,19 +634,24 @@ class ConsumersCard extends PeriodCard {
     byId.set(untracked.id, untracked);
     if (!children.has(null)) children.set(null, []);
     children.get(null).push(untracked);
-    const orderKey = `${this.data.revision}:${this.sortMode}:${this.averageSeconds}:${Math.floor(Date.now() / (Math.max(5, this.averageSeconds) * 1000))}:${items.map(c => c.id).join(",")}`;
+    const orderKey = `${this.data.revision}:${this.sortMode}:${this.sortDirection}:${this.averageSeconds}:${Math.floor(Date.now() / (Math.max(5, this.averageSeconds) * 1000))}:${items.map(c => c.id).join(",")}`;
     if (this._orderKey !== orderKey) {
       this._orderKey = orderKey;
       for (const [parent, group] of children) {
         const field = this.sortMode === "average" ? "average_w" : this.sortMode === "energy" ? "period_kwh" : "power_w";
-        this._orders.set(parent, [...group].sort((a, b) =>
-          (this.sortMode === "name" ? 0 : Number(b[field] ?? -Infinity) - Number(a[field] ?? -Infinity))
-          || a.name.localeCompare(b.name, "pl")).map(c => c.id));
+        const sign = this.sortDirection === "asc" ? 1 : -1;
+        this._orders.set(parent, [...group].sort((a, b) => {
+          if (this.sortMode === "name") return sign * a.name.localeCompare(b.name, "pl");
+          if (a[field] == null || b[field] == null)
+            return (a[field] == null) - (b[field] == null) || a.name.localeCompare(b.name, "pl");
+          return sign * (Number(a[field]) - Number(b[field])) || a.name.localeCompare(b.name, "pl");
+        }).map(c => c.id));
       }
     }
     const values = (power, kwh, mean) =>
-      `<span class="device-values"><strong>${precise(power)} W</strong><small class="device-average" title="Średnia ważona czasem z ${this.averageSeconds} s">⌀ ${precise(mean)} W</small><small>${precise(kwh)} kWh</small></span>`;
-    const toolbar = `<div class="consumer-controls"><div class="sort-options" aria-label="Sortowanie odbiorców">${[["name","Nazwa"],["power","Moc"],["average","Średnia"],["energy","Energia"]].map(([key,label]) => `<button data-sort="${key}" class="${this.sortMode === key ? "active" : ""}" aria-pressed="${this.sortMode === key}">${label}</button>`).join("")}</div><div class="average-options" aria-label="Okno średniej"><span>Średnia</span>${[1,5,10,15].map(n => `<button data-average="${n}" class="${this.averageSeconds === n ? "active" : ""}" aria-pressed="${this.averageSeconds === n}">${n} s</button>`).join("")}</div></div>`;
+      `<span class="device-values"><strong role="cell">${precise(power)} W</strong><small role="cell" class="device-average" title="Średnia ważona czasem z ${this.averageSeconds} s">${precise(mean)} W</small><small role="cell">${precise(kwh)} kWh</small></span>`;
+    const toolbar = `<label class="average-options">Średnia<select data-average aria-label="Okno średniej">${[1,5,10,15].map(n => `<option value="${n}" ${this.averageSeconds === n ? "selected" : ""}>${n} s</option>`).join("")}</select></label>`;
+    const headers = `<div class="device-header" role="row">${[["name","Nazwa"],["power","Moc"],["average","Średnia"],["energy","Energia"]].map(([key,label]) => `<div role="columnheader" aria-sort="${this.sortMode === key ? this.sortDirection === "asc" ? "ascending" : "descending" : "none"}"><button data-sort="${key}" aria-pressed="${this.sortMode === key}">${label}${this.sortMode === key ? this.sortDirection === "asc" ? " ▴" : " ▾" : ""}</button></div>`).join("")}</div>`;
     const rows = (parent, depth = 0, visited = new Set()) =>
       (children.get(parent) || [])
         .sort((a, b) => (this._orders.get(parent)?.indexOf(a.id) ?? 0) - (this._orders.get(parent)?.indexOf(b.id) ?? 0))
@@ -643,19 +661,26 @@ class ConsumersCard extends PeriodCard {
           seen.add(c.id);
           const nested = children.get(c.id)?.length,
             open = this._expanded.has(c.id);
-          return `<div class="device ${c.id === "__untracked__" ? "untracked" : ""} ${nested ? "device-folder" : ""}" style="--depth:${depth}"><div class="device-line">${nested ? `<button data-folder="${esc(c.id)}" class="folder-button" aria-expanded="${open}" aria-label="Rozwiń ${esc(c.name)}">${open ? "▾" : "▸"}<ha-icon icon="mdi:folder${open ? "-open" : ""}-outline"></ha-icon></button>` : '<span class="tree-stem">└</span>'}<button class="device-content" data-consumer-id="${esc(c.id)}"><span class="device-name">${esc(c.name)}</span>${values(c.power_w, c.period_kwh, c.average_w)}</button></div><div class="bar"><i style="width:${c.power_w != null && homeW > 0 ? Math.max(0, Math.min(100, (100 * Number(c.power_w)) / Number(homeW))) : 0}%"></i></div></div>${nested && open ? rows(c.id, depth + 1, seen) : ""}`;
+          return `<div class="device ${c.id === "__untracked__" ? "untracked" : ""} ${nested ? "device-folder" : ""}" style="--depth:${depth}"><div class="device-line"><div class="device-content" role="row" data-consumer-id="${esc(c.id)}"><div class="device-name-cell" role="cell">${nested ? `<button data-folder="${esc(c.id)}" class="folder-button" aria-expanded="${open}" aria-label="Rozwiń ${esc(c.name)}">${open ? "▾" : "▸"}</button>` : '<span class="tree-stem">└</span>'}<button class="device-name" title="${esc(c.name)}">${esc(c.name)}</button></div>${values(c.power_w, c.period_kwh, c.average_w)}</div></div><div class="bar"><i style="width:${c.power_w != null && homeW > 0 ? Math.max(0, Math.min(100, (100 * Number(c.power_w)) / Number(homeW))) : 0}%"></i></div></div>${nested && open ? rows(c.id, depth + 1, seen) : ""}`;
         })
         .join("");
     this.frame(
-      `<style>${periodCSS}.consumer-controls{display:grid;gap:7px;margin:10px 0}.sort-options,.average-options{display:flex;gap:3px;align-items:center;flex-wrap:wrap;font-size:11px}.consumer-controls button{font-size:11px;padding:6px 9px;border-radius:8px;background:var(--secondary-background-color,#f3f6f7)}.consumer-controls button.active{background:var(--primary-color);color:var(--text-primary-color,#fff)}.average-options>span{margin-right:5px;color:var(--secondary-text-color)}.device-average{color:var(--pge-teal)!important}.consumer-total{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.consumer-total>div{background:var(--secondary-background-color,#f3f6f7);padding:13px;border-radius:13px}.consumer-total small{display:block;font-size:11px;color:var(--secondary-text-color)}.consumer-total strong{display:block;font-size:clamp(19px,5cqw,27px);margin-top:4px}.consumer-summary{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--secondary-text-color);padding:5px 0 12px}.device{padding:12px 0 10px calc(var(--depth,0)*14px);border-top:1px solid var(--divider-color,#e7edef)}.device-line{display:flex;align-items:center;gap:4px}.folder-button{display:flex;align-items:center;gap:2px;padding:2px;color:var(--pge-teal)}.folder-button ha-icon{--mdc-icon-size:17px}.tree-stem{font-size:13px;color:var(--divider-color);padding-right:4px}.device-content{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:0;width:100%;text-align:left;font-size:13px;min-width:0}.device-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.device-values{display:flex;gap:4px 12px;flex-wrap:wrap;align-items:baseline;justify-content:flex-end;min-width:115px}.device-values strong{font-size:16px;white-space:nowrap}.device-values small{font-size:11px;color:var(--secondary-text-color);white-space:nowrap}.bar{height:4px;margin-top:7px;background:var(--secondary-background-color,#edf2f3);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pge-teal)}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Odbiorcy w domu")}</h2><span class="chip">Moc na żywo</span></div>${this.periodHTML()}${toolbar}<div class="consumer-total"><div><small>Cały dom · teraz</small><strong>${precise(homeW)} W</strong><small>⌀ ${precise(meanHome)} W · ${this.averageSeconds} s</small></div><div><small>Cały dom · okres</small><strong>${precise(homeKwh)} kWh</strong></div></div><div class="consumer-summary"><span>Śledzone</span><span>${precise(trackedW)} W · ⌀ ${precise(meanTracked)} W · ${precise(trackedKwh)} kWh</span></div><div class="devices">${rows(null) || '<div class="empty">Dodaj odbiorców w panelu Energia.</div>'}</div>${(untrackedW != null && untrackedW < -0.05) || (untrackedKwh != null && untrackedKwh < -0.05) ? '<div class="warn">Suma śledzonych przekracza bilans domu. Sprawdź powiązania i punkty pomiarowe.</div>' : ""}${this._periodError ? `<div class="warn">${esc(this._periodError)}</div>` : ""}</ha-card>`,
+      `<style>${periodCSS}.average-options{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:12px;color:var(--secondary-text-color);margin:8px 0}.average-options select{width:auto;min-width:70px;padding:5px 8px;border-radius:8px}.consumer-total{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.consumer-total>div{background:var(--secondary-background-color,#f3f6f7);padding:13px;border-radius:13px}.consumer-total small{display:block;font-size:11px;color:var(--secondary-text-color)}.consumer-total strong{display:block;font-size:clamp(19px,5cqw,27px);margin-top:4px}.consumer-summary{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--secondary-text-color);padding:5px 0 12px}.device-header,.device-content{display:grid;grid-template-columns:minmax(0,1.35fr) repeat(3,minmax(0,1fr));align-items:center;gap:5px;width:100%;min-width:0}.device-header{padding:9px 0;background:var(--secondary-background-color,#f3f6f7);border-radius:8px;font-size:11px}.device-header>div{text-align:right;min-width:0}.device-header>div:first-child{text-align:left}.device-header button{font-size:11px;padding:3px;color:var(--secondary-text-color);white-space:nowrap}.device-header [aria-sort=ascending] button,.device-header [aria-sort=descending] button{color:var(--primary-color);font-weight:700}.device{padding:11px 0 9px;border-top:1px solid var(--divider-color,#e7edef)}.device-name-cell{display:flex;align-items:center;min-width:0;padding-left:calc(var(--depth,0)*10px)}.folder-button,.tree-stem{flex:0 0 15px;padding:0;text-align:center;color:var(--pge-teal);font-size:13px}.device-name{font-size:12px;min-width:0;padding:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.untracked .device-name{white-space:normal;line-height:1.2}.device-values{display:contents}.device-values>*{text-align:right;white-space:nowrap;font-size:11px}.device-values strong{font-size:12px}.device-average{color:var(--pge-teal)}.device-values small:last-child{color:var(--secondary-text-color)}.bar{height:3px;margin-top:7px;background:var(--secondary-background-color,#edf2f3);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pge-teal)}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Odbiorcy w domu")}</h2><span class="chip">Moc na żywo</span></div>${this.periodHTML()}<div class="consumer-total"><div><small>Cały dom · teraz</small><strong>${precise(homeW)} W</strong><small>⌀ ${precise(meanHome)} W · ${this.averageSeconds} s</small></div><div><small>Cały dom · okres</small><strong>${precise(homeKwh)} kWh</strong></div></div><div class="consumer-summary"><span>Śledzone</span><span>${precise(trackedW)} W · ⌀ ${precise(meanTracked)} W · ${precise(trackedKwh)} kWh</span></div>${toolbar}<div class="devices" role="table" aria-label="Odbiorcy w domu">${headers}${rows(null) || '<div class="empty">Dodaj odbiorców w panelu Energia.</div>'}</div>${(untrackedW != null && untrackedW < -0.05) || (untrackedKwh != null && untrackedKwh < -0.05) ? '<div class="warn">Suma śledzonych przekracza bilans domu. Sprawdź powiązania i punkty pomiarowe.</div>' : ""}${this._periodError ? `<div class="warn">${esc(this._periodError)}</div>` : ""}</ha-card>`,
     );
     this.bindPeriod();
     for (const button of this.shadowRoot.querySelectorAll("[data-sort]"))
-      button.onclick = () => { this.sortMode = button.dataset.sort; this._orderKey = null; this.render(); };
-    for (const button of this.shadowRoot.querySelectorAll("[data-average]"))
-      button.onclick = () => { this.averageSeconds = Number(button.dataset.average); this._orderKey = null; this.render(); };
-    for (const button of this.shadowRoot.querySelectorAll("[data-folder]"))
       button.onclick = () => {
+        if (this.sortMode === button.dataset.sort)
+          this.sortDirection = this.sortDirection === "asc" ? "desc" : "asc";
+        else { this.sortMode = button.dataset.sort; this.sortDirection = this.sortMode === "name" ? "asc" : "desc"; }
+        this._orderKey = null; this.render();
+      };
+    this.shadowRoot.querySelector("[data-average]").onchange = event => {
+      this.averageSeconds = Number(event.target.value); this._orderKey = null; this.render();
+    };
+    for (const button of this.shadowRoot.querySelectorAll("[data-folder]"))
+      button.onclick = event => {
+        event.stopPropagation();
         const id = button.dataset.folder;
         this._expanded.has(id)
           ? this._expanded.delete(id)
@@ -665,7 +690,7 @@ class ConsumersCard extends PeriodCard {
     for (const button of this.shadowRoot.querySelectorAll("[data-consumer-id]"))
       button.onclick = () => {
         const c = byId.get(button.dataset.consumerId),
-          entity = c?.power || c?.energy;
+          entity = c?.id === "__untracked__" ? this.data.entities?.untracked_power : c?.power || c?.energy;
         if (entity)
           this.dispatchEvent(
             new CustomEvent("hass-more-info", {

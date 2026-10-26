@@ -1,6 +1,10 @@
 """A fixed number of derived sensors, regardless of the number of invoices."""
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.const import UnitOfEnergy
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -58,6 +62,23 @@ SENSOR_DEFINITIONS.update(
     }
 )
 
+SENSOR_DEFINITIONS.update(
+    {
+        "untracked_power": (
+            "Nieśledzone zużycie",
+            "W",
+            "consumer_totals",
+            "untracked_power_w",
+        ),
+        "untracked_today": (
+            "Nieśledzone zużycie dzisiaj",
+            "kWh",
+            "consumer_totals",
+            "untracked_kwh",
+        ),
+    }
+)
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(
@@ -86,6 +107,10 @@ class PGESensor(CoordinatorEntity, SensorEntity):
             if unit == "%"
             else SensorDeviceClass.ENERGY
         )
+        if key == "untracked_power":
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+        if key.startswith("untracked_"):
+            self._attr_suggested_display_precision = 1
         self._attr_name = name
         self._attr_unique_id = f"{coordinator.entry.entry_id}_{key}"
         self._attr_device_info = DeviceInfo(

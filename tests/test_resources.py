@@ -487,14 +487,30 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             await expect(
                 page.locator('pge-consumers-card [data-sort="name"]')
             ).to_have_attribute("aria-pressed", "true")
-            await page.locator('pge-consumers-card [data-average="10"]').click()
+            await page.locator("pge-consumers-card select[data-average]").select_option(
+                "10"
+            )
             await expect(
-                page.locator('pge-consumers-card [data-average="10"]')
-            ).to_have_attribute("aria-pressed", "true")
+                page.locator("pge-consumers-card select[data-average]")
+            ).to_have_value("10")
             await expect(
                 page.locator("pge-consumers-card .untracked .device-average")
             ).to_contain_text("W")
             await expect(page.locator("pge-energy-card .period-note")).to_have_count(0)
+            await expect(
+                page.locator("pge-consumers-card .device-header [data-sort]")
+            ).to_have_count(4)
+            await expect(
+                page.locator("pge-consumers-card .sort-options")
+            ).to_have_count(0)
+            await page.locator('pge-consumers-card [data-sort="name"]').click()
+            await expect(
+                page.locator(
+                    'pge-consumers-card .device-header [aria-sort="descending"]'
+                )
+            ).to_contain_text("Nazwa")
+            await page.locator('pge-consumers-card [data-sort="name"]').click()
+
             await page.locator("pge-settings-card #open-sources").click()
             await page.locator("pge-settings-card [data-capacity-mode]").select_option(
                 "ah"

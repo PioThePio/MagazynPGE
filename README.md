@@ -19,13 +19,17 @@ Oba liczniki muszą obejmować ten sam punkt przyłączenia do sieci, mieć nara
 
 Natywne szablony dobrze wyliczają różnice, ale nie zarządzają trwałą, edytowalną listą dowolnej długości ani historycznymi odczytami Recorder. `utility_meter` nadaje się do cykli i taryf, ale nie zapewnia tego rejestru zmiennych dat, faktur i korekt. Helper dla każdego okresu oznaczałby rozrastającą się ręczną konfigurację.
 
-Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, 24 stałych sensorów i niezależnych modułów Lovelace. Nie powstają nowe encje dla kolejnych faktur. Szczegóły i źródła API: [architektura](docs/ARCHITEKTURA.md).
+Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, 26 stałych sensorów i niezależnych modułów Lovelace. Nie powstają nowe encje dla kolejnych faktur. Szczegóły i źródła API: [architektura](docs/ARCHITEKTURA.md).
 
 ## Moc, średnie i historia energii
 
-Diagram i encja zużycia domu pokazują moc z okna 15 s, ważoną czasem; szybciej raportujący licznik nie dostaje większej wagi. Pierwsze 15 s po uruchomieniu lub zmianie źródeł służy zebraniu okna. Źródło mocy bez odczytu wnosi 0 W, również wyłączony nocą falownik. Okno ogranicza skutki różnych czasów odczytu; bez wspólnych znaczników czasu urządzeń nie gwarantuje całkowitego usunięcia każdego skoku.
+Diagram pozwala wybrać średnią 1/5/10/15 s, domyślnie 10 s. Encja zużycia domu zachowuje okno 15 s. Średnie są ważone czasem, więc szybciej raportujący licznik nie dostaje większej wagi. Po uruchomieniu lub zmianie źródeł okno najpierw zbiera dane. Źródło mocy bez odczytu wnosi 0 W, również wyłączony nocą falownik. Okno ogranicza skutki różnych czasów odczytu; bez wspólnych znaczników czasu urządzeń nie gwarantuje całkowitego usunięcia każdego skoku.
 
-Lista odbiorców pokazuje moc chwilową, wybraną średnią 1/5/10/15 s oraz kWh wybranego dnia, tygodnia, miesiąca lub roku. Sortowanie obejmuje nazwę, moc, średnią i energię, także dla nieśledzonego zużycia. Podliczniki pozostają pod rodzicem. Moc i średnie odświeżają się co sekundę i przy zmianach źródeł. Kolejność jest utrzymywana przez co najmniej 5 s, przy średniej 10/15 s odpowiednio przez 10/15 s; ręczna zmiana sortowania działa od razu.
+Lista odbiorców pokazuje moc chwilową, wybraną średnią 1/5/10/15 s oraz kWh wybranego dnia, tygodnia, miesiąca lub roku. Sortowanie odbywa się kliknięciem nagłówka Nazwa / Moc / Średnia / Energia; ponowne kliknięcie odwraca kierunek. Nieśledzone zużycie sortuje się tak samo. Menu średniej odbiorców ma domyślnie 5 s. Podliczniki pozostają pod rodzicem. Moc i średnie odświeżają się co sekundę i przy zmianach źródeł. Kolejność jest utrzymywana przez co najmniej 5 s, przy średniej 10/15 s odpowiednio przez 10/15 s; ręczna zmiana sortowania działa od razu.
+
+Długość średniej jest niezależna od częstotliwości odświeżania. Nowy odczyt Victrona albo tyknięcie zegara przesuwa ruchome okno, więc także średnia Solar Power może się zmienić między raportami REST. Nie powoduje to dodatkowego odpytywania falownika. Wyzwalanie całego diagramu raportem Solplanet jest osobnym proponowanym trybem; nie jest częścią wersji 0.11.0.
+
+Nieśledzone ma dwie własne encje: **Nieśledzone zużycie** (W, pomiar, z długoterminowymi statystykami mocy) oraz **Nieśledzone zużycie dzisiaj** (kWh, podpisana różnica dzienna). Kliknięcie wiersza otwiera historię mocy w HA. Historia zbiera się od aktualizacji, zgodnie z filtrami Recorder użytkownika; nie odtwarzamy wstecz nieistniejących odczytów. Ładowanie baterii jest odjęte od domu przed obliczeniem różnicy, a podliczniki nie dublują rodzica.
 
 Dla kWh sumujemy dostępne odczyty statystyk w wybranym okresie. Brak stycznia nie usuwa danych z czerwca–października. Niepełną historię oznacza etykieta przy wyborze okresu. Dzisiejsze kWh korzystają również ze statystyk pięciominutowych, odświeżanych co 5 minut. Energia nie wynika z całkowania wygładzonej mocy. Obliczenia domu odejmują ładowanie baterii; faktury i rozliczenia PGE zachowują niezależne, wymagane odczyty graniczne.
 
@@ -227,7 +231,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.10.0.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.11.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 

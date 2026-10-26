@@ -752,15 +752,20 @@ test("consumer sort includes untracked and offers time-window means without brea
   assert.deepEqual(names(), ["Alfa", "Nieśledzone zużycie", "Beta"]);
   root.querySelector('[data-sort="name"]').click();
   assert.deepEqual(names(), ["Alfa", "Beta", "Nieśledzone zużycie"]);
+  assert.equal(root.querySelector('[data-sort="name"]').parentElement.getAttribute("aria-sort"), "ascending");
+  root.querySelector('[data-sort="name"]').click();
+  assert.deepEqual(names(), ["Nieśledzone zużycie", "Beta", "Alfa"]);
   root.querySelector('[data-sort="average"]').click();
   assert.deepEqual(names(), ["Beta", "Nieśledzone zużycie", "Alfa"]);
-  assert.equal(root.querySelectorAll("[data-average]").length, 4);
-  root.querySelector('[data-average="15"]').click();
+  assert.equal(root.querySelector("[data-average]").value, "5");
+  assert.equal(root.querySelectorAll("[data-average] option").length, 4);
+  root.querySelector("[data-average]").value = "15";
+  root.querySelector("[data-average]").dispatchEvent(new window.Event("change"));
   assert.match(root.querySelector('[data-consumer-id="b"] .device-average').textContent, /700,0 W/);
   assert.match(root.querySelector(".untracked .device-average").textContent, /200,0 W/);
   root.querySelector('[data-sort="energy"]').click();
   assert.equal(names()[0], "Beta");
-  assert.equal(root.querySelector('[data-average="15"]').getAttribute("aria-pressed"), "true");
+  assert.equal(root.querySelector("[data-average]").value, "15");
   await window.happyDOM.close();
 });
 
@@ -772,8 +777,27 @@ test("diagram uses aligned mature power windows and has no timing footer", async
     pv_arrays: {},
   }};
   emit(data);
+  assert.equal(root.querySelector("[data-flow-average]").value, "10");
+  root.querySelector("[data-flow-average]").value = "15";
+  root.querySelector("[data-flow-average]").dispatchEvent(new window.Event("change"));
   assert.match(root.querySelector(".node-pv strong").textContent, /1800 W/);
   assert.match(root.querySelector(".node-home strong").textContent, /700 W/);
   assert.equal(root.querySelector(".period-note"), null);
+  await window.happyDOM.close();
+});
+
+test("untracked row opens its own HA entity and column headings stay inside the table", async () => {
+  const { window, card, root, emit } = await setup("pge-consumers-card");
+  const data = snapshot();
+  data.entities.untracked_power = "sensor.pge_untracked";
+  emit(data);
+  let selected;
+  card.addEventListener("hass-more-info", event => {selected = event.detail.entityId;});
+  root.querySelector('.untracked .device-name').click();
+  assert.equal(selected, "sensor.pge_untracked");
+  assert.equal(root.querySelectorAll('.device-header [data-sort]').length, 4);
+  assert.equal(root.querySelectorAll('.sort-options').length, 0);
+  assert.deepEqual([...root.querySelectorAll('.device-header button')].map(n => n.textContent.replace(/[▴▾]/g, '').trim()),
+    ["Nazwa", "Moc", "Średnia", "Energia"]);
   await window.happyDOM.close();
 });
