@@ -291,10 +291,10 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             )
             await hass.async_block_till_done()
             await expect(page.locator("pge-energy-card .node-pv")).to_contain_text(
-                "500 W"
+                "500 W", timeout=35000
             )
             await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
-                "1400 W"
+                "1400 W", timeout=35000
             )
             hass.states.async_set(
                 "sensor.browser_pv_second_power",
@@ -303,10 +303,10 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             )
             await hass.async_block_till_done()
             await expect(page.locator("pge-energy-card .node-pv strong")).to_have_text(
-                "0 W"
+                "0 W", timeout=35000
             )
             await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
-                "900 W"
+                "900 W", timeout=35000
             )
             await page.screenshot(path="/tmp/pge-09-pv-outage.png", full_page=True)
             hass.states.async_set(

@@ -801,3 +801,29 @@ test("untracked row opens its own HA entity and column headings stay inside the 
     ["Nazwa", "Moc", "Średnia", "Energia"]);
   await window.happyDOM.close();
 });
+
+test("diagram freezes a complete frame between source reports and PGE is connected below grid", async () => {
+  const { window, root, emit } = await setup("pge-energy-card");
+  const data = snapshot();
+  const energy = structuredClone(data.energy);
+  data.energy.diagram_frame = {sequence: 1, energy, available_energy: "2000"};
+  emit(data);
+  assert.match(root.querySelector(".node-home strong").textContent, /1200 W/);
+  data.energy.values.home_power = "9999";
+  emit(data);
+  assert.match(root.querySelector(".node-home strong").textContent, /1200 W/);
+  data.energy.diagram_frame = {sequence: 2, energy: {...energy, values: {...energy.values, home_power: "900"}}, available_energy: "1999"};
+  emit(data);
+  assert.match(root.querySelector(".node-home strong").textContent, /900 W/);
+  const grid = root.querySelector(".node-grid"), pge = root.querySelector(".node-pge");
+  assert.equal(grid.style.left, pge.style.left);
+  assert.ok(parseFloat(pge.style.top) > parseFloat(grid.style.top));
+  const link = root.querySelector('[data-flow="pge"]');
+  assert.equal(link.getAttribute("d"), "M150 375V398");
+  assert.equal(link.hasAttribute("marker-start"), false);
+  assert.equal(link.hasAttribute("marker-end"), false);
+  data.energy.hourly_current = {start:"2026-10-26T12:00:00Z", end:"2026-10-26T13:00:00Z", known:true, balance_kwh:"2", net_kwh:"1.6"};
+  emit(data);
+  assert.match(root.querySelector(".hour-buffer").textContent, /1,6 kWh/);
+  await window.happyDOM.close();
+});

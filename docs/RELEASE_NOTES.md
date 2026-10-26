@@ -1,8 +1,9 @@
-MagazynPGE 0.11.0 — tabela odbiorców i historia nieśledzonego zużycia.
+Magazyn PGE rozlicza teraz każdą godzinę zegarową osobno: kompensacja poboru i eksportu 1:1, następnie opust 0,8 od nadwyżki eksportu. FIFO uwzględnia ważność partii, a zamknięte godziny są utrwalane w Store i kopii JSON formatu 5.
 
-- Kolumny Nazwa / Moc / Średnia / Energia są wyrównane w tabeli. Kliknięcie nagłówka sortuje, ponowne kliknięcie odwraca kierunek. Usunięte osobne przyciski sortowania. Hierarchia rodziców i podliczników pozostaje zachowana.
-- Średnia odbiorców w menu rozwijanym, domyślnie 5 s. Diagram ma własne menu 1/5/10/15 s, domyślnie 10 s. Okno średniej jest niezależne od częstotliwości aktualizacji; nie dodano jeszcze wyzwalania diagramu raportem Solplanet. Encja zużycia domu zachowuje dotychczasowe 15 s.
-- Nowe encje: Nieśledzone zużycie (W) i Nieśledzone zużycie dzisiaj (kWh). Kliknięcie wiersza otwiera historię encji mocy. W ma klasę pomiaru, umożliwiającą statystyki długoterminowe; historia zbiera się od aktualizacji przy włączonym Recorder dla tych encji. Energia dzienna pozostaje podpisaną różnicą, nie sztucznym licznikiem narastającym.
-- Bez zmiany źródeł, faktur i rozliczeń PGE. Ładowanie baterii i podliczniki są uwzględniane tak jak w dotychczasowym bilansie.
+- Dwie encje bieżącej godziny: bilans przed opustem i wpływ na magazyn, z jakością i czasem danych.
+- Braki historii rozliczeniowej pozostają nieznane; brak mocy opcjonalnego urządzenia nadal oznacza 0 W.
+- Diagram odświeżany wspólnie raportem wybranego PV, z rytmem zastępczym 10 s i niezależną średnią.
+- Magazyn PGE pod siecią, bez fizycznej strzałki do domu.
+- Zachowane faktury i identyfikatory encji. Stare profile surowego importu wymagają ponownego odczytu historii lub zapisania założeń.
 
-Aktualizacja: HACS → 0.11.0 → restart HA → Ctrl+F5.
+Aktualizacja: HACS → aktualizuj → restart HA → Ctrl+F5. Restart jest konieczny dla nowego silnika Python i rejestracji nowych encji. Automatyzacje i bufory sterowania nie są częścią wydania.

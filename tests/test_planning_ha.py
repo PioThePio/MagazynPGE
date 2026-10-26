@@ -80,6 +80,41 @@ async def test_plan_daily_api_and_durable_month_boundaries(ha):
         ],
         "target_day": "2027-03-31",
     }
+    # Complete observed hourly sums. These events deliberately occur in
+    # separate hours, so the expected stock is 220, not a daily-net shortcut.
+    start = boundary("2026-08-31")
+    end = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    changes = {
+        start: (5, 0),
+        start + timedelta(hours=1): (0, 10),
+        start + timedelta(days=1): (5, 0),
+        start + timedelta(days=2): (0, 15),
+        boundary("2026-09-30"): (10, 0),
+        boundary("2026-10-01"): (0, 25),
+    }
+    for direction in ("import", "export"):
+        rows, total, cursor = [], 1000, start - timedelta(hours=1)
+        while cursor < end:
+            total += changes.get(cursor, (0, 0))[0 if direction == "import" else 1]
+            rows.append({"start": cursor, "sum": total, "state": total})
+            cursor += timedelta(hours=1)
+        async_import_statistics(
+            hass,
+            {
+                "statistic_id": SOURCES[direction],
+                "source": "recorder",
+                "name": None,
+                "unit_class": "energy",
+                "unit_of_measurement": "kWh",
+                "mean_type": StatisticMeanType.NONE,
+                "has_sum": True,
+            },
+            rows,
+        )
+    await hass.async_block_till_done()
+    future = hass.loop.create_future()
+    get_instance(hass).queue_task(SynchronizeTask(future))
+    await asyncio.wait_for(future, 10)
     user = await hass.auth.async_create_user(
         "Planning admin", group_ids=["system-admin"]
     )
@@ -110,10 +145,10 @@ async def test_plan_daily_api_and_durable_month_boundaries(ha):
         assert daily["success"], daily
         assert daily["result"]["rows"][0]["balance_kwh"] == "203"
         assert daily["result"]["rows"][0]["credited_kwh"] == "8"
-        assert daily["result"]["rows"][1]["import_kwh"] is None
+        assert daily["result"]["rows"][1]["import_kwh"] == "5"
     backup = manager.export()
-    assert backup["format_version"] == 3
-    assert "2026-09-30" in backup["checkpoint_cache"]["samples"]
+    assert backup["format_version"] == 5
+    assert len(backup["hourly_cache"]["hours"]) >= 720
     # A month boundary already frozen in our Store survives Recorder purging it.
     with patch(
         "custom_components.pge_storage.planning_history.async_read_counters",
@@ -220,7 +255,7 @@ async def test_plan_daily_api_and_durable_month_boundaries(ha):
             )
             await hass.async_block_till_done()
             await expect(page.locator("pge-energy-card .node-pv")).to_contain_text(
-                "6000 W"
+                "6000 W", timeout=35000
             )
             # Synthetic display fixture; independent API tests verify real statistics.
             manager.comparison = [

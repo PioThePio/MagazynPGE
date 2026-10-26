@@ -90,5 +90,5 @@ async def async_statistics_metadata(hass: HomeAssistant, entity_id: str) -> dict
         "has_statistics_metadata": metadata is not None,
         "has_mean": bool(metadata and metadata[1].get("has_mean")),
         "has_sum": bool(metadata and metadata[1].get("has_sum")),
-        "note": "Metadane nie dowodzą pokrycia wybranej daty. Średnia i suma nie są odczytem granicznym; używamy tylko stanów Recorder.",
+        "note": "Metadane nie dowodzą pokrycia daty. Próbka faktury pochodzi ze stanów Recorder; rozliczenie magazynu wymaga osobnych przyrostów godzinowych sum obu liczników.",
     }

@@ -14,10 +14,9 @@ from .dashboard import async_create_dashboard
 from .energy import energy_sources, validate_energy_config
 from .energy_panel import async_panel_config
 from .history import async_read_counters, async_statistics_metadata
+from .hourly_views import months as async_months
 from .ledger import LedgerError
-from .overview import async_months
 from .period import PERIODS, async_energy_period
-from .planning_history import async_seasonal_profile
 
 _LOGGER = logging.getLogger(__name__)
 ENTRY = {vol.Optional("entry_id"): str}
@@ -200,6 +199,9 @@ async def diagnose(hass, connection, msg):
             for name, entity_id in coordinator.sources.items()
         },
         "max_age_hours": coordinator.max_age_hours,
+        "accounting": coordinator.data.get("hourly"),
+        "accounting_model": coordinator.data.get("accounting_model"),
+        "accounting_as_of": coordinator.data.get("accounting_as_of"),
     }
     try:
         result["statistics"] = {
@@ -217,6 +219,7 @@ async def diagnose(hass, connection, msg):
         )
         result["sample"] = {
             "value": sample.value,
+            "value_basis": "legacy_snapshot_index_only_not_used_for_settlement",
             "recorded_at": sample.recorded_at,
             "components": sample.components,
         }
@@ -252,7 +255,7 @@ async def daily(hass, connection, msg):
 async def profile(hass, connection, msg):
     coordinator = _get(hass, connection, msg)
     try:
-        result = await async_seasonal_profile(hass, coordinator.sources)
+        result = await coordinator.async_profile()
     except LedgerError as err:
         connection.send_error(msg["id"], err.code, str(err))
     else:

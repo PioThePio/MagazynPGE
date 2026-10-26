@@ -1,6 +1,6 @@
 """Read-only calendar-period energy totals from native Recorder statistics."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from functools import partial
 
@@ -10,9 +10,8 @@ from homeassistant.util import dt as dt_util
 
 from .energy import consumer_summary, source_ids
 from .energy_statistics import async_available_statistics, balanced_total
-from .history import async_read_counters, sample_from_state
-from .ledger import WARSAW, LedgerError, Sample, calculate, energy, energy_text
-from .planning import inventory_now
+from .history import sample_from_state
+from .ledger import WARSAW, LedgerError, energy, energy_text
 
 PERIODS = ("day", "week", "month", "year")
 ENERGY_ROLES = (
@@ -161,105 +160,14 @@ def _label(bounds):
     return bounds.start.strftime("%m.%Y" if bounds.kind == "month" else "%Y")
 
 
-async def _opening_stock(manager, day, now):
-    records = [record for record in manager.records if record.day <= day.isoformat()]
-    if not records:
-        return None, None
-    archived = {
-        **getattr(manager, "daily_cache", {}),
-        **getattr(manager, "checkpoint_cache", {}).get("samples", {}),
-    }
-    samples = {key: Sample(**value) for key, value in archived.items()}
-    samples.update({record.day: record.sample for record in records})
-    opening = samples.get(day.isoformat())
-    if opening is None:
-        opening = await async_read_counters(
-            manager.hass, manager.sources, day.isoformat(), manager.max_age_hours, now
-        )
-    plan = getattr(manager, "planning", {})
-    if plan.get("anchor_id"):
-        inventory = inventory_now(
-            plan,
-            records,
-            [
-                (point, components)
-                for point, components in getattr(manager, "checkpoints", [])
-                if point < day
-            ],
-            opening.components,
-            day,
-        )
-        return inventory.balance, inventory
-    balance = calculate(records, opening.value)["current"]["estimated_balance"]
-    return energy(balance) if balance is not None else None, None
-
-
-async def _withdrawn(manager, bounds, points, core_totals, now):
-    """Reuse the ledger's daily stock model; a grid import is not a withdrawal."""
-    try:
-        balance, inventory = await _opening_stock(
-            manager, bounds.start - timedelta(days=1), now
-        )
-        if balance is None:
-            return None
-        total = energy(0)
-        cursor = bounds.start
-        invoices = {record.day: record for record in manager.records}
-        while cursor < bounds.stop:
-            begin = datetime.combine(cursor, time(), WARSAW).astimezone(UTC)
-            end = min(
-                datetime.combine(cursor + timedelta(days=1), time(), WARSAW).astimezone(
-                    UTC
-                ),
-                bounds.as_of,
-            )
-            if begin >= end:
-                break
-            flows = {
-                direction: sum_delta(points.get(entity_id, {}), begin, end)
-                for direction, entity_id in manager.sources.items()
-            }
-            if bounds.kind == "day":
-                flows = core_totals
-            if any(value is None for value in flows.values()):
-                return None
-            imported, credited = (
-                energy(flows["import"]),
-                energy(flows["export"]) * energy("0.8"),
-            )
-            if inventory is not None:
-                inventory.expire(cursor)
-                inventory.credit(cursor.strftime("%Y-%m"), credited)
-                balance = inventory.balance
-                total += min(imported, max(energy(0), balance))
-                inventory.consume(imported)
-                balance = inventory.balance
-            else:
-                total += min(imported, max(energy(0), balance + credited))
-                balance += credited - imported
-            invoice = invoices.get(cursor.isoformat())
-            if invoice and end == datetime.combine(
-                cursor + timedelta(days=1), time(), WARSAW
-            ).astimezone(UTC):
-                if inventory is not None:
-                    return None
-                closing = calculate(
-                    [record for record in manager.records if record.day <= invoice.day],
-                    invoice.sample.value,
-                )["current"]["estimated_balance"]
-                if closing is None:
-                    return None
-                balance = energy(closing)
-            cursor += timedelta(days=1)
-        return energy_text(total)
-    except LedgerError, TypeError, ValueError:
-        return None
-
-
 async def async_energy_period(manager, kind, anchor_day, now=None):
     """Read energy only; never save source data, invoices, caches or preferences."""
     now = now or dt_util.utcnow()
     bounds = period_bounds(kind, anchor_day, now)
+    if bounds.is_current:
+        bounds = replace(
+            bounds, as_of=max(bounds.begin, min(bounds.as_of, manager.hourly_as_of))
+        )
     config, hass = manager.energy_config, manager.hass
     mappings = {}
     manual = set(manager.sources.values())
@@ -308,10 +216,6 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
         if statistical
         else {}
     )
-    points = {
-        stat: {int(row["start"]): row.get("sum") for row in values}
-        for stat, values in rows.items()
-    }
     observed, coverage = await async_available_statistics(
         hass, statistical, bounds.begin, bounds.as_of, rows
     )
@@ -379,18 +283,12 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
                 (energy(values[role]) * sign for role, sign in terms.items()), energy(0)
             )
             values["home_energy"] = energy_text(home) if home >= 0 else None
-    core_totals = {
-        direction: values_by_id.get(source)
-        for direction, source in manager.sources.items()
-    }
-    values["pge_credited_energy"] = (
-        energy_text(energy(core_totals["export"]) * energy("0.8"))
-        if core_totals["export"] is not None
-        else None
-    )
-    values["pge_withdrawn_energy"] = await _withdrawn(
-        manager, bounds, points, core_totals, now
-    )
+    from .hourly_views import period_values
+
+    billing_end = min(bounds.as_of, manager.hourly_as_of)
+    if billing_end < bounds.begin:
+        billing_end = bounds.begin
+    values.update(period_values(manager, bounds.begin, billing_end))
     consumers = [
         {
             **item,
@@ -437,7 +335,7 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
         "consumers": consumers,
         "consumer_totals": totals,
         "pv_arrays": arrays,
-        "pge_withdrawn_basis": "daily_ledger_model"
+        "pge_withdrawn_basis": "clock_hour_net_fifo"
         if values["pge_withdrawn_energy"] is not None
         else "missing_stock_history",
     }

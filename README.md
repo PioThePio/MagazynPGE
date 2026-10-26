@@ -1,8 +1,22 @@
 # Magazyn energii PGE dla Home Assistant
 
-Wirtualny magazyn energii z historią faktur i kartą Lovelace. Integracja odczytuje **dwa oddzielne liczniki energii sieciowej** i samodzielnie oblicza `eksport × 0,8 − import`. Gotowy sensor bilansu `export-import` nie jest źródłem. Wszystkie istniejące sensory, ich historia i statystyki pozostają tylko do odczytu.
+Wirtualny magazyn energii z historią faktur i kartą Lovelace. Integracja odczytuje **dwa oddzielne liczniki energii sieciowej** i bilansuje **każdą godzinę zegarową osobno**: najpierw pobór i eksport kompensują się 1:1, potem nadwyżka eksportu zasila magazyn ze współczynnikiem 0,8. Gotowy sensor bilansu `export-import` nie jest źródłem. Wszystkie istniejące sensory, ich historia i statystyki pozostają tylko do odczytu.
 
 To integracja lokalna: bez konta PGE, bez chmury zewnętrznej, bez Pyscript, AppDaemon, MQTT i dodatkowej bazy danych. Nie pobiera faktur z PGE.
+
+## Bilans godzinowy od 0.12.0
+
+Godziny są pełnymi godzinami zegarowymi Europe/Warsaw, identyfikowanymi w UTC. Dzień zmiany czasu ma 23 lub 25 godzin; powtórzona godzina pozostaje dwoma osobnymi przedziałami. Niczego nie pomijamy przed ani po granicy godziny.
+
+Dla P = pobór i E = eksport z pary liczników wybranej w integracji: zużycie = `max(P−E,0)`, nadwyżka = `max(E−P,0)`, do magazynu = `0,8 × nadwyżka`. 1/1 kWh daje zero; 1/3 daje +1,6 kWh; 3/1 daje −2 kWh. Eksport 1 kWh w jednej godzinie i pobór 1 kWh w następnej daje −0,2 kWh. Węzeł Sieć pokazuje fizyczny bilans energii, bez opustu; PGE pokazuje rozliczenie po bilansowaniu godzinowym i opuście.
+
+Źródłem są przyrosty natywnych statystyk `sum` obu wybranych liczników, z konwersją Wh/kWh i obsługą resetów przez Recorder. Zastępczo można użyć pełnych, dokładnych granic stanów Recorder bez resetu wewnątrz godziny. Brak wymaganych odczytów oznacza nieznany wynik rozliczenia, **nie zero**. Zamknięte godziny są zapisywane w Store i kopii JSON, więc usunięcie źródłowej historii nie kasuje wcześniej utrwalonych godzin. Nie odtwarzamy nieistniejących godzin ze starych sum dobowych.
+
+Nowe encje **Bilans bieżącej godziny** (`E−P`, dodatni = nadwyżka) oraz **Wpływ bieżącej godziny na magazyn** pokazują wynik roboczy. Mają początek, koniec, czas danych i jakość w atrybutach. Po restarcie/resetach czekają na wiarygodny natywny punkt odniesienia. Wynik roboczy zastępuje poprzedni wynik tej godziny. Nie tworzymy automatyzacji, progów ani buforów czasowych.
+
+Saldo z faktury zachowuje wartość do odbioru; nie odejmujemy ponownie 20%. Partie z faktury umożliwiają FIFO i ważność 12 miesięcy od końca miesiąca wprowadzenia. Bez partii saldo jest oznaczone jako oszacowanie bez wygaśnięć. Projekcja zużywa bieżący zapas według historycznego **poboru po bilansowaniu godzinowym**, bez przyszłych doładowań. Stary profil surowego importu nie jest automatycznie uznawany za taki profil — wczytaj historię ponownie lub zapisz ręczne założenia.
+
+PGE znajduje się pod siecią i ma przerywane połączenie rozliczeniowe z siecią. Nie jest fizycznym źródłem zasilania domu.
 
 ## Źródła w Twojej instalacji
 
@@ -13,13 +27,13 @@ To integracja lokalna: bez konta PGE, bez chmury zewnętrznej, bez Pyscript, App
 
 Wybierz **jedną pełną parę** w GUI. Nie dodajemy wskazań SDM640 do Victrona: mierzą ten sam przepływ energii. Integracja nie zgaduje `entity_id` z nazwy wyświetlanej. Wybierając Victrona, wskaż rzeczywiste encje z listy HA odpowiadające podanym nazwom. Nie zakładaj automatycznie prefiksu ani konkretnej pisowni identyfikatora.
 
-Oba liczniki muszą obejmować ten sam punkt przyłączenia do sieci, mieć narastające wartości i nie resetować się w analizowanym zakresie. Nie wybieraj energii ładowania/rozładowania baterii, mocy W/kW, SOC ani dziennych liczników energii. Nie przełączamy źródła automatycznie w razie braku danych — różne liczniki mogą mieć inne początki naliczania i historię.
+Oba liczniki muszą obejmować ten sam punkt przyłączenia do sieci, mieć narastające wartości z poprawnymi statystykami `sum` Recorder (reset wymaga potwierdzonej ciągłości sum). Nie wybieraj energii ładowania/rozładowania baterii, mocy W/kW, SOC ani dziennych liczników energii. Nie przełączamy źródła automatycznie w razie braku danych — różne liczniki mogą mieć inne początki naliczania i historię.
 
 ## Dlaczego mała integracja
 
 Natywne szablony dobrze wyliczają różnice, ale nie zarządzają trwałą, edytowalną listą dowolnej długości ani historycznymi odczytami Recorder. `utility_meter` nadaje się do cykli i taryf, ale nie zapewnia tego rejestru zmiennych dat, faktur i korekt. Helper dla każdego okresu oznaczałby rozrastającą się ręczną konfigurację.
 
-Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, 26 stałych sensorów i niezależnych modułów Lovelace. Nie powstają nowe encje dla kolejnych faktur. Szczegóły i źródła API: [architektura](docs/ARCHITEKTURA.md).
+Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, 28 stałych sensorów i niezależnych modułów Lovelace. Nie powstają nowe encje dla kolejnych faktur. Szczegóły i źródła API: [architektura](docs/ARCHITEKTURA.md).
 
 ## Moc, średnie i historia energii
 
@@ -27,7 +41,7 @@ Diagram pozwala wybrać średnią 1/5/10/15 s, domyślnie 10 s. Encja zużycia d
 
 Lista odbiorców pokazuje moc chwilową, wybraną średnią 1/5/10/15 s oraz kWh wybranego dnia, tygodnia, miesiąca lub roku. Sortowanie odbywa się kliknięciem nagłówka Nazwa / Moc / Średnia / Energia; ponowne kliknięcie odwraca kierunek. Nieśledzone zużycie sortuje się tak samo. Menu średniej odbiorców ma domyślnie 5 s. Podliczniki pozostają pod rodzicem. Moc i średnie odświeżają się co sekundę i przy zmianach źródeł. Kolejność jest utrzymywana przez co najmniej 5 s, przy średniej 10/15 s odpowiednio przez 10/15 s; ręczna zmiana sortowania działa od razu.
 
-Długość średniej jest niezależna od częstotliwości odświeżania. Nowy odczyt Victrona albo tyknięcie zegara przesuwa ruchome okno, więc także średnia Solar Power może się zmienić między raportami REST. Nie powoduje to dodatkowego odpytywania falownika. Wyzwalanie całego diagramu raportem Solplanet jest osobnym proponowanym trybem; nie jest częścią wersji 0.11.0.
+Długość średniej (1/5/10/15 s, domyślnie 10 s na diagramie) jest niezależna od rytmu odświeżania. Cały diagram aktualizuje się raportem wybranego pomiaru PV, również gdy wartość się nie zmieniła. W ustawieniach źródeł możesz wskazać surowy Solar Power/Solplanet jako „Rytm diagramu”. Tryb automatyczny obserwuje częstotliwość skonfigurowanych PV i wybiera najwolniejsze aktywne źródło; bez niego działa rytm 10 s. Nocny brak mocy PV oznacza 0 W. Między raportami diagram zachowuje wspólną klatkę, a encje i tabela odbiorców pozostają na żywo. Jest to synchronizacja raportów HA, nie gwarancja jednoczesnego pomiaru przez różne urządzenia.
 
 Nieśledzone ma dwie własne encje: **Nieśledzone zużycie** (W, pomiar, z długoterminowymi statystykami mocy) oraz **Nieśledzone zużycie dzisiaj** (kWh, podpisana różnica dzienna). Kliknięcie wiersza otwiera historię mocy w HA. Historia zbiera się od aktualizacji, zgodnie z filtrami Recorder użytkownika; nie odtwarzamy wstecz nieistniejących odczytów. Ładowanie baterii jest odjęte od domu przed obliczeniem różnicy, a podliczniki nie dublują rodzica.
 
@@ -167,7 +181,7 @@ Projekcja zużywa **obecny zapas**, bez przyszłych doładowań i bez zwiększan
 
 Kliknij **Faktury**, aby dodawać, poprawiać i usuwać rozliczenia oraz pobierać/przywracać kopię JSON. **Plan i partie** otwiera datę następnego rozliczenia i partie z ostatniej faktury. Suma surowych partii × 0,8 musi odpowiadać saldu faktury. Domyślna ważność to 12 miesięcy od końca miesiąca wprowadzenia, edytowalna zgodnie z rozliczeniem. FIFO zużywa najstarsze partie; od faktury odtwarzamy osobno pobór i doładowanie. Dodatni bilans netto nie zachowuje sztucznie całej starej partii.
 
-Aktualizacja zachowuje rejestr, partie, archiwa i nazwy istniejących encji. JSON formatu 3 obejmuje również opcjonalne `energy_config` i `energy_cache`; starsze kopie 2/3 bez tych pól nadal działają. Przed powrotem do starszego kodu zachowaj kopię.
+Aktualizacja zachowuje rejestr, partie, archiwa i nazwy istniejących encji. JSON formatu 5 zawiera także `hourly_cache` i podstawę profilu prognozy; odczyt kopii 2/3/4 pozostaje obsługiwany. Stare archiwa dobowe nie zastępują brakujących godzin. Przed powrotem do starszego kodu zachowaj kopię.
 
 ## Co oznaczają pola
 
@@ -176,14 +190,15 @@ Granica daty `D` to **północ rozpoczynająca D+1 w Europe/Warsaw**, wyłączon
 | Pole | Znaczenie |
 |---|---|
 | Import / eksport | Dwa odczyty w kWh, zapisane z osobnymi czasami próbek |
-| Bilans obliczony | 0,8 × odczyt eksportu − odczyt importu; bez osobnego źródłowego sensora bilansu |
-| Bilans okresu | 0,8 × (eksport końcowy − eksport początkowy) − (import końcowy − import początkowy) |
+| Surowe odczyty graniczne | Zachowane dla audytu faktury; dawny indeks `sample.value` służy tylko zgodności kopii |
+| Bilans przepływów okresu | Suma `0,8 × max(E−P,0) − max(P−E,0)` liczona osobno dla każdej godziny |
 | Szacunek przed fakturą | Poprzednie saldo przeniesione + bilans okresu |
 | Saldo po fakturze | Opcjonalny stan przenoszony na następny okres; **zastępuje** szacunek |
 | Różnica faktura − HA | Saldo z faktury − szacunek przed fakturą; nieznana, jeśli brak salda odniesienia |
 | Korekta | Opcjonalna podpisana liczba dodawana do szacunku, gdy nie wpisano salda z faktury |
 | Niedobór rozliczony na fakturze | Opcjonalna nieujemna liczba informacyjna; nie jest ponownie odejmowana od nowego okresu |
-| Szacunkowe saldo teraz | Saldo przeniesione + 0,8 × zmiana eksportu od ostatniej granicy − zmiana importu od tej granicy |
+| Szacunkowe saldo teraz | Saldo faktury + godzinowe przyrosty − godzinowy pobór − wygaśnięcia znanych partii FIFO |
+| Zmiana od faktury | Obecne saldo minus saldo faktury, także z wygaśnięciami |
 | Energia dostępna / niedobór | Odpowiednio dodatnia i ujemna część bieżącego szacunkowego salda |
 
 Saldo z faktury i korekta są wzajemnie wykluczające się. Puste pole oznacza brak informacji, a nie zero. Korekta nie może ustalić nieznanego salda początkowego; karta ostrzega, gdy nie można jej zastosować.
@@ -205,7 +220,7 @@ Rejestr zapisujemy natychmiast przez HA `Store` w `/config/.storage/pge_storage.
 ## Testowanie po instalacji
 
 1. Sprawdź odczyt dla daty, dla której masz historię; porównaj wartości **i czasy obu próbek** z historią liczników. Ocena dopuszczalnego wieku próbek zależy od częstotliwości ich aktualizacji.
-2. Dodaj dwie daty. Sprawdź ręcznie różnicę eksportu × 0,8 minus różnicę importu. Wynik może być ujemny, mimo że liczniki są nieujemne. Dla identycznych próbek różnica musi wynosić zero.
+2. Dodaj dwie daty. Sprawdź osobno godzinowe kompensacje P/E, następnie opust od nadwyżek eksportu. Wynik może być ujemny, mimo że liczniki są nieujemne. Dla identycznych próbek różnica musi wynosić zero.
 3. Wpisz saldo z faktury 0 lub znaną nadwyżkę i sprawdź bieżące saldo. Sprawdź korektę na osobnym wpisie, bez jednoczesnego salda faktury.
 4. Zmień historyczną datę, a potem usuń testowy wpis. Kolejne bilanse muszą zostać przeliczone. Zrób to po pobraniu kopii.
 5. Wybierz datę bez danych oraz datę przyszłą. Zapis ma zakończyć się czytelnym błędem, bez dodania wpisu.
@@ -231,7 +246,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.11.0.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.12.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 

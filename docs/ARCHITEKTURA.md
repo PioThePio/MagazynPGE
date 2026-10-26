@@ -1,3 +1,15 @@
+# Model obowiązujący od 0.12.0
+
+Aktywne ścieżki koordynatora, dziennych/miesięcznych tabel, projekcji i encji używają `hourly.py`, `hourly_history.py`, `hourly_views.py` i `hourly_live.py`. Starsze funkcje obliczeń z surowych granic pozostają wyłącznie dla zgodności dawnych struktur i testów; nie stanowią obecnego silnika rozliczeń.
+
+Jedna para liczników z konfiguracji integracji, niezależna od konfiguracji przepływów, dostarcza godzinowych przyrostów natywnych sum Recorder. Każda godzina jest bilansowana 1:1 przed opustem. Archiwum ma sygnaturę źródeł i modelu, waliduje pochodne i nie przyjmuje przyszłych godzin. UTC rozróżnia jesienne powtórzenie godziny. Stan Store oraz eksport JSON formatu 5 zachowują zamknięte godziny; import czyta też 2/3/4. Stare cache dobowe i indeks `.sample.value` mają wyłącznie znaczenie audytowe.
+
+`LiveHour` łączy ostatnią natywną sumę z późniejszym przyrostem stanu licznika, czeka po restarcie lub wykryciu resetu i nie zastępuje braków zerem. Wyniki robocze nie są dopisywane wielokrotnie. FIFO przetwarza godziny chronologicznie, z ważnością partii i zakotwiczeniem saldem ostatniej faktury.
+
+`DiagramClock` obserwuje rzeczywiste raporty skonfigurowanych PV (zmienione i niezmienione). Zatrzaskuje cały widok między raportami źródła rytmu. Bez aktywnego źródła odświeża co 10 s. Średnia mocy jest niezależnym oknem 1/5/10/15 s; dokładna synchronizacja fizycznych pomiarów bez ich znaczników czasu nie jest możliwa.
+
+Poniższe sekcje opisują historię architektury; wcześniejsze wzory i formaty nie opisują obecnego modelu finansowego.
+
 # Decyzje i kontrakt danych
 
 ## Rozważone możliwości

@@ -142,7 +142,7 @@ async def test_native_energy_autofill_statistics_resets_home_and_manual_override
     assert float(ledger.data["energy"]["today"]["grid_import_energy"]) == pytest.approx(
         count * 2
     )
-    assert ledger.data["energy"]["today"]["credited_energy"] == "4"
+    assert ledger.data["energy"]["today"]["credited_energy"] is None
     assert float(ledger.data["energy"]["consumers"][0]["today_kwh"]) == pytest.approx(
         count
     )

@@ -65,7 +65,7 @@ def test_energy_day_uses_counter_differences_and_mapping_identity():
         )
         assert result["today"]["pv_energy"] == "10"
         assert result["today"]["grid_import_energy"] == "20"
-        assert result["today"]["credited_energy"] == "8"
+        assert result["today"]["credited_energy"] is None
         assert result["today"]["home_energy"] is None
         config["sources"]["pv_energy"] = "sensor.new"
         assert (

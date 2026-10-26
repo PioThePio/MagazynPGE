@@ -123,8 +123,8 @@ async def test_native_period_sums_units_parent_totals_stock_and_missing_history(
     result = await async_energy_period(manager, "day", "2026-10-01", now)
     assert result["values"]["pv_energy"] == "72"
     assert result["values"]["home_energy"] == "138"
-    assert result["values"]["pge_credited_energy"] == "38.4"
-    assert result["values"]["pge_withdrawn_energy"] == "24"
+    assert result["values"]["pge_credited_energy"] == "19.2"
+    assert result["values"]["pge_withdrawn_energy"] == "0"
     assert result["consumers"][0]["id"] == "AC"
     assert result["consumer_totals"]["tracked_kwh"] == "48"
     assert result["consumer_totals"]["untracked_kwh"] == "90"
@@ -162,8 +162,8 @@ async def test_native_period_sums_units_parent_totals_stock_and_missing_history(
     result = await async_energy_period(manager, "day", "2026-10-01", now)
     assert result["values"]["pv_energy"] == "24"
     assert result["values"]["home_energy"] == "90"
-    assert result["values"]["pge_credited_energy"] == "38.4"
-    assert result["values"]["pge_withdrawn_energy"] == "24"
+    assert result["values"]["pge_credited_energy"] == "19.2"
+    assert result["values"]["pge_withdrawn_energy"] == "0"
 
 
 async def test_year_uses_available_history_and_today_uses_native_five_minute_rows(ha):

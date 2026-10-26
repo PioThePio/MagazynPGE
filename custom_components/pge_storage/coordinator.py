@@ -2,8 +2,9 @@
 
 import asyncio
 import logging
-from dataclasses import asdict, replace
-from datetime import date, timedelta
+from copy import deepcopy
+from dataclasses import replace
+from datetime import UTC, datetime, time, timedelta
 from uuid import uuid4
 
 from homeassistant.config_entries import ConfigEntry
@@ -12,6 +13,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import (
     async_track_point_in_utc_time,
     async_track_state_change_event,
+    async_track_state_report_event,
     async_track_time_interval,
 )
 from homeassistant.helpers.storage import Store
@@ -26,10 +28,13 @@ from .const import (
     TIME_ZONE,
     VERSION,
 )
+from .diagram import DiagramClock
 from .energy import (
     ROLES,
+    consumer_summary,
     energy_snapshot,
     energy_sources,
+    reading,
     refresh_energy_cache,
     source_ids,
     valid_source,
@@ -42,30 +47,35 @@ from .energy_panel import (
     merge_panel_config,
     upgrade_consumer_parents,
 )
-from .history import async_read_counters, async_read_samples, sample_from_state
+from .history import async_read_counters, sample_from_state
+from .hourly import (
+    MODEL,
+    HourBook,
+    accounting_snapshot,
+    extend_accounting,
+    hour_floor,
+    seed_inventory,
+    validate_archive,
+)
+from .hourly_history import read_hours
+from .hourly_live import LiveHour
 from .ledger import (
     WARSAW,
     LedgerError,
-    Sample,
     Settlement,
     boundary,
-    calculate,
-    check_counter_progression,
     combine_counters,
     energy,
     energy_text,
     optional_energy,
     validate_records,
 )
-from .overview import async_usage, usage_target
 from .planning import (
-    inventory_now,
     planning_snapshot,
     validate_checkpoints,
     validate_daily_cache,
     validate_plan,
 )
-from .planning_history import async_checkpoints, async_daily
 from .power import PowerWindows
 
 _LOGGER = logging.getLogger(__name__)
@@ -89,6 +99,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.energy_cache = {}
         self.energy_statistics = {}
         self.power_windows = PowerWindows()
+        self.diagram_clock = DiagramClock()
+        self._report_unsub = None
         self.energy_import_warnings = []
         self.energy_panel_defaults = None
         self.comparison = []
@@ -96,6 +108,24 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.usage_error = None
         self.usage_baseline = None
         self._midnight_cancel = None
+        self.hourly_cache = validate_archive(None, self.sources, dt_util.utcnow())
+        self.hourly_pending = {}
+        self.hourly_current = {}
+        self.hourly_live_context = None
+        self.hourly_projector = LiveHour(dt_util.utcnow())
+        self._live_prefix_key = None
+        self._live_prefix = None
+        self._day_opening_key = None
+        self._day_opening = None
+        self._observed_hour = hour_floor(dt_util.utcnow())
+        self.hourly_details = {}
+        self.hourly_as_of = hour_floor(dt_util.utcnow())
+        self.hourly_revision = 0
+        self.hourly_error = None
+        self.profile_basis = "hourly_net_import"
+        self.hourly_accounting = accounting_snapshot(
+            HourBook(), [], self.planning, self.hourly_as_of
+        )
 
     @property
     def max_age_hours(self) -> int:
@@ -122,6 +152,14 @@ class LedgerCoordinator(DataUpdateCoordinator):
         if data is not None:
             self.energy_config = validate_energy_config(data.get("energy_config", {}))
             self.energy_cache = validate_energy_cache(data.get("energy_cache", {}))
+        self.profile_basis = (
+            data.get("profile_basis", "legacy_gross_import")
+            if data
+            else "hourly_net_import"
+        )
+        self.hourly_cache = validate_archive(
+            data.get("hourly_cache") if data else None, self.sources, dt_util.utcnow()
+        )
         await self._auto_energy_defaults()
         await self.async_refresh_planning_history()
         await self.async_refresh_energy()
@@ -133,6 +171,9 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.publish()
         self.entry.async_on_unload(
             async_track_time_interval(self.hass, self._power_tick, timedelta(seconds=1))
+        )
+        self.entry.async_on_unload(
+            lambda: self._report_unsub() if self._report_unsub else None
         )
         self._schedule_midnight()
         self.entry.async_on_unload(
@@ -200,32 +241,29 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self.publish()
 
     async def _energy_statistics_tick(self, _now):
-        if self.energy_config.get("statistics") or any(
-            item.get("statistic") for item in self.energy_config["consumers"]
-        ):
-            await self.async_refresh_energy()
-            self.publish()
-
-    async def _planning_tick(self, _now):
-        day = (
-            dt_util.utcnow().astimezone(WARSAW).date() - timedelta(days=1)
-        ).isoformat()
-        if day not in self.daily_cache:
-            try:
-                sample = await async_read_counters(
-                    self.hass, self.sources, day, self.max_age_hours, dt_util.utcnow()
-                )
-                await self._archive_daily({day: asdict(sample)})
-            except LedgerError:
-                pass  # No invented zero; a later read can fill a genuine sample.
-            except Exception:
-                _LOGGER.exception("Cannot archive PGE daily reading")
         await self.async_refresh_planning_history()
         await self.async_refresh_energy()
         await self.async_refresh_usage()
         self.publish()
 
+    async def _planning_tick(self, _now):
+        await self._energy_statistics_tick(_now)
+
     def _watch_energy(self):
+        if self._report_unsub:
+            self._report_unsub()
+        pv_ids = source_ids(self.energy_config["sources"].get("pv_power"))
+        self.diagram_clock.configure(
+            pv_ids,
+            self.energy_config.get("flow_clock_source"),
+            repr(self.energy_config),
+            dt_util.utcnow().timestamp(),
+        )
+        self._report_unsub = (
+            async_track_state_report_event(self.hass, pv_ids, self._pv_reported)
+            if pv_ids
+            else None
+        )
         if self._energy_unsub:
             self._energy_unsub()
         ids = energy_sources(self.energy_config) - set(self.sources.values())
@@ -234,6 +272,16 @@ class LedgerCoordinator(DataUpdateCoordinator):
             if ids
             else None
         )
+
+    @callback
+    def _pv_reported(self, event):
+        entity = event.data["entity_id"]
+        self.diagram_clock.report(
+            entity,
+            dt_util.utcnow().timestamp(),
+            reading(self.hass, entity, "W") is not None,
+        )
+        self.publish()
 
     async def async_refresh_energy(self):
         try:
@@ -264,49 +312,20 @@ class LedgerCoordinator(DataUpdateCoordinator):
             _LOGGER.exception("Cannot refresh optional PGE energy boundaries")
 
     async def async_refresh_usage(self):
-        try:
-            now = dt_util.utcnow()
-            self.comparison = await async_usage(
-                self.hass,
-                self.sources["import"],
-                usage_target(self.planning, self.records, now),
-                now,
-            )
-            self.usage_error = None
-            month_start = now.astimezone(WARSAW).date().replace(day=1)
-            day = (month_start - timedelta(days=1)).isoformat()
-            frozen = self.daily_cache.get(day) or self.checkpoint_cache["samples"].get(
-                day
-            )
-            frozen = next(
-                (asdict(row.sample) for row in self.records if row.day == day), frozen
-            )
-            self.usage_baseline = None
-            if frozen:
-                sample = Sample(**frozen)
-                self.usage_baseline = (
-                    month_start.strftime("%Y-%m"),
-                    sample.components["import"]["value"],
-                )
-            else:
-                try:
-                    samples = await async_read_samples(
-                        self.hass,
-                        {"import": self.sources["import"]},
-                        day,
-                        self.max_age_hours,
-                        now,
-                    )
-                    self.usage_baseline = (
-                        month_start.strftime("%Y-%m"),
-                        samples["import"].value,
-                    )
-                except LedgerError:
-                    pass
-        except Exception:
-            self.comparison = []
-            self.usage_error = "Brak historii poboru."
-            _LOGGER.exception("Cannot read PGE annual consumption")
+        from .hourly_views import comparison
+
+        self.comparison = comparison(
+            self.hour_book(),
+            self.planning,
+            self.records,
+            dt_util.utcnow(),
+            self.hourly_as_of,
+        )
+        self.usage_baseline = None
+        self.usage_error = None
+
+    def hour_book(self):
+        return HourBook(self.hourly_cache["hours"], self.hourly_pending)
 
     def _payload(self):
         return {
@@ -318,6 +337,9 @@ class LedgerCoordinator(DataUpdateCoordinator):
             "daily_cache": self.daily_cache,
             "energy_config": self.energy_config,
             "energy_cache": self.energy_cache,
+            "hourly_cache": self.hourly_cache,
+            "profile_basis": self.profile_basis,
+            "accounting_model": MODEL,
         }
 
     async def async_put_energy(self, raw, revision):
@@ -421,6 +443,9 @@ class LedgerCoordinator(DataUpdateCoordinator):
                     "daily_cache": updated,
                     "energy_config": self.energy_config,
                     "energy_cache": self.energy_cache,
+                    "hourly_cache": self.hourly_cache,
+                    "profile_basis": self.profile_basis,
+                    "accounting_model": MODEL,
                 }
             )
             self.daily_cache = updated
@@ -430,52 +455,90 @@ class LedgerCoordinator(DataUpdateCoordinator):
             await self._async_refresh_planning_history()
 
     async def _async_refresh_planning_history(self):
-        self.checkpoints = []
-        self.planning_history_error = None
-        if not self.records or self.planning["anchor_id"] != self.records[-1].id:
-            return
+        now = dt_util.utcnow()
+        local = now.astimezone(WARSAW).date().replace(day=1)
+        start = datetime.combine(
+            local.replace(year=local.year - 1), time(), WARSAW
+        ).astimezone(UTC)
+        if self.records:
+            start = min(start, boundary(self.records[0].day))
+        self.hourly_error = None
         try:
-            anchor = self.records[-1]
-            known = (
-                self.checkpoint_cache["samples"]
-                if self.checkpoint_cache["anchor_id"] == anchor.id
-                else {}
-            )
-            samples = await async_checkpoints(
-                self.hass,
-                self.sources,
-                anchor,
-                self.max_age_hours,
-                {
-                    day: Sample(**value)
-                    for day, value in {**self.daily_cache, **known}.items()
-                },
-            )
-            cache = {
-                "anchor_id": anchor.id,
-                "samples": {day.isoformat(): asdict(value) for day, value in samples},
+            result = await read_hours(self.hass, self.sources, start, now)
+            hours = {
+                key: row
+                for key, row in self.hourly_cache["hours"].items()
+                if key not in result["invalid"]
             }
-            validate_checkpoints(cache, self.records)
-            if cache != self.checkpoint_cache:
+            for key, row in result["finalized"].items():
+                old = hours.get(key)
+                if (
+                    old
+                    and old["basis"].startswith("native_")
+                    and row["basis"] == "recorder_boundaries"
+                ):
+                    continue
+                hours[key] = row
+            updated = validate_archive(
+                {"model": MODEL, "sources": self.sources, "hours": hours},
+                self.sources,
+                now,
+            )
+            if updated != self.hourly_cache:
                 await self.store.async_save(
-                    {
-                        "sources": self.sources,
-                        "revision": self.revision,
-                        "records": [row.to_dict() for row in self.records],
-                        "planning": self.planning,
-                        "checkpoint_cache": cache,
-                        "daily_cache": self.daily_cache,
-                        "energy_config": self.energy_config,
-                        "energy_cache": self.energy_cache,
-                    }
+                    {**self._payload(), "hourly_cache": updated}
                 )
-                self.checkpoint_cache = cache
-            self.checkpoints = [(day, sample.components) for day, sample in samples]
-        except LedgerError as err:
-            self.planning_history_error = str(err)
-        except Exception:
-            _LOGGER.exception("Cannot refresh durable PGE month boundaries")
-            self.planning_history_error = "Nie udało się odczytać lub utrwalić końców miesięcy. Sprawdź log HA. Rejestr faktur pozostaje zapisany."
+                self.hourly_cache = updated
+            self.hourly_pending = result["pending"]
+            self.hourly_current = result["current"]
+            self.hourly_live_context = result["live_context"]
+            self._live_prefix_key = None
+            self.hourly_details = result["sources"]
+            self.hourly_as_of = result["as_of"]
+            self.hourly_revision += 1
+            self.hourly_accounting = accounting_snapshot(
+                self.hour_book(), self.records, self.planning, self.hourly_as_of
+            )
+            closed = accounting_snapshot(
+                HourBook(hours),
+                self.records,
+                self.planning,
+                result["finalized_through"],
+            )
+            if (
+                self.hourly_accounting.get("accounting_error")
+                and closed["current"]["estimated_balance"] is not None
+                and result["finalized_through"].astimezone(WARSAW).date()
+                == self.hourly_as_of.astimezone(WARSAW).date()
+            ):
+                # Show an explicitly dated settled balance while the current
+                # hour is unavailable; never pretend that missing hour is zero.
+                error = self.hourly_accounting["accounting_error"]
+                self.hourly_accounting = closed
+                self.hourly_accounting["pending_error"] = error
+            self.planning_history_error = None
+        except Exception as err:
+            self.hourly_error = str(err)
+            self.hourly_accounting = accounting_snapshot(
+                HourBook(self.hourly_cache["hours"]),
+                self.records,
+                self.planning,
+                self.hourly_as_of,
+            )
+            self.hourly_accounting["accounting_error"] = (
+                "Nie udało się odświeżyć lub utrwalić danych godzinowych. " + str(err)
+            )
+            for key in (
+                "estimated_balance",
+                "available_energy",
+                "deficit",
+                "period_balance",
+                "import_since_settlement_kwh",
+                "export_since_settlement_kwh",
+                "credited_since_settlement_kwh",
+            ):
+                self.hourly_accounting["current"][key] = None
+            _LOGGER.exception("Cannot refresh PGE hourly archive")
 
     def live_sample(self):
         return combine_counters(
@@ -486,39 +549,101 @@ class LedgerCoordinator(DataUpdateCoordinator):
         )
 
     async def async_daily(self, month):
-        try:
-            live = self.live_sample()
-        except LedgerError:
-            live = None
-        result = await async_daily(
-            self.hass,
-            self.sources,
-            list(self.records),
-            live,
-            month,
-            self.max_age_hours,
-            self.planning,
-            self.checkpoints,
-            self.checkpoint_cache["samples"],
-            self.daily_cache,
-        )
-        archived = result.pop("archived_samples")
-        try:
-            await self._archive_daily(archived)
-        except Exception:
-            _LOGGER.exception("Cannot persist queried PGE daily readings")
-            result["basis"] += (
-                " UWAGA: nie udało się utrwalić odczytów dziennych; sprawdź log HA i pobierz kopię."
-            )
-        result["updated_at"] = dt_util.utcnow().isoformat()
-        return result
+        from .hourly_views import daily
+
+        await self.async_refresh_planning_history()
+        return daily(self, month)
+
+    async def async_profile(self):
+        from .hourly_views import seasonal
+
+        await self.async_refresh_planning_history()
+        return seasonal(self.hour_book(), dt_util.utcnow())
 
     @callback
     def _source_changed(self, _event) -> None:
+        self.hourly_projector.observe(_event, self.sources, dt_util.utcnow())
+        entity = _event.data.get("entity_id")
+        if entity in source_ids(self.energy_config["sources"].get("pv_power")):
+            self.diagram_clock.report(
+                entity,
+                dt_util.utcnow().timestamp(),
+                reading(self.hass, entity, "W") is not None,
+            )
         self.publish()
+
+    def _update_live_hour(self):
+        now = dt_util.utcnow()
+        current_start = hour_floor(now)
+        if current_start != self._observed_hour:
+            self._observed_hour = current_start
+            if (
+                self.hourly_as_of.astimezone(WARSAW).date()
+                != now.astimezone(WARSAW).date()
+            ):
+                self.hourly_accounting = accounting_snapshot(
+                    self.hour_book(), self.records, self.planning, current_start
+                )
+            self.hourly_current = {
+                "start": current_start.isoformat(),
+                "end": (current_start + timedelta(hours=1)).isoformat(),
+                "known": False,
+                "provisional": True,
+                "as_of": None,
+                "balance_kwh": None,
+                "net_kwh": None,
+            }
+            self.hass.async_create_task(self._energy_statistics_tick(now))
+        row = self.hourly_projector.project(
+            self.hourly_live_context, self.hass, self.sources, now
+        )
+        if row is None:
+            invalid = False
+            for entity in self.sources.values():
+                try:
+                    sample_from_state(self.hass.states.get(entity))
+                except LedgerError:
+                    invalid = True
+            if self.hourly_live_context:
+                invalid |= any(
+                    self.hourly_projector.invalid_after.get(
+                        entity, self.hourly_projector.started
+                    )
+                    > datetime.fromisoformat(
+                        self.hourly_live_context["positions"][direction]["end"]
+                    )
+                    for direction, entity in self.sources.items()
+                )
+            if invalid:
+                self.hourly_current = {
+                    **self.hourly_current,
+                    "known": False,
+                    "balance_kwh": None,
+                    "net_kwh": None,
+                    "quality": "waiting_for_native_sum",
+                }
+            return
+        key = (current_start.isoformat(), self.hourly_revision, self.revision)
+        if self._live_prefix_key != key:
+            self._live_prefix_key = key
+            self._live_prefix = accounting_snapshot(
+                self.hour_book(), self.records, self.planning, current_start
+            )
+        self.hourly_pending[row["start"]] = row
+        self.hourly_as_of = datetime.fromisoformat(row["end"])
+        self.hourly_current = {
+            **row,
+            "end": (current_start + timedelta(hours=1)).isoformat(),
+            "as_of": row["end"],
+            "known": True,
+            "provisional": True,
+            "quality": "live_native_projection",
+        }
+        self.hourly_accounting = extend_accounting(self._live_prefix, row)
 
     @callback
     def publish(self) -> None:
+        self._update_live_hour()
         current = None
         sample = None
         source_values = {}
@@ -530,43 +655,40 @@ class LedgerCoordinator(DataUpdateCoordinator):
             }
             source_values = {name: sample.value for name, sample in samples.items()}
             sample = combine_counters(samples["import"], samples["export"])
-            if self.records:
-                check_counter_progression(self.records[-1].sample, sample)
             current = sample.value
         except LedgerError as err:
             source_error = str(err)
-        snapshot = calculate(self.records, current)
-        if self.records and current is not None:
-            previous = self.records[-1].sample.components
-            imported = energy(sample.components["import"]["value"]) - energy(
-                previous["import"]["value"]
-            )
-            exported = energy(sample.components["export"]["value"]) - energy(
-                previous["export"]["value"]
-            )
-            snapshot["current"].update(
-                {
-                    "import_since_settlement_kwh": energy_text(imported),
-                    "export_since_settlement_kwh": energy_text(exported),
-                    "credited_since_settlement_kwh": energy_text(
-                        exported * energy("0.8")
-                    ),
-                }
-            )
-        effective = self.planning
+        snapshot = deepcopy(self.hourly_accounting)
+        inventory_state = snapshot.pop("inventory_state", None)
+        snapshot["hourly"] = {
+            "model": MODEL,
+            "current": self.hourly_current,
+            "sources": self.hourly_details,
+            "closed_hours": len(self.hourly_cache["hours"]),
+            "finalization_delay_minutes": 0,
+            "boundary_tolerance_seconds": 0,
+            "source_contract": "configured cumulative totals across all phases; device behaviour is not autodetected",
+        }
+        snapshot["hourly_revision"] = self.hourly_revision
+        effective = {
+            **self.planning,
+            "profile": self.planning["profile"]
+            if self.profile_basis == "hourly_net_import"
+            else [],
+        }
         if self.comparison:
-            effective = {
-                **self.planning,
-                "profile": [
-                    {
+            profiles = {row["month"]: row for row in effective["profile"]}
+            for row in self.comparison:
+                if row["previous_kwh"] is not None:
+                    profiles[int(row["month"][5:])] = {
                         "month": int(row["month"][5:]),
                         "import_kwh": row["previous_kwh"],
                         "export_kwh": "0",
                         "source_month": row["previous_month"],
                     }
-                    for row in self.comparison
-                    if row["previous_kwh"] is not None
-                ],
+            effective = {
+                **effective,
+                "profile": sorted(profiles.values(), key=lambda row: row["month"]),
             }
         snapshot["planning"] = planning_snapshot(
             effective,
@@ -575,16 +697,12 @@ class LedgerCoordinator(DataUpdateCoordinator):
             sample.components if sample and current is not None else None,
             snapshot["current"]["estimated_balance"],
             dt_util.utcnow(),
-            self.planning_history_error,
+            snapshot.get("accounting_error"),
+            hourly=True,
+            inventory_state=inventory_state,
         )
         snapshot["planning"]["config"] = self.planning
         snapshot["comparison"] = [dict(row) for row in self.comparison]
-        if self.usage_baseline and source_values.get("import") is not None:
-            key, baseline = self.usage_baseline
-            delta = energy(source_values["import"]) - energy(baseline)
-            for row in snapshot["comparison"]:
-                if row["month"] == key:
-                    row["current_kwh"] = energy_text(delta) if delta >= 0 else None
         snapshot["energy"] = energy_snapshot(
             self.hass,
             self.energy_config,
@@ -593,7 +711,90 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self.energy_statistics,
             self.energy_panel_defaults,
         )
+        from .hourly import replay
+
+        beginning = datetime.combine(
+            dt_util.utcnow().astimezone(WARSAW).date(), time(), WARSAW
+        ).astimezone(UTC)
+        if beginning <= self.hourly_as_of:
+            flows = self.hour_book().interval(beginning, self.hourly_as_of)
+            key = (beginning.isoformat(), self.hourly_revision, self.revision)
+            if self._day_opening_key != key:
+                self._day_opening_key = key
+                try:
+                    self._day_opening = replay(
+                        self.hour_book(), self.records, self.planning, beginning
+                    )
+                except LedgerError:
+                    self._day_opening = None
+            withdrawn = None
+            if (
+                self._day_opening
+                and snapshot["current"].get("import_since_settlement_kwh") is not None
+            ):
+                withdrawn = energy_text(
+                    energy(snapshot["current"]["import_since_settlement_kwh"])
+                    - energy(self._day_opening["withdrawn_kwh"])
+                )
+            snapshot["energy"]["today"].update(
+                credited_energy=flows["credited_kwh"],
+                pge_credited_energy=flows["credited_kwh"],
+                pge_withdrawn_energy=withdrawn,
+            )
+        else:
+            snapshot["energy"]["today"].update(
+                credited_energy=None,
+                pge_credited_energy=None,
+                pge_withdrawn_energy=None,
+            )
+        snapshot["energy"]["hourly_current"] = self.hourly_current
         energy_view = snapshot["energy"]
+        pv_sources = source_ids(self.energy_config["sources"].get("pv_power"))
+        now_seconds = dt_util.utcnow().timestamp()
+        stale = [
+            entity
+            for entity in pv_sources
+            if now_seconds
+            - self.diagram_clock.last.get(
+                entity, self.diagram_clock.started or now_seconds
+            )
+            > 25
+        ]
+        if stale:
+            values = energy_view["values"]
+            values["pv_power"] = energy_text(
+                sum(
+                    (
+                        energy(reading(self.hass, entity, "W") or "0")
+                        for entity in pv_sources
+                        if entity not in stale
+                    ),
+                    energy(0),
+                )
+            )
+            if (
+                energy_view["calculation"].get("home_power", {}).get("basis")
+                == "balance"
+            ):
+                values["home_power"] = energy_text(
+                    max(
+                        energy(0),
+                        energy(values["pv_power"])
+                        + energy(values.get("grid_import_power") or "0")
+                        + energy(values.get("battery_discharge_power") or "0")
+                        - energy(values.get("grid_export_power") or "0")
+                        - energy(values.get("battery_charge_power") or "0"),
+                    )
+                )
+            for array in energy_view["pv_arrays"]:
+                if array.get("power_entity") in stale:
+                    array["power_w"] = "0"
+            energy_view["consumer_totals"] = consumer_summary(
+                energy_view["consumers"],
+                values.get("home_power"),
+                energy_view["today"].get("home_energy"),
+            )
+            energy_view["stale_power_sources"] = stale
         energy_view["power_windows"] = self.power_windows.update(
             energy_view, dt_util.utcnow().timestamp(), repr(self.energy_config)
         )
@@ -604,6 +805,15 @@ class LedgerCoordinator(DataUpdateCoordinator):
         snapshot["energy"]["import_warnings"] = self.energy_import_warnings
         snapshot["energy"]["import_report"] = (
             self.energy_panel_defaults["report"] if self.energy_panel_defaults else []
+        )
+        available = snapshot["planning"].get("inventory")
+        available = (
+            available["balance_kwh"]
+            if available
+            else snapshot["current"].get("available_energy")
+        )
+        energy_view["diagram_frame"] = self.diagram_clock.capture(
+            energy_view, available, dt_util.utcnow().timestamp()
         )
         from homeassistant.helpers import entity_registry as er
 
@@ -648,9 +858,17 @@ class LedgerCoordinator(DataUpdateCoordinator):
         daily_cache=None,
         energy_config=None,
         energy_cache=None,
+        hourly_cache=None,
+        profile_basis=None,
     ) -> None:
         records = self._validated([row.to_dict() for row in records])
+        changed_plan = planning is not None
         planning = self.planning if planning is None else validate_plan(planning)
+        profile_basis = profile_basis or (
+            "hourly_net_import" if changed_plan else self.profile_basis
+        )
+        if profile_basis not in ("hourly_net_import", "legacy_gross_import"):
+            raise LedgerError("invalid_import", "Nieprawidłowy model profilu zużycia.")
         cache = validate_checkpoints(
             self.checkpoint_cache if checkpoint_cache is None else checkpoint_cache,
             records,
@@ -670,6 +888,11 @@ class LedgerCoordinator(DataUpdateCoordinator):
             if energy_cache is None
             else validate_energy_cache(energy_cache)
         )
+        hourly_cache = (
+            self.hourly_cache
+            if hourly_cache is None
+            else validate_archive(hourly_cache, self.sources, dt_util.utcnow())
+        )
         revision = self.revision + 1
         # Persist first. A failed write must not change the running ledger.
         await self.store.async_save(
@@ -682,6 +905,9 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 "daily_cache": daily_cache,
                 "energy_config": energy_config,
                 "energy_cache": energy_cache,
+                "hourly_cache": hourly_cache,
+                "profile_basis": profile_basis,
+                "accounting_model": MODEL,
             }
         )
         self.records = records
@@ -691,6 +917,9 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.daily_cache = daily_cache
         self.energy_config = energy_config
         self.energy_cache = energy_cache
+        self.hourly_cache = hourly_cache
+        self.profile_basis = profile_basis
+        self.diagram_clock.frame = None
         await self._async_refresh_planning_history()
         await self.async_refresh_usage()
         self.publish()
@@ -705,14 +934,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
                         "invalid_anchor",
                         "Wybierz ostatni wpis rozliczenia jako podstawę partii.",
                     )
-                anchor = self.records[-1]
-                inventory_now(
-                    plan,
-                    self.records,
-                    [],
-                    anchor.sample.components,
-                    date.fromisoformat(anchor.day),
-                )
+                seed_inventory(plan, self.records)
             elif plan["lots"]:
                 raise LedgerError(
                     "invalid_anchor",
@@ -722,16 +944,12 @@ class LedgerCoordinator(DataUpdateCoordinator):
 
     def _validated(self, raw: list) -> list[Settlement]:
         records = validate_records(raw, dt_util.utcnow())
-        previous = None
         for row in records:
             if row.sample.components is None:
                 raise LedgerError(
                     "missing_counters",
-                    "Wpis nie zawiera odczytów dwóch liczników energii. Nie importuj rejestru ze starego sensora bilansu.",
+                    "Wpis nie zawiera oddzielnych liczników importu i eksportu.",
                 )
-            if previous is not None:
-                check_counter_progression(previous.sample, row.sample)
-            previous = row
         return records
 
     async def async_put(self, raw: dict, revision: int) -> None:
@@ -815,7 +1033,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
 
     def export(self) -> dict:
         return {
-            "format_version": 3,
+            "format_version": 5,
             "sources": self.sources,
             "time_zone": TIME_ZONE,
             "unit": "kWh",
@@ -825,13 +1043,16 @@ class LedgerCoordinator(DataUpdateCoordinator):
             "daily_cache": self.daily_cache,
             "energy_config": self.energy_config,
             "energy_cache": self.energy_cache,
+            "hourly_cache": self.hourly_cache,
+            "profile_basis": self.profile_basis,
+            "accounting_model": MODEL,
         }
 
     async def async_import(self, document: dict, revision: int) -> None:
         async with self.lock:
             self._check_revision(revision)
             if not isinstance(document, dict) or (
-                document.get("format_version") not in (2, 3)
+                document.get("format_version") not in (2, 3, 4, 5)
                 or document.get("sources") != self.sources
                 or document.get("time_zone") != TIME_ZONE
                 or document.get("unit") != "kWh"
@@ -848,5 +1069,9 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 validate_daily_cache(document.get("daily_cache", {}), dt_util.utcnow()),
                 validate_energy_config(document.get("energy_config", {})),
                 validate_energy_cache(document.get("energy_cache", {})),
+                validate_archive(
+                    document.get("hourly_cache"), self.sources, dt_util.utcnow()
+                ),
+                document.get("profile_basis", "legacy_gross_import"),
             )
             self._watch_energy()

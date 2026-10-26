@@ -40,6 +40,7 @@ def validate_energy_config(raw):
             "battery_capacity_kwh",
             "battery_capacity_ah",
             "battery_voltage",
+            "flow_clock_source",
         }:
             raise ValueError
         sources, consumers = raw.get("sources", {}), raw.get("consumers", [])
@@ -205,7 +206,13 @@ def validate_energy_config(raw):
             for key in ("battery_charge_power", "battery_discharge_power")
         ):
             raise ValueError
+        flow_clock = raw.get("flow_clock_source") or None
+        if flow_clock is not None and (
+            entity(flow_clock) not in source_ids(sources.get("pv_power"))
+        ):
+            raise ValueError
         return {
+            "flow_clock_source": flow_clock,
             "sources": sources,
             "consumers": items,
             "directions": directions,
@@ -614,11 +621,8 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
             if config.get("presence", {}).get("grid_export") is False
             else delta(core["export"])
         )
-    today["credited_energy"] = (
-        energy_text(energy(delta(core["export"])) * energy("0.8"))
-        if delta(core["export"]) is not None
-        else None
-    )
+    # Financial PGE credit is supplied exclusively by the hour book.
+    today["credited_energy"] = None
     consumers = [
         {
             **item,

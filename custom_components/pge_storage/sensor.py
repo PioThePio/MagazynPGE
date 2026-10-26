@@ -79,6 +79,23 @@ SENSOR_DEFINITIONS.update(
     }
 )
 
+SENSOR_DEFINITIONS.update(
+    {
+        "hourly_balance": (
+            "Bilans bieżącej godziny",
+            "kWh",
+            "hourly_current",
+            "balance_kwh",
+        ),
+        "hourly_stock_change": (
+            "Zmiana magazynu w bieżącej godzinie",
+            "kWh",
+            "hourly_current",
+            "net_kwh",
+        ),
+    }
+)
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(
@@ -111,6 +128,8 @@ class PGESensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = SensorStateClass.MEASUREMENT
         if key.startswith("untracked_"):
             self._attr_suggested_display_precision = 1
+        if key.startswith("hourly_"):
+            self._attr_suggested_display_precision = 3
         self._attr_name = name
         self._attr_unique_id = f"{coordinator.entry.entry_id}_{key}"
         self._attr_device_info = DeviceInfo(
@@ -143,7 +162,14 @@ class PGESensor(CoordinatorEntity, SensorEntity):
     @property
     def available(self):
         return (
-            self.coordinator.data.get("loaded", True) and self.native_value is not None
+            self.coordinator.data.get("loaded", True)
+            and self.native_value is not None
+            and (
+                self._value_group != "hourly_current"
+                or self.coordinator.data.get("energy", {})
+                .get("hourly_current", {})
+                .get("known", False)
+            )
         )
 
     @property
@@ -160,15 +186,34 @@ class PGESensor(CoordinatorEntity, SensorEntity):
                     for seconds, row in view.get("power_windows", {}).items()
                 },
             }
+        if self._value_group == "hourly_current":
+            hour = self.coordinator.data.get("energy", {}).get("hourly_current", {})
+            power_attributes.update(
+                {
+                    key: hour.get(key)
+                    for key in (
+                        "start",
+                        "end",
+                        "as_of",
+                        "known",
+                        "provisional",
+                        "quality",
+                        "raw_import_kwh",
+                        "raw_export_kwh",
+                    )
+                }
+            )
         return {
             **power_attributes,
+            "accounting_model": self.coordinator.data.get("accounting_model"),
+            "accounting_as_of": self.coordinator.data.get("accounting_as_of"),
             "sources": self.coordinator.sources,
             "start_day": self.coordinator.data["current"]["start_day"],
             "revision": self.coordinator.revision,
             "time_zone": self.coordinator.data["time_zone"],
             "balance_basis": "fifo"
             if inventory is not None
-            else "measurement_without_expiry",
+            else "hourly_without_expiry",
             "expired_kwh": inventory["expired_kwh"] if inventory else None,
             "next_expiry": inventory["next_expiry"] if inventory else None,
         }

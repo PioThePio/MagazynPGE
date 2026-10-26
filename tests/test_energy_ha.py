@@ -98,7 +98,7 @@ async def test_energy_sources_aliases_readonly_persistence_and_failed_write(ha):
     await hass.async_block_till_done()
     assert manager.data["energy"]["today"]["pv_energy"] == "3"
     assert manager.data["energy"]["today"]["home_energy"] == "20"
-    assert manager.data["energy"]["today"]["credited_energy"] == "8"
+    assert manager.data["energy"]["today"]["credited_energy"] is None
     assert manager.data["energy"]["consumers"][0]["today_kwh"] == "5"
     assert manager.data["energy"]["values"]["grid_export_power"] == "1500"
     assert manager.data["energy"]["values"]["grid_import_power"] == "0"
@@ -162,6 +162,19 @@ async def test_energy_sources_aliases_readonly_persistence_and_failed_write(ha):
             "has_sum": True,
         },
         hours,
+    )
+    async_import_statistics(
+        hass,
+        {
+            "statistic_id": ids["e"],
+            "source": "recorder",
+            "name": None,
+            "unit_class": "energy",
+            "unit_of_measurement": "Wh",
+            "mean_type": StatisticMeanType.NONE,
+            "has_sum": True,
+        },
+        [{**row, "sum": 1000000, "state": 1000000} for row in hours],
     )
     await hass.async_block_till_done()
     future = hass.loop.create_future()

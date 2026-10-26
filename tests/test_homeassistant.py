@@ -117,9 +117,9 @@ async def test_full_integration_recorder_gui_api_and_restart(ha):
                     record={"day": day, "invoice_balance": invoice},
                 )
                 assert response["success"], response
-            assert manager.data["current"]["period_balance"] == "1540"
-            assert manager.data["current"]["estimated_balance"] == "1540"
-            assert manager.data["records"][2]["invoice_difference"] == "950"
+            assert manager.data["current"]["period_balance"] is None
+            assert manager.data["current"]["estimated_balance"] is None
+            assert manager.data["records"][2]["invoice_difference"] is None
 
             diagnostic = await call(4, "diagnose", day="2025-09-15")
             assert diagnostic["success"]
@@ -153,25 +153,25 @@ async def test_full_integration_recorder_gui_api_and_restart(ha):
                     },
                 )
                 assert changed["success"], changed
-            assert manager.data["current"]["estimated_balance"] == "1590"
+            assert manager.data["current"]["estimated_balance"] is None
             restored = await call(9, "import", revision=4, document=exported)
             assert restored["success"], restored
-            assert manager.data["current"]["estimated_balance"] == "1540"
+            assert manager.data["current"]["estimated_balance"] is None
             removed = await call(
                 10, "delete", revision=5, record_id=manager.records[1].id
             )
             assert removed["success"], removed
-            assert manager.data["records"][1]["period_balance"] == "-950"
+            assert manager.data["records"][1]["period_balance"] is None
             await call(11, "import", revision=6, document=exported)
 
             subscribed = await call(12, "subscribe")
             assert subscribed["success"]
             snapshot = await ws.receive_json()
-            assert snapshot["event"]["current"]["estimated_balance"] == "1540"
+            assert snapshot["event"]["current"]["estimated_balance"] is None
             assert hass.states.get(SOURCE) is source_before
             hass.states.async_set(EXPORT, "10012.5", {"unit_of_measurement": "kWh"})
             event = await asyncio.wait_for(ws.receive_json(), timeout=10)
-            assert event["event"]["current"]["period_balance"] == "1550"
+            assert event["event"]["current"]["period_balance"] is None
             # An open card must follow the replacement coordinator after reload.
             assert await hass.config_entries.async_reload(entry.entry_id)
             await hass.async_block_till_done()
@@ -181,7 +181,7 @@ async def test_full_integration_recorder_gui_api_and_restart(ha):
                     break
             hass.states.async_set(EXPORT, "10013.75", {"unit_of_measurement": "kWh"})
             event = await asyncio.wait_for(ws.receive_json(), timeout=10)
-            assert event["event"]["current"]["period_balance"] == "1551"
+            assert event["event"]["current"]["period_balance"] is None
             await ws.send_json(
                 {"id": 13, "type": "unsubscribe_events", "subscription": 12}
             )
@@ -191,7 +191,7 @@ async def test_full_integration_recorder_gui_api_and_restart(ha):
     restarted = entry.runtime_data
     assert restarted is not manager
     assert restarted.export() == exported
-    assert restarted.data["current"]["estimated_balance"] == "1551"
+    assert restarted.data["current"]["estimated_balance"] is None
     assert source_before.state == "7410"
     assert (
         hass.states.get(SOURCE).state == "7410"
@@ -356,18 +356,18 @@ async def test_date_edits_and_refresh_recompute_from_both_counters(ha):
     )
     row = manager.records[1]
     await manager.async_put({"id": row.id, "day": "2025-10-15"}, manager.revision)
-    assert manager.data["records"][1]["period_balance"] == "1100"
-    assert manager.data["records"][2]["period_balance"] == "-2050"
+    assert manager.data["records"][1]["period_balance"] is None
+    assert manager.data["records"][2]["period_balance"] is None
     await record(hass, "2025-10-15", "2100", "4125", offset=0.5)
     await manager.async_refresh_sample(row.id, manager.revision)
-    assert manager.data["records"][1]["period_balance"] == "1200"
-    assert manager.data["records"][2]["period_balance"] == "-2150"
-    frozen = manager.export()
+    assert manager.data["records"][1]["period_balance"] is None
+    assert manager.data["records"][2]["period_balance"] is None
+    # A raw reset may be recorded; only complete hourly sum evidence can
+    # establish financial flows through it. Never subtract raw day counters.
     await record(hass, "2025-11-15", "1", "5000")
-    with pytest.raises(LedgerError, match="zmalał"):
-        await manager.async_put({"day": "2025-11-15"}, manager.revision)
-    assert manager.export() == frozen
+    await manager.async_put({"day": "2025-11-15"}, manager.revision)
+    assert manager.data["current"]["estimated_balance"] is None
     hass.states.async_set(SOURCE, "10", {"unit_of_measurement": "kWh"})
     await hass.async_block_till_done()
     assert manager.data["current"]["estimated_balance"] is None
-    assert "zmalał" in manager.data["source_error"]
+    assert manager.data["source_error"] is None

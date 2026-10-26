@@ -215,7 +215,7 @@ class Inventory:
             self.lots.append({"month": month, "expires_on": expiry, "kwh": amount})
 
     def consume(self, amount):
-        for item in sorted(self.lots, key=lambda x: (x["expires_on"], x["month"])):
+        for item in sorted(self.lots, key=lambda x: (x["month"], x["expires_on"])):
             taken = min(item["kwh"], amount)
             item["kwh"] -= taken
             amount -= taken
@@ -224,7 +224,7 @@ class Inventory:
     def serialize(self, include_empty=False):
         return [
             {**item, "kwh": energy_text(item["kwh"])}
-            for item in sorted(self.lots, key=lambda x: (x["expires_on"], x["month"]))
+            for item in sorted(self.lots, key=lambda x: (x["month"], x["expires_on"]))
             if include_empty or item["kwh"] > 0
         ]
 
@@ -298,7 +298,16 @@ def inventory_now(plan, records, checkpoints, live, today):
 
 
 def planning_snapshot(
-    plan, records, checkpoints, live, balance, now, history_error=None
+    plan,
+    records,
+    checkpoints,
+    live,
+    balance,
+    now,
+    history_error=None,
+    *,
+    hourly=False,
+    inventory_state=None,
 ):
     today = now.astimezone(WARSAW).date()
     target = (
@@ -326,7 +335,17 @@ def planning_snapshot(
     try:
         if history_error:
             raise LedgerError("missing_month", history_error)
-        inventory = inventory_now(plan, records, checkpoints, live, today)
+        if hourly:
+            from .hourly import copy_inventory
+
+            inventory = copy_inventory(inventory_state)
+            if inventory is None:
+                raise LedgerError(
+                    "missing_hourly_inventory",
+                    "Brak kompletu godzin lub partii z ostatniej faktury; prognoza niedostępna.",
+                )
+        else:
+            inventory = inventory_now(plan, records, checkpoints, live, today)
         result["inventory"] = {
             "lots": inventory.serialize(include_empty=True),
             "balance_kwh": energy_text(inventory.balance),
@@ -339,7 +358,10 @@ def planning_snapshot(
     if invalid_target:
         return result
     profiles = {item["month"]: item for item in plan["profile"]}
-    counters = {key: energy(live[key]["value"]) for key in ("import", "export")}
+    counters = {
+        key: energy(live[key]["value"]) if live else ZERO
+        for key in ("import", "export")
+    }
     start = inventory.balance
     low, first_shortfall, rows = start, today.isoformat() if start < 0 else None, []
     imported = period_import = ZERO
@@ -385,9 +407,11 @@ def planning_snapshot(
                     if period_import is not None
                     else None,
                     "import_counter": energy_text(counters["import"] + imported)
-                    if known
+                    if known and not hourly
                     else None,
-                    "export_counter": energy_text(counters["export"]),
+                    "export_counter": energy_text(counters["export"])
+                    if not hourly
+                    else None,
                     "balance_kwh": energy_text(inventory.balance) if known else None,
                     "expired_kwh": energy_text(inventory.expired) if known else None,
                     "import_kwh": energy_text(imported) if known else None,
