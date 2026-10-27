@@ -20,7 +20,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
-from .battery import BatteryEstimate
+from .battery import BatteryEstimate, battery_identity
 from .const import (
     DEFAULT_MAX_AGE_HOURS,
     DOMAIN,
@@ -215,14 +215,22 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 merge_panel_config(self.energy_config, result["config"])
             )
         async with self.lock:
+            changed_battery = battery_identity(config) != battery_identity(
+                self.energy_config
+            )
             await self.store.async_save(
                 {
                     **self._payload(),
+                    "battery_model": {}
+                    if changed_battery
+                    else deepcopy(self.battery_estimator.profile),
                     "energy_config": config,
                     "revision": self.revision + 1,
                 }
             )
             self.energy_config = config
+            if changed_battery:
+                self.battery_estimator.profile = {}
             self.revision += 1
 
     def _schedule_midnight(self):
@@ -896,7 +904,14 @@ class LedgerCoordinator(DataUpdateCoordinator):
         )
         learned = BatteryEstimate()
         learned.restore(
-            self.battery_estimator.profile if battery_model is None else battery_model
+            (
+                self.battery_estimator.profile
+                if battery_identity(energy_config)
+                == battery_identity(self.energy_config)
+                else {}
+            )
+            if battery_model is None
+            else battery_model
         )
         revision = self.revision + 1
         # Persist first. A failed write must not change the running ledger.
@@ -925,6 +940,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.energy_cache = energy_cache
         if battery_model is not None:
             self.battery_estimator = learned
+        else:
+            self.battery_estimator.profile = deepcopy(learned.profile)
         self.hourly_cache = hourly_cache
         self.profile_basis = profile_basis
         self.diagram_clock.frame = None

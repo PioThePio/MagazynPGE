@@ -4,12 +4,14 @@ import json
 import re
 import shutil
 import time
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
 from homeassistant.components.http.config import async_get_and_load_store
 from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.components.lovelace.resources import ResourceYAMLCollection
+from homeassistant.helpers.event import async_track_time_interval
 from playwright.async_api import async_playwright, expect
 
 from custom_components.pge_storage.const import CARD_URL, DOMAIN
@@ -94,6 +96,18 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             ],
         },
         manager.revision,
+    )
+
+    # Real PV devices keep reporting unchanged power. Reproduce that cadence
+    # so a slow CI browser does not turn a synthetic healthy source stale.
+    async def report_pv(_now):
+        for entity in ("sensor.browser_pv_power", "sensor.browser_pv_second_power"):
+            state = hass.states.get(entity)
+            if state is not None:
+                hass.states.async_set(entity, state.state, dict(state.attributes))
+
+    result["result"].async_on_unload(
+        async_track_time_interval(hass, report_pv, timedelta(seconds=5))
     )
     # Confirm the isolated server's random port so its setup dialog does not
     # cover the dashboard during real mouse and form interactions.

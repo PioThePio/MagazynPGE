@@ -61,6 +61,25 @@ def value(hass, entity, units):
         return None
 
 
+def battery_identity(config):
+    sources = config["sources"]
+    opt = config["battery_forecast"]
+    return repr(
+        (
+            [
+                (key, sources[key])
+                for key in sorted(sources)
+                if key.startswith("battery_")
+            ],
+            config.get("battery_capacity_kwh"),
+            config.get("battery_capacity_ah"),
+            config.get("battery_voltage"),
+            opt["bms_current_entity"],
+            opt["voltage_entity"],
+        )
+    )
+
+
 class BatteryEstimate:
     def __init__(self):
         self.samples = deque(maxlen=32768)
@@ -90,16 +109,7 @@ class BatteryEstimate:
 
     def update(self, hass, config, values, now):
         opt = config["battery_forecast"]
-        identity = repr(
-            (
-                config["sources"],
-                config.get("battery_capacity_kwh"),
-                config.get("battery_capacity_ah"),
-                config.get("battery_voltage"),
-                opt["bms_current_entity"],
-                opt["voltage_entity"],
-            )
-        )
+        identity = battery_identity(config)
         if identity != self.identity or (self.samples and now < self.samples[-1][0]):
             if self.identity is not None:
                 self.profile = {}

@@ -1,6 +1,6 @@
-/* PGE 0.13.0: independent Lovelace modules, no external libraries. */
-import "./pge-settings.js?v=0.13.0";
-const VERSION = "0.13.0";
+/* PGE 0.13.1: independent Lovelace modules, no external libraries. */
+import "./pge-settings.js?v=0.13.1";
+const VERSION = "0.13.1";
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,

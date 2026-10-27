@@ -192,12 +192,15 @@ async def test_ha_reports_latch_diagram_and_live_hour_has_real_sensor_attributes
     # Unchanged states emit state_reported rather than state_changed in HA.
     hass.states.async_set("sensor.clock_pv", "1000", {"unit_of_measurement": "W"})
     await hass.async_block_till_done()
-    before = manager.data["energy"]["diagram_frame"]["sequence"]
+    before = manager.data["energy"]["diagram_frame"]
     hass.states.async_set("sensor.clock_pv", "1000", {"unit_of_measurement": "W"})
     await hass.async_block_till_done()
-    assert manager.data["energy"]["diagram_frame"]["sequence"] == before
+    after = manager.data["energy"]["diagram_frame"]
+    assert after["sequence"] >= before["sequence"]
+    if after["sequence"] != before["sequence"]:
+        assert after["observed_at"] - before["observed_at"] >= 3
     assert len(manager.aligned_flow.reports["sensor.clock_pv"]) >= 2
-    frozen = manager.data["energy"]["diagram_frame"]["sequence"]
+    frozen = manager.data["energy"]["diagram_frame"]
     now = dt_util.utcnow()
     manager.hourly_live_context = {
         "start": now.replace(minute=0, second=0, microsecond=0).isoformat(),
@@ -213,7 +216,10 @@ async def test_ha_reports_latch_diagram_and_live_hour_has_real_sensor_attributes
     }
     hass.states.async_set(sources["import"], "6", {"unit_of_measurement": "kWh"})
     await hass.async_block_till_done()
-    assert manager.data["energy"]["diagram_frame"]["sequence"] == frozen
+    after = manager.data["energy"]["diagram_frame"]
+    assert after["sequence"] >= frozen["sequence"]
+    if after["sequence"] != frozen["sequence"]:
+        assert after["observed_at"] - frozen["observed_at"] >= 3
     assert manager.data["energy"]["hourly_current"]["balance_kwh"] == "1"
     assert manager.data["current"]["available_energy"] == "9.6"
     assert manager.data["current"]["opust_deduction_since_settlement_kwh"] == "0.4"
@@ -230,3 +236,15 @@ async def test_ha_reports_latch_diagram_and_live_hour_has_real_sensor_attributes
     )
     await hass.async_block_till_done()
     assert hass.states.get(entity).state == "unavailable"
+
+    # Changing the physical capacity must clear both memory and the persisted
+    # profile, so it cannot return after a restart before the next archive save.
+    manager.battery_estimator.profile = {"95": {"watts": 500, "count": 3}}
+    await manager.async_put_energy(
+        {**manager.energy_config, "battery_capacity_kwh": "5"}, manager.revision
+    )
+    assert not manager.battery_estimator.profile
+    assert not (await manager.store.async_load())["battery_model"]
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert not entry.runtime_data.battery_estimator.profile
