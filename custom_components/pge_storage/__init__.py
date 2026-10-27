@@ -56,6 +56,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = coordinator
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await hass.config_entries.async_forward_entry_setups(entry, [Platform.SENSOR])
+    from .dashboard import async_repair_dashboards
+
+    try:
+        await async_repair_dashboards(hass, entry.entry_id)
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Nie udało się uporządkować starego dashboardu PGE; kopia oryginału pozostaje zachowana"
+        )
     return True
 
 

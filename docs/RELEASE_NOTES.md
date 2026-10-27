@@ -1,13 +1,9 @@
-MagazynPGE 0.13.1 — zamknięte saldo godzinowe, odświeżanie 3 s i estymacja baterii.
+MagazynPGE 0.14.0 — automatyczne porządkowanie dashboardu i widoczne strzałki.
 
-- Magazyn i niedobór zmieniają się dopiero po zamknięciu godziny z kompletem danych. Magazyn minimum 0 kWh, niedobór pozostaje osobno.
-- Mała bieżąca godzina między Siecią a Domem, szczegóły po kliknięciu, możliwość ukrycia oraz osobna karta. Nowe znaki P−E: plus pobór, minus eksport (odwrócone względem 0.12.0). Historia encji nie jest przepisywana.
-- Diagram co 3 s: domyślnie wyrównane pomiary z opóźnieniem 12 s, opcjonalnie najnowsze odczyty. Średnie niezależne. Pierwsze 27 s zbiera historię.
-- Sieć pokazuje Pobrano/Oddano bez opustu; PGE rozliczenie po kompensacji godzinowej. Kolorowe obwódki pokazują szacowane udziały mocy. Słońce nad domem, instalacje po lewej z ustawianą kolejnością.
-- Czas baterii do 100% i do wybranego minimum SOC; średnie 1/5/15 min. Wymaga SOC, rzeczywistej mocy i pojemności. Przy mocy do 25 W brak estymacji. Opcjonalny profil uczony z ograniczeń BMS i scenariusz dwóch zgodnych prognoz energii PV/domu.
-- Nowe encje potrącenia opustu od faktury i dzisiaj oraz karta dla wybranego okresu. Dwie encje czasu baterii.
-- Całkowite jednostki mocy na dashboardzie; rodzice odbiorców bez strzałek, dzieci zachowują wcięcia. Usunięta etykieta Dostępna historia.
+Po restarcie integracja zamienia starą zbiorczą kartę PGE na osobne moduły. Jeśli w tym samym widoku jest już osobny diagram, zachowuje go zamiast tworzyć drugi. Pozostałe karty i ich ustawienia pozostają na miejscu. Przed zmianą zapisuje oryginalny układ w osobnej kopii HA Store. Operacja jest powtarzalna i nie nadpisuje późniejszych edycji, gdy karta zbiorcza została już usunięta. W ustawieniach jest też przycisk „Uporządkuj obecny dashboard”. Dashboardy YAML i niejednoznaczne karty przy wielu integracjach pozostają bez zmian.
 
-Aktualizacja: HACS → 0.13.1 → restart HA → Ctrl+F5. Faktury, partie i identyfikatory encji pozostają zachowane. W konfiguratorze źródeł uzupełnij pojemność i minimum SOC, jeśli chcesz czas rozładowania. Nowe karty dodasz w natywnym edytorze HA; istniejący dashboard nie jest nadpisywany.
+Wskaźnik bieżącej godziny przeniesiony nad linię Sieć–Dom, tak aby nie zasłaniał kierunku przepływu. Strzałki są wyraźniejsze. Kliknięcie nadal otwiera szczegóły godziny.
 
-Profil baterii jest również usuwany z zapisu na dysku przy zmianie źródeł baterii lub pojemności. Zmiana kolejności PV i średniej nie usuwa nauki.
+Przy prawidłowym SOC i brakującej pojemności komunikat baterii wskazuje konkretnie brak pojemności, zamiast sugerować błąd SOC.
+
+Aktualizacja: HACS → 0.14.0 → restart HA → Ctrl+F5. Nie dodawaj ręcznie kolejnych kopii kart. Faktury, partie i źródła pomiarowe pozostają zachowane.

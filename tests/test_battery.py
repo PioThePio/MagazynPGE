@@ -89,7 +89,4 @@ def test_bad_configuration_and_missing_capacity_do_not_invent_time():
         options({"min_soc_entity": "switch.wrong"})
     hass, _ = fixture()
     result = run(BatteryEstimate(), hass, validate_energy_config({}), 1000)
-    assert (
-        result["charge_seconds"] is None
-        and result["quality"] == "missing_soc_or_capacity"
-    )
+    assert result["charge_seconds"] is None and result["quality"] == "missing_capacity"

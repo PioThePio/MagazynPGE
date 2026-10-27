@@ -147,3 +147,110 @@ async def async_create_dashboard(hass: HomeAssistant, entry_id: str) -> dict:
             "dashboard_unavailable",
             "Nie znaleziono wolnego adresu nowego dashboardu Magazyn PGE.",
         )
+
+
+def split_legacy_view(config, entry_id, *, allow_default):
+    """Replace only our legacy wrapper; preserve existing modules and foreign cards."""
+    from copy import deepcopy
+
+    updated = deepcopy(config)
+    templates = [
+        card
+        for section in dashboard_config(entry_id)["views"][0]["sections"]
+        for card in section["cards"]
+    ]
+
+    def matching(card):
+        return card.get("entry_id") == entry_id or (
+            allow_default and not card.get("entry_id")
+        )
+
+    def key(card):
+        kind = card.get("type", "")
+        if (
+            matching(card)
+            and kind.startswith("custom:pge-")
+            and kind != "custom:pge-storage-card"
+        ):
+            return (
+                kind,
+                card.get("metric", "available_energy")
+                if kind == "custom:pge-balance-card"
+                else None,
+            )
+        return None
+
+    def containers(node):
+        if not isinstance(node, dict):
+            return
+        if isinstance(node.get("cards"), list):
+            yield node["cards"]
+            for card in node["cards"]:
+                yield from containers(card)
+        for section in node.get("sections", []):
+            yield from containers(section)
+
+    for view in updated.get("views", []):
+        lists = list(containers(view))
+        existing = {
+            key(card) for cards in lists for card in cards if isinstance(card, dict)
+        }
+        for cards in lists:
+            replacement = []
+            for card in cards:
+                if (
+                    isinstance(card, dict)
+                    and card.get("type") == "custom:pge-storage-card"
+                    and matching(card)
+                ):
+                    # One module per role in this view. Custom configuration of
+                    # already independent cards wins over wrapper defaults.
+                    for template in templates:
+                        role = key(template)
+                        if role not in existing:
+                            generated = deepcopy(template)
+                            generated["grid_options"]["columns"] = 12
+                            if generated["type"] == "custom:pge-energy-card":
+                                for option in ("show_hour", "average_seconds"):
+                                    if option in card:
+                                        generated[option] = card[option]
+                            if card.get("visibility"):
+                                generated["visibility"] = deepcopy(card["visibility"])
+                            replacement.append(generated)
+                            existing.add(role)
+                else:
+                    replacement.append(card)
+            cards[:] = replacement
+    return updated
+
+
+async def async_repair_dashboards(hass: HomeAssistant, entry_id: str) -> dict:
+    """Idempotent legacy cleanup, with originals durably backed up before save."""
+    from copy import deepcopy
+
+    from homeassistant.helpers.storage import Store
+
+    lock = hass.data.setdefault(_LOCK, asyncio.Lock())
+    async with lock:
+        if LOVELACE_DATA not in hass.data or hass.config.recovery_mode:
+            return {"updated": []}
+        store = Store(hass, 1, f"{DOMAIN}.{entry_id}.dashboard_backup")
+        originals = await store.async_load() or {}
+        allow_default = len(hass.config_entries.async_entries(DOMAIN)) == 1
+        changed = []
+        for path, dashboard in list(hass.data[LOVELACE_DATA].dashboards.items()):
+            if dashboard.mode != MODE_STORAGE:
+                continue
+            try:
+                before = await dashboard.async_load(False)
+            except ConfigNotFound:
+                continue
+            after = split_legacy_view(before, entry_id, allow_default=allow_default)
+            if after == before:
+                continue
+            backup_key = path if path is not None else "__default__"
+            originals.setdefault(backup_key, deepcopy(before))
+            await store.async_save(originals)
+            await dashboard.async_save(after)
+            changed.append(path or "lovelace")
+        return {"updated": changed, "backup_available": bool(originals)}

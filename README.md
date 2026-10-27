@@ -16,7 +16,7 @@ Opcjonalne uczenie profilu ładowania wymaga encji dopuszczalnego prądu ładowa
 
 Scenariusz PV wymaga dwóch wybranych encji energii: prognozowanej produkcji i prognozowanego zużycia domu, dla tego samego pozostałego horyzontu (1–24 h). To oszacowanie przy równomiernym rozłożeniu nadwyżki; nie rozpoznajemy automatycznie atrybutów Solcast/Forecast.Solar ani różnych horyzontów. Jeśli nadwyżka nie wystarcza w tym horyzoncie, nie podajemy czasu poza nim. Model i scenariusz pokazują przedział, nie gwarantowaną godzinę.
 
-„Energia potrącona w systemie opustów” to encja od ostatniej faktury, a „Potrącenie opustu dzisiaj” to osobna encja dzienna. Karta `custom:pge-opust-card` pokazuje wybrany dzień/tydzień/miesiąc/rok. Wzór: 20% sumy nadwyżek eksportu po bilansowaniu zamkniętych godzin. Nie obejmuje wygaśnięć ani strat baterii. Dodaj kartę przez natywny wybór kart HA; nowe generowane dashboardy zawierają ją od razu. Istniejących edytowanych dashboardów nie nadpisujemy.
+„Energia potrącona w systemie opustów” to encja od ostatniej faktury, a „Potrącenie opustu dzisiaj” to osobna encja dzienna. Karta `custom:pge-opust-card` pokazuje wybrany dzień/tydzień/miesiąc/rok. Wzór: 20% sumy nadwyżek eksportu po bilansowaniu zamkniętych godzin. Nie obejmuje wygaśnięć ani strat baterii. Dodaj kartę przez natywny wybór kart HA; nowe generowane dashboardy zawierają ją od razu. Od 0.14.0 po restarcie automatycznie zastępujemy starą kartę `custom:pge-storage-card` osobnymi modułami. Istniejące osobne moduły mają pierwszeństwo, więc diagram nie jest dodawany drugi raz. Pozostałe karty i ustawienia widoku zostają zachowane. Dotyczy dashboardów Storage; YAML pozostaje bez zmian. Przy wielu wpisach integracji migrujemy tylko karty z jednoznacznym `entry_id`. Kopia układu sprzed migracji jest w HA Store: `.storage/pge_storage.<entry_id>.dashboard_backup`. Przycisk „Uporządkuj obecny dashboard” w ustawieniach uruchamia tę samą operację ponownie.
 
 ## Bilans godzinowy od 0.12.0
 
@@ -30,7 +30,7 @@ Nowe encje **Bilans bieżącej godziny** (`P−E`, dodatni = pobór, ujemny = ek
 
 Saldo z faktury zachowuje wartość do odbioru; nie odejmujemy ponownie 20%. Partie z faktury umożliwiają FIFO i ważność 12 miesięcy od końca miesiąca wprowadzenia. Bez partii saldo jest oznaczone jako oszacowanie bez wygaśnięć. Projekcja zużywa bieżący zapas według historycznego **poboru po bilansowaniu godzinowym**, bez przyszłych doładowań. Stary profil surowego importu nie jest automatycznie uznawany za taki profil — wczytaj historię ponownie lub zapisz ręczne założenia.
 
-Wskaźnik bieżącej godziny znajduje się między Siecią a Domem. Kliknięcie otwiera szczegóły encji; w konfiguratorze lub YAML `show_hour: false` można go ukryć. Osobna karta to `custom:pge-hour-card`. PGE znajduje się pod siecią i ma przerywane połączenie rozliczeniowe z siecią. Nie jest fizycznym źródłem zasilania domu.
+Wskaźnik bieżącej godziny znajduje się nad połączeniem Sieć–Dom, pozostawiając odsłoniętą strzałkę fizycznego przepływu. Kliknięcie otwiera szczegóły encji; w konfiguratorze lub YAML `show_hour: false` można go ukryć. Osobna karta to `custom:pge-hour-card`. PGE znajduje się pod siecią i ma przerywane połączenie rozliczeniowe z siecią. Nie jest fizycznym źródłem zasilania domu.
 
 ## Źródła w Twojej instalacji
 
@@ -260,7 +260,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.13.1.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.14.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 

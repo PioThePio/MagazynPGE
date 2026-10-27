@@ -181,7 +181,11 @@ class BatteryEstimate:
             or not 0 <= float(soc) <= 100
         ):
             result["quality"] = (
-                "missing_soc_or_capacity" if opt["enabled"] else "disabled"
+                "disabled"
+                if not opt["enabled"]
+                else "missing_soc"
+                if soc is None or not 0 <= float(soc) <= 100
+                else "missing_capacity"
             )
             return result
         soc = float(soc)

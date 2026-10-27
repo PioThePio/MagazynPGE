@@ -872,3 +872,18 @@ test("battery settings save minute windows, Victron number selectors, display mo
   assert.deepEqual(Array.from(saved.pv_order),["sensor.alias_pv_power","sensor.pv"]);
   await window.happyDOM.close();
 });
+
+test("current hour leaves the grid power arrow unobstructed", async () => {
+  const {window,root,emit}=await setup("pge-energy-card");
+  const data=snapshot();
+  data.energy.values.grid_import_power=600;
+  data.energy.values.grid_export_power=0;
+  data.energy.hourly_current={known:true,balance_kwh:"0.37"};
+  emit(data);
+  const line=root.querySelector('[data-flow="grid"]');
+  assert.equal(line.getAttribute("d"),"M233 290H307");
+  assert.ok(line.hasAttribute("marker-end"));
+  assert.match(root.querySelector("style:last-of-type").textContent,/\.hour-buffer\{[^}]*top:31%/);
+  assert.match(root.querySelector(".hour-buffer").textContent,/\+0,37/);
+  await window.happyDOM.close();
+});

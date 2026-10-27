@@ -63,6 +63,7 @@ def async_register(hass):
         put_energy,
         energy_defaults,
         create_dashboard,
+        repair_dashboard,
         energy_period,
     ):
         websocket_api.async_register_command(hass, command)
@@ -384,3 +385,17 @@ async def energy_period(hass, connection, msg):
         connection.send_error(msg["id"], err.code, str(err))
     else:
         connection.send_result(msg["id"], result)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): "pge_storage/repair_dashboard", **ENTRY}
+)
+@websocket_api.async_response
+async def repair_dashboard(hass, connection, msg):
+    coordinator = _get(hass, connection, msg)
+    from .dashboard import async_repair_dashboards
+
+    connection.send_result(
+        msg["id"], await async_repair_dashboards(hass, coordinator.entry.entry_id)
+    )

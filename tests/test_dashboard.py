@@ -167,3 +167,101 @@ async def test_dashboard_creation_requires_admin(ha):
             response = await asyncio.wait_for(ws.receive_json(), timeout=10)
             assert response["success"] is False
             assert response["error"]["code"] == "unauthorized"
+
+
+async def test_legacy_split_preserves_independent_cards_and_other_entries():
+    from custom_components.pge_storage.dashboard import split_legacy_view
+
+    energy = {
+        "type": "custom:pge-energy-card",
+        "entry_id": "one",
+        "title": "Mój diagram",
+        "show_hour": False,
+    }
+    original = {
+        "title": "Dom",
+        "views": [
+            {
+                "cards": [
+                    energy,
+                    {"type": "markdown", "content": "Moje dane"},
+                    {"type": "custom:pge-storage-card", "entry_id": "one"},
+                    {"type": "custom:pge-storage-card", "entry_id": "two"},
+                ]
+            }
+        ],
+    }
+    before = deepcopy(original)
+    result = split_legacy_view(original, "one", allow_default=False)
+    cards = result["views"][0]["cards"]
+    assert original == before
+    assert cards[0] == energy and cards[1] == before["views"][0]["cards"][1]
+    assert sum(card["type"] == "custom:pge-energy-card" for card in cards) == 1
+    assert [c for c in cards if c["type"] == "custom:pge-storage-card"] == [
+        {"type": "custom:pge-storage-card", "entry_id": "two"}
+    ]
+    assert split_legacy_view(result, "one", allow_default=False) == result
+    # No guessed ownership for implicit cards in a multiple-entry installation.
+    implicit = {"views": [{"cards": [{"type": "custom:pge-storage-card"}]}]}
+    assert split_legacy_view(implicit, "one", allow_default=False) == implicit
+    assert split_legacy_view(implicit, "one", allow_default=True) != implicit
+
+
+async def test_startup_repairs_legacy_dashboard_and_keeps_original_backup(ha):
+    from homeassistant.helpers.storage import Store
+
+    from custom_components.pge_storage.dashboard import async_repair_dashboards
+
+    hass, _ = ha
+    entry = await _entry(hass, "migration")
+    created = await async_create_dashboard(hass, entry.entry_id)
+    dashboard = hass.data[LOVELACE_DATA].dashboards[created["url_path"]]
+    original = {
+        "views": [
+            {
+                "type": "sections",
+                "sections": [
+                    {
+                        "type": "grid",
+                        "cards": [
+                            {
+                                "type": "custom:pge-energy-card",
+                                "entry_id": entry.entry_id,
+                            },
+                            {
+                                "type": "custom:pge-storage-card",
+                                "entry_id": entry.entry_id,
+                            },
+                            {"type": "markdown", "content": "Keep this"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    await dashboard.async_save(deepcopy(original))
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    after = await dashboard.async_load(False)
+    cards = after["views"][0]["sections"][0]["cards"]
+    assert sum(c["type"] == "custom:pge-energy-card" for c in cards) == 1
+    assert not any(c["type"] == "custom:pge-storage-card" for c in cards)
+    assert cards[-1] == {"type": "markdown", "content": "Keep this"}
+    backup = await Store(
+        hass, 1, f"{DOMAIN}.{entry.entry_id}.dashboard_backup"
+    ).async_load()
+    assert backup[created["url_path"]] == original
+    assert (await async_repair_dashboards(hass, entry.entry_id))["updated"] == []
+    assert await dashboard.async_load(False) == after
+    assert (
+        await Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.dashboard_backup").async_load()
+    ) == backup
+
+    await dashboard.async_save(deepcopy(original))
+    with patch(
+        "homeassistant.helpers.storage.Store.async_save",
+        side_effect=OSError("disk unavailable"),
+    ):
+        with pytest.raises(OSError):
+            await async_repair_dashboards(hass, entry.entry_id)
+    assert await dashboard.async_load(False) == original

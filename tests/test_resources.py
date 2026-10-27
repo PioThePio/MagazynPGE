@@ -193,6 +193,8 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 geometry = await flow.evaluate(
                     """element => ({
                         bounds: element.getBoundingClientRect().toJSON(),
+                        hour: element.querySelector('.hour-buffer')?.getBoundingClientRect().toJSON(),
+                        gridLine: element.querySelector('[data-flow="grid"]').getBoundingClientRect().toJSON(),
                         circles: [...element.querySelectorAll('.node')].map(
                             node => node.getBoundingClientRect().toJSON()),
                         nodes: [...element.querySelectorAll('.node')].map(
@@ -204,6 +206,10 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                         },
                     })"""
                 )
+                if geometry.get("hour"):
+                    assert (
+                        geometry["hour"]["bottom"] + 2 < geometry["gridLine"]["top"]
+                    ), geometry
                 assert len(geometry["circles"]) == 5
                 assert (
                     geometry["card"]["scrollWidth"] <= geometry["card"]["width"] + 1
