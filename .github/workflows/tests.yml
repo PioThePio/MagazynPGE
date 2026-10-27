@@ -18,6 +18,9 @@ jobs:
       - run: uv run --frozen ruff check .
       - run: uv run --frozen ruff format --check .
       - run: uv run --frozen playwright install --with-deps chromium
-      - run: uv run --frozen pytest -q
+      - run: uv run --frozen pytest -q --junitxml=test-results.xml
+      - name: Report failed test identifiers
+        if: failure()
+        run: uv run --frozen python scripts/report_test_failures.py
       - run: npm test
       - run: npm run check
