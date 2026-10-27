@@ -272,6 +272,8 @@ async def read_hours(hass, sources, start, now):
             )
         },
     }
+    if current["balance_kwh"] is not None:
+        current["balance_kwh"] = str(-energy(current["balance_kwh"]))
     live_context = None
     latest = max(
         (stamp for stamp in common if end.timestamp() <= stamp <= now.timestamp()),

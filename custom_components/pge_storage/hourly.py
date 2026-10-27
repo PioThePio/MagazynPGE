@@ -322,6 +322,9 @@ def accounting_snapshot(book, records, plan, end):
                     balance - energy(current["carried_balance"])
                 ),
                 "net_flow_since_settlement_kwh": flows["net_kwh"],
+                "opust_deduction_since_settlement_kwh": energy_text(
+                    energy(flows["export_kwh"]) * Decimal("0.2")
+                ),
                 "expired_since_settlement_kwh": energy_text(state["inventory"].expired)
                 if state["inventory"] is not None
                 else None,

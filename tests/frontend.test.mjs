@@ -220,8 +220,8 @@ test("energy diagram shows live power and daily energy together without a toggle
     /14,7 kWh/,
   );
   assert.match(
-    root.querySelector(".node-grid .node-energy").textContent,
-    /\+6,7 kWh/,
+    root.querySelector(".node-grid").textContent,
+    /Pobrano 8,2 kWh.*Oddano 1,6 kWh/,
   );
   assert.match(root.querySelector(".node-pge").textContent, /2197 kWh/);
   assert.equal(root.querySelector("[data-mode]"), null);
@@ -329,7 +329,7 @@ test("notes are escaped and failed invoice save keeps the draft", async () => {
 });
 test("Lovelace picker registers every independent module and a visual tile editor", async () => {
   const { window, card } = await setup("pge-balance-card");
-  assert.equal(window.customCards.length, 7);
+  assert.equal(window.customCards.length, 9);
   const editor = card.constructor.getConfigElement();
   editor.setConfig({ type: "custom:pge-balance-card", metric: "deficit" });
   assert.equal(
@@ -457,7 +457,7 @@ test("consumers are independent of flow and dashboard creation exposes a native 
   assert.doesNotMatch(flow.root.textContent, /Pompa/);
   assert.match(device.root.textContent, /Pompa/);
   assert.match(device.root.textContent, /7,8 kWh/);
-  assert.match(device.root.textContent, /900,0 W/);
+  assert.match(device.root.textContent, /900 W/);
   settings.hass.callWS = async (command) => {
     assert.equal(command.type, "pge_storage/create_dashboard");
     return { created: true, url: "/pge-energia-abc/magazyn" };
@@ -606,19 +606,17 @@ test("consumer folders exclude children from tracked totals and preserve decimal
   await tick();
   assert.match(
     root.querySelector(".consumer-summary").textContent,
-    /600,2 W.*7,2 kWh/,
+    /600 W.*7,2 kWh/,
   );
   assert.match(
     root.querySelector(".untracked").textContent,
-    /399,8 W.*4,8 kWh/,
+    /400 W.*4,8 kWh/,
   );
-  assert.match(root.textContent, /200,1 W/);
+  assert.match(root.textContent, /200 W/);
   assert.equal(root.querySelectorAll(".device").length, 5);
-  root.querySelector('[data-folder="ac"]').click();
-  assert.equal(root.querySelectorAll(".device").length, 3);
-  root.querySelector('[data-folder="ac"]').click();
-  assert.equal(root.querySelectorAll(".device").length, 5);
-  assert.match(root.querySelector(".consumer-total").textContent, /1.?000,0 W/);
+  assert.equal(root.querySelectorAll("[data-folder]").length, 0);
+  assert.equal(root.querySelectorAll(".tree-stem").length, 2);
+  assert.match(root.querySelector(".consumer-total").textContent, /1.?000 W/);
   await window.happyDOM.close();
 });
 test("period navigation changes energy while current power and arrow direction remain live", async () => {
@@ -653,7 +651,7 @@ test("period navigation changes energy while current power and arrow direction r
   ];
   emit(data);
   await tick();
-  assert.match(root.querySelector(".node-grid strong").textContent, /-500,0 W/);
+  assert.match(root.querySelector(".node-grid strong").textContent, /-500 W/);
   assert.ok(
     root.querySelector('[data-flow="grid"]').hasAttribute("marker-start"),
   );
@@ -761,8 +759,8 @@ test("consumer sort includes untracked and offers time-window means without brea
   assert.equal(root.querySelectorAll("[data-average] option").length, 4);
   root.querySelector("[data-average]").value = "15";
   root.querySelector("[data-average]").dispatchEvent(new window.Event("change"));
-  assert.match(root.querySelector('[data-consumer-id="b"] .device-average').textContent, /700,0 W/);
-  assert.match(root.querySelector(".untracked .device-average").textContent, /200,0 W/);
+  assert.match(root.querySelector('[data-consumer-id="b"] .device-average').textContent, /700 W/);
+  assert.match(root.querySelector(".untracked .device-average").textContent, /200 W/);
   root.querySelector('[data-sort="energy"]').click();
   assert.equal(names()[0], "Beta");
   assert.equal(root.querySelector("[data-average]").value, "15");
@@ -824,6 +822,53 @@ test("diagram freezes a complete frame between source reports and PGE is connect
   assert.equal(link.hasAttribute("marker-end"), false);
   data.energy.hourly_current = {start:"2026-10-26T12:00:00Z", end:"2026-10-26T13:00:00Z", known:true, balance_kwh:"2", net_kwh:"1.6"};
   emit(data);
-  assert.match(root.querySelector(".hour-buffer").textContent, /1,6 kWh/);
+  assert.match(root.querySelector(".hour-buffer").textContent, /\+2/);
+  assert.doesNotMatch(root.querySelector(".hour-buffer").textContent, /Wpływ/);
+  await window.happyDOM.close();
+});
+
+test("compact hour can be hidden, opens its entity, and rings use power shares", async () => {
+  const {window,card,root,emit}=await setup("pge-energy-card");
+  const data=snapshot();
+  data.entities.hourly_balance="sensor.hour";
+  data.energy.hourly_current={known:true,balance_kwh:"-0.42",net_kwh:"0.336"};
+  data.energy.values={pv_power:200,grid_import_power:700,grid_export_power:0,battery_discharge_power:100,battery_charge_power:0,home_power:1000};
+  data.energy.pv_arrays=[{id:"low",power_entity:"sensor.low",name:"MPPT",power_w:100},{id:"high",power_entity:"sensor.high",name:"Solar Power",power_w:100}];
+  data.energy.config.pv_order=["sensor.high","sensor.low"];
+  emit(data);
+  assert.match(root.querySelector(".hour-buffer").textContent,/-0,42/);
+  let entity;
+  card.addEventListener("hass-more-info",event=>entity=event.detail.entityId);
+  root.querySelector("[data-hour-info]").click();
+  assert.equal(entity,"sensor.hour");
+  assert.match(root.querySelector(".node-home").getAttribute("style"),/20%.*30%/);
+  assert.equal(root.querySelector(".node-pv").style.left,root.querySelector(".node-home").style.left);
+  assert.match(root.querySelector(".pv-left .pv-installation").textContent,/Solar Power/);
+  assert.equal(root.querySelectorAll(".pv-right .pv-installation").length,0);
+  assert.equal(root.querySelectorAll(".period-picker .chip").length,0);
+  card.setConfig({type:"custom:pge-energy-card",show_hour:false});
+  assert.equal(root.querySelector(".hour-buffer"),null);
+  await window.happyDOM.close();
+});
+
+test("battery settings save minute windows, Victron number selectors, display mode and PV order", async () => {
+  const {window,card,root,hass,emit}=await setup("pge-settings-card");
+  hass.states["number.minimum"]={state:"20",attributes:{unit_of_measurement:"%",friendly_name:"Minimum SOC"}};
+  const data=snapshot();
+  data.energy.config.sources.pv_power=["sensor.pv","sensor.alias_pv_power"];
+  data.energy.config.pv_order=["sensor.pv","sensor.alias_pv_power"];
+  emit(data);
+  root.querySelector("#open-sources").click();
+  root.querySelector('[data-battery-option="min_soc_entity"]').value="number.minimum";
+  root.querySelector("[data-eta-average]").value="15";
+  root.querySelector("[data-flow-mode]").value="latest";
+  root.querySelector("[data-show-hour]").checked=false;
+  root.querySelector('[data-pv-down="sensor.pv"]').click();
+  const saved=card.readSources();
+  assert.equal(saved.battery_forecast.min_soc_entity,"number.minimum");
+  assert.equal(saved.battery_forecast.average_minutes,15);
+  assert.equal(saved.flow_mode,"latest");
+  assert.equal(saved.show_hour,false);
+  assert.deepEqual(Array.from(saved.pv_order),["sensor.alias_pv_power","sensor.pv"]);
   await window.happyDOM.close();
 });

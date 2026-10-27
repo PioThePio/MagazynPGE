@@ -1,9 +1,11 @@
-Magazyn PGE rozlicza teraz każdą godzinę zegarową osobno: kompensacja poboru i eksportu 1:1, następnie opust 0,8 od nadwyżki eksportu. FIFO uwzględnia ważność partii, a zamknięte godziny są utrwalane w Store i kopii JSON formatu 5.
+MagazynPGE 0.13.0 — zamknięte saldo godzinowe, odświeżanie 3 s i estymacja baterii.
 
-- Dwie encje bieżącej godziny: bilans przed opustem i wpływ na magazyn, z jakością i czasem danych.
-- Braki historii rozliczeniowej pozostają nieznane; brak mocy opcjonalnego urządzenia nadal oznacza 0 W.
-- Diagram odświeżany wspólnie raportem wybranego PV, z rytmem zastępczym 10 s i niezależną średnią.
-- Magazyn PGE pod siecią, bez fizycznej strzałki do domu.
-- Zachowane faktury i identyfikatory encji. Stare profile surowego importu wymagają ponownego odczytu historii lub zapisania założeń.
+- Magazyn i niedobór zmieniają się dopiero po zamknięciu godziny z kompletem danych. Magazyn minimum 0 kWh, niedobór pozostaje osobno.
+- Mała bieżąca godzina między Siecią a Domem, szczegóły po kliknięciu, możliwość ukrycia oraz osobna karta. Nowe znaki P−E: plus pobór, minus eksport (odwrócone względem 0.12.0). Historia encji nie jest przepisywana.
+- Diagram co 3 s: domyślnie wyrównane pomiary z opóźnieniem 12 s, opcjonalnie najnowsze odczyty. Średnie niezależne. Pierwsze 27 s zbiera historię.
+- Sieć pokazuje Pobrano/Oddano bez opustu; PGE rozliczenie po kompensacji godzinowej. Kolorowe obwódki pokazują szacowane udziały mocy. Słońce nad domem, instalacje po lewej z ustawianą kolejnością.
+- Czas baterii do 100% i do wybranego minimum SOC; średnie 1/5/15 min. Wymaga SOC, rzeczywistej mocy i pojemności. Przy mocy do 25 W brak estymacji. Opcjonalny profil uczony z ograniczeń BMS i scenariusz dwóch zgodnych prognoz energii PV/domu.
+- Nowe encje potrącenia opustu od faktury i dzisiaj oraz karta dla wybranego okresu. Dwie encje czasu baterii.
+- Całkowite jednostki mocy na dashboardzie; rodzice odbiorców bez strzałek, dzieci zachowują wcięcia. Usunięta etykieta Dostępna historia.
 
-Aktualizacja: HACS → aktualizuj → restart HA → Ctrl+F5. Restart jest konieczny dla nowego silnika Python i rejestracji nowych encji. Automatyzacje i bufory sterowania nie są częścią wydania.
+Aktualizacja: HACS → 0.13.0 → restart HA → Ctrl+F5. Faktury, partie i identyfikatory encji pozostają zachowane. W konfiguratorze źródeł uzupełnij pojemność i minimum SOC, jeśli chcesz czas rozładowania. Nowe karty dodasz w natywnym edytorze HA; istniejący dashboard nie jest nadpisywany.

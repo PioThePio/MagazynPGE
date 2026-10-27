@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from homeassistant.util import dt as dt_util
 
+from .battery import options as battery_options
 from .history import async_read_samples, sample_from_state
 from .ledger import WARSAW, LedgerError, Sample, energy, energy_text
 
@@ -41,6 +42,10 @@ def validate_energy_config(raw):
             "battery_capacity_ah",
             "battery_voltage",
             "flow_clock_source",
+            "flow_mode",
+            "show_hour",
+            "pv_order",
+            "battery_forecast",
         }:
             raise ValueError
         sources, consumers = raw.get("sources", {}), raw.get("consumers", [])
@@ -211,7 +216,22 @@ def validate_energy_config(raw):
             entity(flow_clock) not in source_ids(sources.get("pv_power"))
         ):
             raise ValueError
+        flow_mode = raw.get("flow_mode", "aligned")
+        order = raw.get("pv_order", [])
+        if (
+            flow_mode not in ("aligned", "latest")
+            or not isinstance(raw.get("show_hour", True), bool)
+            or not isinstance(order, list)
+            or len(order) > 32
+            or len(set(order)) != len(order)
+        ):
+            raise ValueError
+        order = [entity(v) for v in order]
         return {
+            "flow_mode": flow_mode,
+            "show_hour": raw.get("show_hour", True),
+            "pv_order": order,
+            "battery_forecast": battery_options(raw.get("battery_forecast")),
             "flow_clock_source": flow_clock,
             "sources": sources,
             "consumers": items,
@@ -246,6 +266,11 @@ def energy_sources(config):
         entity_id
         for value in config["sources"].values()
         for entity_id in source_ids(value)
+    }
+    ids |= {
+        v
+        for k, v in config.get("battery_forecast", {}).items()
+        if k.endswith("_entity") and v
     }
     ids |= {
         value

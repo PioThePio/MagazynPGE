@@ -1,6 +1,6 @@
 """Read-only calendar-period energy totals from native Recorder statistics."""
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from functools import partial
 
@@ -164,10 +164,6 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
     """Read energy only; never save source data, invoices, caches or preferences."""
     now = now or dt_util.utcnow()
     bounds = period_bounds(kind, anchor_day, now)
-    if bounds.is_current:
-        bounds = replace(
-            bounds, as_of=max(bounds.begin, min(bounds.as_of, manager.hourly_as_of))
-        )
     config, hass = manager.energy_config, manager.hass
     mappings = {}
     manual = set(manager.sources.values())

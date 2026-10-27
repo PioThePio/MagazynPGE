@@ -92,6 +92,7 @@ async def test_native_dashboard_cards_editing_and_reload(ha):
                 "custom:pge-energy-card",
                 "custom:pge-consumers-card",
                 "custom:pge-projection-card",
+                "custom:pge-opust-card",
                 "custom:pge-settings-card",
                 "custom:pge-history-card",
             ]

@@ -195,7 +195,8 @@ async def test_ha_reports_latch_diagram_and_live_hour_has_real_sensor_attributes
     before = manager.data["energy"]["diagram_frame"]["sequence"]
     hass.states.async_set("sensor.clock_pv", "1000", {"unit_of_measurement": "W"})
     await hass.async_block_till_done()
-    assert manager.data["energy"]["diagram_frame"]["sequence"] > before
+    assert manager.data["energy"]["diagram_frame"]["sequence"] == before
+    assert len(manager.aligned_flow.reports["sensor.clock_pv"]) >= 2
     frozen = manager.data["energy"]["diagram_frame"]["sequence"]
     now = dt_util.utcnow()
     manager.hourly_live_context = {
@@ -213,11 +214,13 @@ async def test_ha_reports_latch_diagram_and_live_hour_has_real_sensor_attributes
     hass.states.async_set(sources["import"], "6", {"unit_of_measurement": "kWh"})
     await hass.async_block_till_done()
     assert manager.data["energy"]["diagram_frame"]["sequence"] == frozen
-    assert manager.data["energy"]["hourly_current"]["balance_kwh"] == "-1"
-    assert manager.data["current"]["available_energy"] == "8.6"
+    assert manager.data["energy"]["hourly_current"]["balance_kwh"] == "1"
+    assert manager.data["current"]["available_energy"] == "9.6"
+    assert manager.data["current"]["opust_deduction_since_settlement_kwh"] == "0.4"
+    assert manager.data["hourly"]["current"]["net_kwh"] == "-1"
     entity = manager.data["entities"]["hourly_balance"]
     state = hass.states.get(entity)
-    assert float(state.state) == -1
+    assert float(state.state) == 1
     assert state.attributes["known"] is True
     assert state.attributes["provisional"] is True
     assert state.attributes["quality"] == "live_native_projection"

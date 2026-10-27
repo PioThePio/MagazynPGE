@@ -1,3 +1,9 @@
+# Zmiany 0.13.0
+
+`hour_book()` nie zawiera roboczej godziny. Saldo, FIFO i wszystkie finansowe widoki używają zamkniętych godzin; osobna encja robocza ma znak P−E i atrybut `provisional_not_in_stock`. Fizyczne kWh nadal korzystają z najnowszych dostępnych statystyk pięciominutowych; zamknięcie finansowe nie opóźnia całej energii domu.
+
+`flow.py` przechowuje ograniczoną historię raportów PV i pomiarów mocy, interpoluje wspólny opóźniony czas, a następnie liczy średnie. Nie całkuje mocy do rozliczeniowych kWh. `battery.py` zawiera niezależne okna czasu baterii, walidowane opcje, ograniczony profil BMS i scenariusz energii prognozowanej. Opcjonalny `battery_model` w Store i kopii formatu 5 zachowuje naukę. Dodatkowe encje źródeł prognozy podlegają tym samym kontrolom odczytu WS co pozostałe źródła.
+
 # Model obowiązujący od 0.12.0
 
 Aktywne ścieżki koordynatora, dziennych/miesięcznych tabel, projekcji i encji używają `hourly.py`, `hourly_history.py`, `hourly_views.py` i `hourly_live.py`. Starsze funkcje obliczeń z surowych granic pozostają wyłącznie dla zgodności dawnych struktur i testów; nie stanowią obecnego silnika rozliczeń.

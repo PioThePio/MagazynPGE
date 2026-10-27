@@ -19,6 +19,11 @@ def period_values(manager, begin, end):
     flows = book.interval(begin, end)
     result = {
         "pge_credited_energy": flows["credited_kwh"],
+        "pge_opust_deduction_energy": energy_text(
+            energy(flows["export_kwh"]) * energy("0.2")
+        )
+        if flows["export_kwh"] is not None
+        else None,
         "pge_withdrawn_energy": None,
         "pge_net_import_energy": flows["import_kwh"],
         "pge_net_export_energy": flows["export_kwh"],

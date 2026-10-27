@@ -4,6 +4,20 @@ Wirtualny magazyn energii z historią faktur i kartą Lovelace. Integracja odczy
 
 To integracja lokalna: bez konta PGE, bez chmury zewnętrznej, bez Pyscript, AppDaemon, MQTT i dodatkowej bazy danych. Nie pobiera faktur z PGE.
 
+## Diagram i bateria od 0.13.0
+
+Pod Siecią są fizyczne „Pobrano” i „Oddano” w wybranym okresie, bez opustu. Strzałki PGE to inne wartości: po kompensacji każdej godziny, do magazynu po opuście i pobrane z dostępnego zapasu. Magazyn nie schodzi poniżej zera; brakujący zapas pokazuje Niedobór. Słońce jest nad Domem, obie instalacje po lewej; ich kolejność zmienisz przyciskami ↑/↓ w konfiguratorze. Wszystkie moce na dashboardzie są zaokrąglone do całych jednostek, bez zmiany dokładności obliczeń.
+
+Obwódki Domu i ładowanej baterii pokazują szacowane udziały mocy: PV żółty, bateria turkusowy, sieć niebieski. Przy jednoczesnym zasilaniu i ładowaniu stosujemy proporcjonalny podział wspólnego zasilania. Nie jest to pomiar pochodzenia energii zgromadzonej w baterii. PGE nie jest fizycznym źródłem zasilania.
+
+Czas baterii wymaga SOC, rzeczywistej mocy baterii i pojemności odpowiadającej 0–100% SOC (kWh albo Ah × napięcie nominalne / 1000). Minimum SOC wybierasz z encji sensor/number, np. aktywnego limitu Victrona — identyfikator wybiera użytkownik, integracja go nie zgaduje. Średnia 1/5/15 min, domyślnie 5 min; pierwsze co najmniej 30 s zbiera pomiary. Przy mocy ≤25 W lub brakujących danych czas pozostaje nieznany. Po zmianie kierunku przepływu zbieramy nowe okno. Dwie nowe encje czasu mają jednostkę sekund.
+
+Opcjonalne uczenie profilu ładowania wymaga encji dopuszczalnego prądu ładowania z BMS oraz napięcia baterii. Uczymy się tylko przy mocy zbliżonej do niezależnie odczytanego ograniczenia BMS; brak PV nie jest nauką ograniczenia baterii. Każdy zakres 5 punktów SOC wymaga co najmniej trzech próbek, pobieranych najwyżej raz na minutę. Bez pełnego profilu pozostałych zakresów działa estymacja ze średniej mocy. Profil jest zapisywany przy cyklicznym zapisie archiwum (do 5 min), zachowany po restarcie i w kopii JSON. Zmiana źródeł baterii lub pojemności unieważnia profil.
+
+Scenariusz PV wymaga dwóch wybranych encji energii: prognozowanej produkcji i prognozowanego zużycia domu, dla tego samego pozostałego horyzontu (1–24 h). To oszacowanie przy równomiernym rozłożeniu nadwyżki; nie rozpoznajemy automatycznie atrybutów Solcast/Forecast.Solar ani różnych horyzontów. Jeśli nadwyżka nie wystarcza w tym horyzoncie, nie podajemy czasu poza nim. Model i scenariusz pokazują przedział, nie gwarantowaną godzinę.
+
+„Energia potrącona w systemie opustów” to encja od ostatniej faktury, a „Potrącenie opustu dzisiaj” to osobna encja dzienna. Karta `custom:pge-opust-card` pokazuje wybrany dzień/tydzień/miesiąc/rok. Wzór: 20% sumy nadwyżek eksportu po bilansowaniu zamkniętych godzin. Nie obejmuje wygaśnięć ani strat baterii. Dodaj kartę przez natywny wybór kart HA; nowe generowane dashboardy zawierają ją od razu. Istniejących edytowanych dashboardów nie nadpisujemy.
+
 ## Bilans godzinowy od 0.12.0
 
 Godziny są pełnymi godzinami zegarowymi Europe/Warsaw, identyfikowanymi w UTC. Dzień zmiany czasu ma 23 lub 25 godzin; powtórzona godzina pozostaje dwoma osobnymi przedziałami. Niczego nie pomijamy przed ani po granicy godziny.
@@ -12,11 +26,11 @@ Dla P = pobór i E = eksport z pary liczników wybranej w integracji: zużycie =
 
 Źródłem są przyrosty natywnych statystyk `sum` obu wybranych liczników, z konwersją Wh/kWh i obsługą resetów przez Recorder. Zastępczo można użyć pełnych, dokładnych granic stanów Recorder bez resetu wewnątrz godziny. Brak wymaganych odczytów oznacza nieznany wynik rozliczenia, **nie zero**. Zamknięte godziny są zapisywane w Store i kopii JSON, więc usunięcie źródłowej historii nie kasuje wcześniej utrwalonych godzin. Nie odtwarzamy nieistniejących godzin ze starych sum dobowych.
 
-Nowe encje **Bilans bieżącej godziny** (`E−P`, dodatni = nadwyżka) oraz **Wpływ bieżącej godziny na magazyn** pokazują wynik roboczy. Mają początek, koniec, czas danych i jakość w atrybutach. Po restarcie/resetach czekają na wiarygodny natywny punkt odniesienia. Wynik roboczy zastępuje poprzedni wynik tej godziny. Nie tworzymy automatyzacji, progów ani buforów czasowych.
+Nowe encje **Bilans bieżącej godziny** (`P−E`, dodatni = pobór, ujemny = eksport) oraz **Wpływ bieżącej godziny na magazyn** pokazują wynik roboczy. Mają początek, koniec, czas danych i jakość w atrybutach. Po restarcie/resetach czekają na wiarygodny natywny punkt odniesienia. Wynik roboczy zastępuje poprzedni wynik tej godziny, ale nie zmienia salda magazynu. Magazyn, niedobór i strzałki PGE uwzględniają wyłącznie zamknięte godziny z kompletem danych. Znak encji godzinowej od 0.13.0 jest odwrócony względem 0.12.0; nie przepisujemy historycznych stanów. Nie tworzymy automatyzacji, progów ani buforów czasowych.
 
 Saldo z faktury zachowuje wartość do odbioru; nie odejmujemy ponownie 20%. Partie z faktury umożliwiają FIFO i ważność 12 miesięcy od końca miesiąca wprowadzenia. Bez partii saldo jest oznaczone jako oszacowanie bez wygaśnięć. Projekcja zużywa bieżący zapas według historycznego **poboru po bilansowaniu godzinowym**, bez przyszłych doładowań. Stary profil surowego importu nie jest automatycznie uznawany za taki profil — wczytaj historię ponownie lub zapisz ręczne założenia.
 
-PGE znajduje się pod siecią i ma przerywane połączenie rozliczeniowe z siecią. Nie jest fizycznym źródłem zasilania domu.
+Wskaźnik bieżącej godziny znajduje się między Siecią a Domem. Kliknięcie otwiera szczegóły encji; w konfiguratorze lub YAML `show_hour: false` można go ukryć. Osobna karta to `custom:pge-hour-card`. PGE znajduje się pod siecią i ma przerywane połączenie rozliczeniowe z siecią. Nie jest fizycznym źródłem zasilania domu.
 
 ## Źródła w Twojej instalacji
 
@@ -33,7 +47,7 @@ Oba liczniki muszą obejmować ten sam punkt przyłączenia do sieci, mieć nara
 
 Natywne szablony dobrze wyliczają różnice, ale nie zarządzają trwałą, edytowalną listą dowolnej długości ani historycznymi odczytami Recorder. `utility_meter` nadaje się do cykli i taryf, ale nie zapewnia tego rejestru zmiennych dat, faktur i korekt. Helper dla każdego okresu oznaczałby rozrastającą się ręczną konfigurację.
 
-Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, 28 stałych sensorów i niezależnych modułów Lovelace. Nie powstają nowe encje dla kolejnych faktur. Szczegóły i źródła API: [architektura](docs/ARCHITEKTURA.md).
+Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, 32 stałych sensorów i niezależnych modułów Lovelace. Nie powstają nowe encje dla kolejnych faktur. Szczegóły i źródła API: [architektura](docs/ARCHITEKTURA.md).
 
 ## Moc, średnie i historia energii
 
@@ -41,7 +55,7 @@ Diagram pozwala wybrać średnią 1/5/10/15 s, domyślnie 10 s. Encja zużycia d
 
 Lista odbiorców pokazuje moc chwilową, wybraną średnią 1/5/10/15 s oraz kWh wybranego dnia, tygodnia, miesiąca lub roku. Sortowanie odbywa się kliknięciem nagłówka Nazwa / Moc / Średnia / Energia; ponowne kliknięcie odwraca kierunek. Nieśledzone zużycie sortuje się tak samo. Menu średniej odbiorców ma domyślnie 5 s. Podliczniki pozostają pod rodzicem. Moc i średnie odświeżają się co sekundę i przy zmianach źródeł. Kolejność jest utrzymywana przez co najmniej 5 s, przy średniej 10/15 s odpowiednio przez 10/15 s; ręczna zmiana sortowania działa od razu.
 
-Długość średniej (1/5/10/15 s, domyślnie 10 s na diagramie) jest niezależna od rytmu odświeżania. Cały diagram aktualizuje się raportem wybranego pomiaru PV, również gdy wartość się nie zmieniła. W ustawieniach źródeł możesz wskazać surowy Solar Power/Solplanet jako „Rytm diagramu”. Tryb automatyczny obserwuje częstotliwość skonfigurowanych PV i wybiera najwolniejsze aktywne źródło; bez niego działa rytm 10 s. Nocny brak mocy PV oznacza 0 W. Między raportami diagram zachowuje wspólną klatkę, a encje i tabela odbiorców pozostają na żywo. Jest to synchronizacja raportów HA, nie gwarancja jednoczesnego pomiaru przez różne urządzenia.
+Diagram aktualizuje moce co 3 s. Domyślny tryb wyrównany ma 12 s opóźnienia: interpoluje raporty PV i zestawia je z pomiarami sieci/baterii z tego samego czasu. Średnie 1/5/10/15 s (domyślnie 10 s) są niezależne od rytmu odświeżania. Pierwsze 27 s zbiera historię; wtedy używa najnowszych dostępnych odczytów. Opcja „Najnowsze odczyty” pozostawia szybki obraz z wygładzaniem i możliwością skoków bilansu. Nie odpytujemy urządzeń dodatkowo. Interpolacja jest oszacowaniem, a nie nowym pomiarem. Zmiana trybu nie zmienia źródłowych kWh ani rozliczeń.
 
 Nieśledzone ma dwie własne encje: **Nieśledzone zużycie** (W, pomiar, z długoterminowymi statystykami mocy) oraz **Nieśledzone zużycie dzisiaj** (kWh, podpisana różnica dzienna). Kliknięcie wiersza otwiera historię mocy w HA. Historia zbiera się od aktualizacji, zgodnie z filtrami Recorder użytkownika; nie odtwarzamy wstecz nieistniejących odczytów. Ładowanie baterii jest odjęte od domu przed obliczeniem różnicy, a podliczniki nie dublują rodzica.
 
@@ -246,7 +260,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.12.0.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.13.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 

@@ -20,6 +20,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
+from .battery import BatteryEstimate
 from .const import (
     DEFAULT_MAX_AGE_HOURS,
     DOMAIN,
@@ -47,12 +48,12 @@ from .energy_panel import (
     merge_panel_config,
     upgrade_consumer_parents,
 )
+from .flow import AlignedFlow
 from .history import async_read_counters, sample_from_state
 from .hourly import (
     MODEL,
     HourBook,
     accounting_snapshot,
-    extend_accounting,
     hour_floor,
     seed_inventory,
     validate_archive,
@@ -100,6 +101,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.energy_statistics = {}
         self.power_windows = PowerWindows()
         self.diagram_clock = DiagramClock()
+        self.aligned_flow = AlignedFlow()
+        self.battery_estimator = BatteryEstimate()
         self._report_unsub = None
         self.energy_import_warnings = []
         self.energy_panel_defaults = None
@@ -113,8 +116,6 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.hourly_current = {}
         self.hourly_live_context = None
         self.hourly_projector = LiveHour(dt_util.utcnow())
-        self._live_prefix_key = None
-        self._live_prefix = None
         self._day_opening_key = None
         self._day_opening = None
         self._observed_hour = hour_floor(dt_util.utcnow())
@@ -160,6 +161,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.hourly_cache = validate_archive(
             data.get("hourly_cache") if data else None, self.sources, dt_util.utcnow()
         )
+        self.battery_estimator.restore(data.get("battery_model", {}) if data else {})
         await self._auto_energy_defaults()
         await self.async_refresh_planning_history()
         await self.async_refresh_energy()
@@ -281,6 +283,9 @@ class LedgerCoordinator(DataUpdateCoordinator):
             dt_util.utcnow().timestamp(),
             reading(self.hass, entity, "W") is not None,
         )
+        self.aligned_flow.report(
+            entity, reading(self.hass, entity, "W"), dt_util.utcnow().timestamp()
+        )
         self.publish()
 
     async def async_refresh_energy(self):
@@ -325,7 +330,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.usage_error = None
 
     def hour_book(self):
-        return HourBook(self.hourly_cache["hours"], self.hourly_pending)
+        return HourBook(self.hourly_cache["hours"])
 
     def _payload(self):
         return {
@@ -337,6 +342,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
             "daily_cache": self.daily_cache,
             "energy_config": self.energy_config,
             "energy_cache": self.energy_cache,
+            "battery_model": deepcopy(self.battery_estimator.profile),
             "hourly_cache": self.hourly_cache,
             "profile_basis": self.profile_basis,
             "accounting_model": MODEL,
@@ -443,6 +449,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
                     "daily_cache": updated,
                     "energy_config": self.energy_config,
                     "energy_cache": self.energy_cache,
+                    "battery_model": deepcopy(self.battery_estimator.profile),
                     "hourly_cache": self.hourly_cache,
                     "profile_basis": self.profile_basis,
                     "accounting_model": MODEL,
@@ -484,7 +491,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 self.sources,
                 now,
             )
-            if updated != self.hourly_cache:
+            if updated != self.hourly_cache or self.battery_estimator.profile:
                 await self.store.async_save(
                     {**self._payload(), "hourly_cache": updated}
                 )
@@ -492,30 +499,12 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self.hourly_pending = result["pending"]
             self.hourly_current = result["current"]
             self.hourly_live_context = result["live_context"]
-            self._live_prefix_key = None
             self.hourly_details = result["sources"]
-            self.hourly_as_of = result["as_of"]
+            self.hourly_as_of = result["finalized_through"]
             self.hourly_revision += 1
             self.hourly_accounting = accounting_snapshot(
-                self.hour_book(), self.records, self.planning, self.hourly_as_of
+                HourBook(hours), self.records, self.planning, self.hourly_as_of
             )
-            closed = accounting_snapshot(
-                HourBook(hours),
-                self.records,
-                self.planning,
-                result["finalized_through"],
-            )
-            if (
-                self.hourly_accounting.get("accounting_error")
-                and closed["current"]["estimated_balance"] is not None
-                and result["finalized_through"].astimezone(WARSAW).date()
-                == self.hourly_as_of.astimezone(WARSAW).date()
-            ):
-                # Show an explicitly dated settled balance while the current
-                # hour is unavailable; never pretend that missing hour is zero.
-                error = self.hourly_accounting["accounting_error"]
-                self.hourly_accounting = closed
-                self.hourly_accounting["pending_error"] = error
             self.planning_history_error = None
         except Exception as err:
             self.hourly_error = str(err)
@@ -570,6 +559,9 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 dt_util.utcnow().timestamp(),
                 reading(self.hass, entity, "W") is not None,
             )
+            self.aligned_flow.report(
+                entity, reading(self.hass, entity, "W"), dt_util.utcnow().timestamp()
+            )
         self.publish()
 
     def _update_live_hour(self):
@@ -623,23 +615,18 @@ class LedgerCoordinator(DataUpdateCoordinator):
                     "quality": "waiting_for_native_sum",
                 }
             return
-        key = (current_start.isoformat(), self.hourly_revision, self.revision)
-        if self._live_prefix_key != key:
-            self._live_prefix_key = key
-            self._live_prefix = accounting_snapshot(
-                self.hour_book(), self.records, self.planning, current_start
-            )
         self.hourly_pending[row["start"]] = row
-        self.hourly_as_of = datetime.fromisoformat(row["end"])
+        # Provisional observations never alter settled financial values.
         self.hourly_current = {
             **row,
+            "balance_kwh": energy_text(-energy(row["balance_kwh"])),
             "end": (current_start + timedelta(hours=1)).isoformat(),
             "as_of": row["end"],
             "known": True,
             "provisional": True,
             "quality": "live_native_projection",
         }
-        self.hourly_accounting = extend_accounting(self._live_prefix, row)
+        # Keep the provisional projection separate until complete hour evidence arrives.
 
     @callback
     def publish(self) -> None:
@@ -740,12 +727,18 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 credited_energy=flows["credited_kwh"],
                 pge_credited_energy=flows["credited_kwh"],
                 pge_withdrawn_energy=withdrawn,
+                pge_opust_deduction_energy=energy_text(
+                    energy(flows["export_kwh"]) * energy("0.2")
+                )
+                if flows["export_kwh"] is not None
+                else None,
             )
         else:
             snapshot["energy"]["today"].update(
                 credited_energy=None,
                 pge_credited_energy=None,
                 pge_withdrawn_energy=None,
+                pge_opust_deduction_energy=None,
             )
         snapshot["energy"]["hourly_current"] = self.hourly_current
         energy_view = snapshot["energy"]
@@ -812,8 +805,15 @@ class LedgerCoordinator(DataUpdateCoordinator):
             if available
             else snapshot["current"].get("available_energy")
         )
-        energy_view["diagram_frame"] = self.diagram_clock.capture(
-            energy_view, available, dt_util.utcnow().timestamp()
+        energy_view["battery_estimate"] = self.battery_estimator.update(
+            self.hass, self.energy_config, energy_view["values"], now_seconds
+        )
+        energy_view["diagram_frame"] = self.aligned_flow.capture(
+            energy_view,
+            available,
+            now_seconds,
+            repr(self.energy_config),
+            self.energy_config["flow_mode"],
         )
         from homeassistant.helpers import entity_registry as er
 
@@ -860,6 +860,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         energy_cache=None,
         hourly_cache=None,
         profile_basis=None,
+        battery_model=None,
     ) -> None:
         records = self._validated([row.to_dict() for row in records])
         changed_plan = planning is not None
@@ -893,6 +894,10 @@ class LedgerCoordinator(DataUpdateCoordinator):
             if hourly_cache is None
             else validate_archive(hourly_cache, self.sources, dt_util.utcnow())
         )
+        learned = BatteryEstimate()
+        learned.restore(
+            self.battery_estimator.profile if battery_model is None else battery_model
+        )
         revision = self.revision + 1
         # Persist first. A failed write must not change the running ledger.
         await self.store.async_save(
@@ -905,6 +910,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 "daily_cache": daily_cache,
                 "energy_config": energy_config,
                 "energy_cache": energy_cache,
+                "battery_model": learned.profile,
                 "hourly_cache": hourly_cache,
                 "profile_basis": profile_basis,
                 "accounting_model": MODEL,
@@ -917,6 +923,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.daily_cache = daily_cache
         self.energy_config = energy_config
         self.energy_cache = energy_cache
+        if battery_model is not None:
+            self.battery_estimator = learned
         self.hourly_cache = hourly_cache
         self.profile_basis = profile_basis
         self.diagram_clock.frame = None
@@ -1043,6 +1051,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
             "daily_cache": self.daily_cache,
             "energy_config": self.energy_config,
             "energy_cache": self.energy_cache,
+            "battery_model": deepcopy(self.battery_estimator.profile),
             "hourly_cache": self.hourly_cache,
             "profile_basis": self.profile_basis,
             "accounting_model": MODEL,
@@ -1073,5 +1082,6 @@ class LedgerCoordinator(DataUpdateCoordinator):
                     document.get("hourly_cache"), self.sources, dt_util.utcnow()
                 ),
                 document.get("profile_basis", "legacy_gross_import"),
+                document.get("battery_model", {}),
             )
             self._watch_energy()

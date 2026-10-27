@@ -81,6 +81,30 @@ SENSOR_DEFINITIONS.update(
 
 SENSOR_DEFINITIONS.update(
     {
+        "battery_charge_time": (
+            "Czas do naładowania baterii",
+            "s",
+            "battery_estimate",
+            "charge_seconds",
+        ),
+        "battery_discharge_time": (
+            "Czas do minimalnego SOC",
+            "s",
+            "battery_estimate",
+            "discharge_seconds",
+        ),
+        "opust_deduction": (
+            "Energia potrącona w systemie opustów",
+            "kWh",
+            "current",
+            "opust_deduction_since_settlement_kwh",
+        ),
+        "opust_deduction_today": (
+            "Potrącenie opustu dzisiaj",
+            "kWh",
+            "today",
+            "pge_opust_deduction_energy",
+        ),
         "hourly_balance": (
             "Bilans bieżącej godziny",
             "kWh",
@@ -120,6 +144,8 @@ class PGESensor(CoordinatorEntity, SensorEntity):
         self._attr_device_class = (
             SensorDeviceClass.POWER
             if unit == "W"
+            else SensorDeviceClass.DURATION
+            if unit == "s"
             else SensorDeviceClass.BATTERY
             if unit == "%"
             else SensorDeviceClass.ENERGY
@@ -188,6 +214,12 @@ class PGESensor(CoordinatorEntity, SensorEntity):
             }
         if self._value_group == "hourly_current":
             hour = self.coordinator.data.get("energy", {}).get("hourly_current", {})
+            power_attributes["sign_convention"] = (
+                "positive_import_negative_export"
+                if self.key == "hourly_balance"
+                else "positive_stock_credit_negative_consumption"
+            )
+            power_attributes["settlement_status"] = "provisional_not_in_stock"
             power_attributes.update(
                 {
                     key: hour.get(key)
@@ -198,6 +230,10 @@ class PGESensor(CoordinatorEntity, SensorEntity):
                         "known",
                         "provisional",
                         "quality",
+                        "import_kwh",
+                        "export_kwh",
+                        "credited_kwh",
+                        "net_kwh",
                         "raw_import_kwh",
                         "raw_export_kwh",
                     )

@@ -253,7 +253,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             )
             await expect(
                 page.locator("pge-consumers-card .device:not(.untracked)")
-            ).to_contain_text("800,0 W")
+            ).to_contain_text("800 W")
             await expect(
                 page.locator("pge-consumers-card .device:not(.untracked)")
             ).to_contain_text("kWh")
@@ -449,15 +449,17 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 },
                 manager.revision,
             )
-            await page.locator('pge-consumers-card [data-folder="ac"]').click()
+            await expect(
+                page.locator("pge-consumers-card [data-folder]")
+            ).to_have_count(0)
             await expect(
                 page.locator('pge-consumers-card [data-consumer-id="ac_down"]')
-            ).to_contain_text("100,1 W")
+            ).to_contain_text("100 W")
             await expect(
                 page.locator("pge-consumers-card .consumer-summary")
-            ).to_contain_text(re.compile(r"1\s?100,2 W"))
+            ).to_contain_text(re.compile(r"1\s?100 W"))
             await expect(page.locator("pge-consumers-card .untracked")).to_contain_text(
-                re.compile(r"2\s?299,8 W")
+                re.compile(r"2\s?300 W")
             )
             untracked = page.locator("pge-consumers-card .untracked")
             await untracked.scroll_into_view_if_needed()
@@ -473,7 +475,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             hass.states.async_set(
                 "sensor.browser_pv_power", "2600", {"unit_of_measurement": "W"}
             )
-            await expect(untracked).to_contain_text(re.compile(r"2\s?399,8 W"))
+            await expect(untracked).to_contain_text(re.compile(r"2\s?400 W"))
             after = await untracked.evaluate("""row => {
               if (window.pgeMountedCard !== row.getRootNode().querySelector('ha-card'))
                 throw new Error('Live update replaced mounted card');

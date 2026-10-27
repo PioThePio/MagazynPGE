@@ -1,3 +1,5 @@
+Wersja 0.13.0: testy potwierdzają osobny roboczy bilans godziny (plus pobór), brak jego wpływu na saldo zamknięte, potrącenia opustu po kompensacji godzinowej, wyrównanie syntetycznych raportów PV co 10 s z szybką siecią, aktualizacje diagramu co 3 s, czasy baterii i minimum SOC, próg 25 W oraz uczenie wyłącznie przy niezależnym limicie BMS. DOM weryfikuje mały wskaźnik i jego ukrywanie, otwieranie szczegółów, udziały obwódki, kolejność instalacji oraz wybór minimum SOC z encji number. Chromium sprawdza nowe układy, całkowite W, rodziców bez strzałek i zachowanie przewijania.
+
 Wersja 0.12.0: testy bilansowania godzinowego obejmują cztery uzgodnione przykłady, oddzielne godziny, brakujące dane, reset i przesunięcie natywnej sumy, konwersję Wh, zmianę czasu (23/25 godzin), FIFO i wygaśnięcia, zastępowanie wyników roboczych, trwałość archiwum oraz kopię formatu 5. Natywny HA potwierdza rejestrację encji bilansu godziny i ich atrybuty, przejście na niedostępność przy utracie odczytu i wspólne klatki diagramu wyzwalane również niezmienionym raportem PV. DOM sprawdza zatrzaskiwanie diagramu i połączenie PGE pod siecią. Chromium obejmuje rzeczywisty dashboard i zachowanie podczas niedostępności PV. Poniżej pozostawiono historię wcześniejszych weryfikacji.
 
 Wersja 0.11.0: 126 testów Python i 22 testy DOM. Natywny HA potwierdza dwie nowe encje i historię Recorder obejmującą 1100 → 1300 → 1200 W, bez dublowania podliczników i bez doliczania ładowania baterii, oraz zachowanie entity_id po przeładowaniu integracji. Test dzienny potwierdza 6 kWh (10 domu minus 4 śledzone). DOM sprawdza nagłówki tabeli, zmianę kierunku sortowania, menu średniej z domyślnym 5 s, domyślne 10 s diagramu i otwieranie encji nieśledzonych. Chromium sprawdza nową tabelę, menu, geometrię diagramu i stabilne przewijanie na natywnym dashboardzie HA.
@@ -34,8 +36,8 @@ Sprawdzono w odizolowanym środowisku chmurowym, bez dostępu do produkcyjnego H
 |---|---|
 | Python 3.14.8, Home Assistant Core 2026.10.0 | Zainstalowane i uruchomione |
 | `uv sync --frozen`, `npm ci` | Wykonane, także ponownie bez zmian lockfile |
-| pytest | 149 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
-| Testy karty w DOM / Node 24 | 23 zaliczonych, 0 niezaliczonych |
+| pytest | 154 testów zaliczonych, 0 niezaliczonych, 0 pominiętych |
+| Testy karty w DOM / Node 24 | 25 zaliczonych, 0 niezaliczonych |
 | Chromium: pełny dashboard HA i ponowne ładowanie strony | Zaliczony (wśród 115 testów pytest) |
 | Ruff check i format | Bez błędów |
 | Składnia JS | Poprawna |

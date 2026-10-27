@@ -64,7 +64,10 @@ def dashboard_config(entry_id: str) -> dict:
                         "column_span": 2,
                         "cards": [card("projection", 24)],
                     },
-                    {"type": "grid", "cards": [card("settings", 12)]},
+                    {
+                        "type": "grid",
+                        "cards": [card("opust", 12), card("settings", 12)],
+                    },
                     {
                         "type": "grid",
                         "column_span": 3,
