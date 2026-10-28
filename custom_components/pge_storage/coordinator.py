@@ -46,6 +46,8 @@ from .energy_panel import (
     async_panel_config,
     async_statistics_today,
     merge_panel_config,
+    remember_consumer_removals,
+    sync_consumers,
     upgrade_consumer_parents,
 )
 from .flow import AlignedFlow
@@ -103,8 +105,13 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.diagram_clock = DiagramClock()
         self.aligned_flow = AlignedFlow()
         self.battery_estimator = BatteryEstimate()
+        self.battery_estimator.history_driven = True
         self._report_unsub = None
         self.energy_import_warnings = []
+        self.consumer_sync_notes = []
+        self.battery_history = {}
+        self.view_history_lock = asyncio.Lock()
+        self._history_identity = None
         self.energy_panel_defaults = None
         self.comparison = []
         self._energy_unsub = None
@@ -162,6 +169,11 @@ class LedgerCoordinator(DataUpdateCoordinator):
             data.get("hourly_cache") if data else None, self.sources, dt_util.utcnow()
         )
         self.battery_estimator.restore(data.get("battery_model", {}) if data else {})
+        self.battery_history = (
+            data.get("battery_history", {})
+            if data and isinstance(data.get("battery_history", {}), dict)
+            else {}
+        )
         await self._auto_energy_defaults()
         await self.async_refresh_planning_history()
         await self.async_refresh_energy()
@@ -208,12 +220,14 @@ class LedgerCoordinator(DataUpdateCoordinator):
             config = validate_energy_config(
                 upgrade_consumer_parents(self.energy_config, result["config"])
             )
-            if config == self.energy_config:
-                return
         else:
             config = validate_energy_config(
                 merge_panel_config(self.energy_config, result["config"])
             )
+        config, self.consumer_sync_notes = sync_consumers(config, result["config"])
+        config = validate_energy_config(config)
+        if config == self.energy_config:
+            return
         async with self.lock:
             changed_battery = battery_identity(config) != battery_identity(
                 self.energy_config
@@ -232,6 +246,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
             if changed_battery:
                 self.battery_estimator.profile = {}
             self.revision += 1
+            self._watch_energy()
 
     def _schedule_midnight(self):
         when = boundary(
@@ -298,6 +313,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
 
     async def async_refresh_energy(self):
         try:
+            await self._auto_energy_defaults()
             try:
                 self.energy_panel_defaults = await async_panel_config(self.hass)
                 self.energy_import_warnings = self.energy_panel_defaults["warnings"]
@@ -320,9 +336,55 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self.energy_statistics = await async_statistics_today(
                 self.hass, self.energy_config
             )
+            await self.async_refresh_view_history()
         except Exception:
             self.energy_statistics = {}
             _LOGGER.exception("Cannot refresh optional PGE energy boundaries")
+
+    async def async_refresh_view_history(self, *, rebuild=False):
+        from .view_history import restore_battery_profile, restore_power_history
+
+        async with self.view_history_lock:
+            now = dt_util.utcnow()
+            config = deepcopy(self.energy_config)
+            identity = repr(config)
+            try:
+                if self._history_identity != identity:
+                    frames, reports, _missing = await restore_power_history(
+                        self.hass, config, self.sources, now
+                    )
+                    if self.energy_config != config:
+                        return
+                    self.aligned_flow.seed(frames, reports, identity)
+                    self._history_identity = identity
+                profile, metadata = await restore_battery_profile(
+                    self.hass,
+                    config,
+                    now,
+                    self.battery_estimator.profile,
+                    self.battery_history,
+                    force=rebuild,
+                )
+                if self.energy_config != config:
+                    return
+                async with self.lock:
+                    if self.energy_config != config:
+                        return
+                    await self.store.async_save(
+                        {
+                            **self._payload(),
+                            "battery_model": profile,
+                            "battery_history": metadata,
+                        }
+                    )
+                    self.battery_estimator.profile = profile
+                    self.battery_history = metadata
+            except Exception:
+                _LOGGER.exception("Cannot restore optional power/BMS history")
+                self.battery_history = {
+                    **self.battery_history,
+                    "status": "history_error",
+                }
 
     async def async_refresh_usage(self):
         from .hourly_views import comparison
@@ -351,6 +413,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
             "energy_config": self.energy_config,
             "energy_cache": self.energy_cache,
             "battery_model": deepcopy(self.battery_estimator.profile),
+            "battery_history": deepcopy(self.battery_history),
             "hourly_cache": self.hourly_cache,
             "profile_basis": self.profile_basis,
             "accounting_model": MODEL,
@@ -436,6 +499,10 @@ class LedgerCoordinator(DataUpdateCoordinator):
                             "invalid_energy",
                             f"Sprawdź źródło odbiorcy: {consumer['name']}.",
                         )
+            if native:
+                config = remember_consumer_removals(
+                    self.energy_config, config, native["config"]
+                )
             await self._commit(self.records, energy_config=config)
             self._watch_energy()
         await self.async_refresh_energy()
@@ -458,6 +525,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
                     "energy_config": self.energy_config,
                     "energy_cache": self.energy_cache,
                     "battery_model": deepcopy(self.battery_estimator.profile),
+                    "battery_history": deepcopy(self.battery_history),
                     "hourly_cache": self.hourly_cache,
                     "profile_basis": self.profile_basis,
                     "accounting_model": MODEL,
@@ -804,6 +872,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         if stable["covered_seconds"] >= 15:
             energy_view["values"]["home_power"] = str(stable["home_power_w"])
         snapshot["energy"]["import_warnings"] = self.energy_import_warnings
+        snapshot["energy"]["consumer_sync_notes"] = self.consumer_sync_notes
         snapshot["energy"]["import_report"] = (
             self.energy_panel_defaults["report"] if self.energy_panel_defaults else []
         )
@@ -816,6 +885,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         energy_view["battery_estimate"] = self.battery_estimator.update(
             self.hass, self.energy_config, energy_view["values"], now_seconds
         )
+        energy_view["battery_estimate"]["history"] = self.battery_history
         energy_view["diagram_frame"] = self.aligned_flow.capture(
             energy_view,
             available,
@@ -869,6 +939,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         hourly_cache=None,
         profile_basis=None,
         battery_model=None,
+        battery_history=None,
     ) -> None:
         records = self._validated([row.to_dict() for row in records])
         changed_plan = planning is not None
@@ -903,6 +974,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
             else validate_archive(hourly_cache, self.sources, dt_util.utcnow())
         )
         learned = BatteryEstimate()
+        learned.history_driven = True
         learned.restore(
             (
                 self.battery_estimator.profile
@@ -912,6 +984,13 @@ class LedgerCoordinator(DataUpdateCoordinator):
             )
             if battery_model is None
             else battery_model
+        )
+        next_battery_history = (
+            battery_history
+            if battery_history is not None
+            else self.battery_history
+            if battery_identity(energy_config) == battery_identity(self.energy_config)
+            else {}
         )
         revision = self.revision + 1
         # Persist first. A failed write must not change the running ledger.
@@ -926,6 +1005,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 "energy_config": energy_config,
                 "energy_cache": energy_cache,
                 "battery_model": learned.profile,
+                "battery_history": next_battery_history,
                 "hourly_cache": hourly_cache,
                 "profile_basis": profile_basis,
                 "accounting_model": MODEL,
@@ -938,6 +1018,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.daily_cache = daily_cache
         self.energy_config = energy_config
         self.energy_cache = energy_cache
+        self.battery_history = next_battery_history
         if battery_model is not None:
             self.battery_estimator = learned
         else:
@@ -1069,6 +1150,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
             "energy_config": self.energy_config,
             "energy_cache": self.energy_cache,
             "battery_model": deepcopy(self.battery_estimator.profile),
+            "battery_history": deepcopy(self.battery_history),
             "hourly_cache": self.hourly_cache,
             "profile_basis": self.profile_basis,
             "accounting_model": MODEL,
@@ -1100,5 +1182,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 ),
                 document.get("profile_basis", "legacy_gross_import"),
                 document.get("battery_model", {}),
+                document.get("battery_history", {})
+                if isinstance(document.get("battery_history", {}), dict)
+                else {},
             )
             self._watch_energy()

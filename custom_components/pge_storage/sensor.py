@@ -81,6 +81,18 @@ SENSOR_DEFINITIONS.update(
 
 SENSOR_DEFINITIONS.update(
     {
+        "battery_full_capacity": (
+            "Pełna pojemność baterii",
+            "kWh",
+            "battery_estimate",
+            "capacity_kwh",
+        ),
+        "battery_available_energy": (
+            "Energia baterii do minimum SOC",
+            "kWh",
+            "battery_estimate",
+            "available_to_minimum_kwh",
+        ),
         "battery_charge_time": (
             "Czas do naładowania baterii",
             "s",
@@ -154,6 +166,12 @@ class PGESensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = SensorStateClass.MEASUREMENT
         if key.startswith("untracked_"):
             self._attr_suggested_display_precision = 1
+        if key in (
+            "battery_full_capacity",
+            "battery_available_energy",
+            "battery_stored",
+        ):
+            self._attr_suggested_display_precision = 2
         if key.startswith("hourly_"):
             self._attr_suggested_display_precision = 3
         self._attr_name = name
@@ -238,6 +256,21 @@ class PGESensor(CoordinatorEntity, SensorEntity):
                         "raw_export_kwh",
                     )
                 }
+            )
+        if self.key in (
+            "battery_stored",
+            "battery_full_capacity",
+            "battery_available_energy",
+            "battery_charge_time",
+            "battery_discharge_time",
+        ):
+            power_attributes["capacity_source"] = self.coordinator.data.get(
+                "energy", {}
+            ).get("battery_capacity", {})
+            power_attributes["minimum_soc"] = (
+                self.coordinator.data.get("energy", {})
+                .get("battery_estimate", {})
+                .get("minimum_soc")
             )
         return {
             **power_attributes,

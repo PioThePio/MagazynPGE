@@ -64,6 +64,7 @@ def async_register(hass):
         energy_defaults,
         create_dashboard,
         repair_dashboard,
+        rebuild_battery_profile,
         energy_period,
     ):
         websocket_api.async_register_command(hass, command)
@@ -331,9 +332,14 @@ async def put_energy(hass, connection, msg):
 )
 @websocket_api.async_response
 async def energy_defaults(hass, connection, msg):
-    _get(hass, connection, msg)
+    coordinator = _get(hass, connection, msg)
     try:
         result = await async_panel_config(hass)
+        from .energy_panel import merge_panel_config, sync_consumers
+
+        combined = merge_panel_config(coordinator.energy_config, result["config"])
+        combined, _notes = sync_consumers(combined, result["config"])
+        result = {**result, "config": validate_energy_config(combined)}
         if not all(
             connection.user.permissions.check_entity(entity_id, POLICY_READ)
             for entity_id in energy_sources(result["config"])
@@ -399,3 +405,15 @@ async def repair_dashboard(hass, connection, msg):
     connection.send_result(
         msg["id"], await async_repair_dashboards(hass, coordinator.entry.entry_id)
     )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): "pge_storage/rebuild_battery_profile", **ENTRY}
+)
+@websocket_api.async_response
+async def rebuild_battery_profile(hass, connection, msg):
+    coordinator = _get(hass, connection, msg)
+    await coordinator.async_refresh_view_history(rebuild=True)
+    coordinator.publish()
+    connection.send_result(msg["id"], coordinator.battery_history)

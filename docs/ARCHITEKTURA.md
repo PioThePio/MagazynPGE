@@ -1,3 +1,5 @@
+Aktualizacja 0.15.0: `view_history.py` odtwarza bufory mocy z ostatnich 30 minut Recorder i opcjonalny profil ładowania z ostatnich 7 dni. Odczyty działają w executorze Recorder; obliczenia w executorze poza pętlą HA. Bufory widoku są rozdzielone od rozliczeń kWh. `AlignedFlow` dostarcza obu kartom tę samą klatkę i okna 1/5/10/15/60/300/900/1800 s. `battery_history` w Store i eksporcie przechowuje tożsamość konfiguracji, granicę przetworzonego czasu i pokrycie profilu; nie zawiera surowej historii. Przebudowa profilu wymaga uprawnień administratora. `consumer_sync` zachowuje listy znanych i jawnie usuniętych odbiorców z Energii. Poniżej historia wcześniejszych zmian.
+
 # Zmiany 0.13.0
 
 `hour_book()` nie zawiera roboczej godziny. Saldo, FIFO i wszystkie finansowe widoki używają zamkniętych godzin; osobna encja robocza ma znak P−E i atrybut `provisional_not_in_stock`. Fizyczne kWh nadal korzystają z najnowszych dostępnych statystyk pięciominutowych; zamknięcie finansowe nie opóźnia całej energii domu.

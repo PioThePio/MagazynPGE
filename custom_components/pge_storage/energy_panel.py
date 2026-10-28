@@ -263,8 +263,8 @@ def panel_config(hass, prefs):
                 )
         if item["missing"]:
             warnings.append(
-                f"{item['name']}: panel Energia nie ma pomiaru bieżącej mocy. "
-                "Ta instalacja wnosi 0 W; pozostałe pomiary mocy są nadal sumowane."
+                f"{item['name']}: brak powiązania mocy w panelu Energia. "
+                "Sprawdź źródła W wybrane w konfiguratorze PGE."
             )
     if not config["presence"]["battery"]:
         warnings.append(
@@ -394,3 +394,97 @@ async def async_statistics_today(hass, config):
         "coverage": coverage,
         "home_energy": home["value"] if home and covered else None,
     }
+
+
+def sync_consumers(existing, imported):
+    """Append native devices; never overwrite manual bindings or delete devices."""
+    from .energy import consumer_id
+
+    result = deepcopy(existing)
+    notes = []
+    native = imported["consumers"]
+    ignored = set(existing.get("consumer_sync", {}).get("ignored", []))
+    known = set(existing.get("consumer_sync", {}).get("known", []))
+    native_ids = {consumer_id(row) for row in native}
+    selected = result["consumers"]
+    bindings = {}
+    additions = []
+
+    def same(a, b):
+        return consumer_id(a) == consumer_id(b) or bool(
+            {a.get("energy"), a.get("statistic")}
+            & {b.get("energy"), b.get("statistic")} - {None, ""}
+        )
+
+    for row in native:
+        ident = consumer_id(row)
+        match = next((item for item in selected if same(item, row)), None)
+        if match:
+            bindings[ident] = consumer_id(match)
+            known.add(ident)
+            if any(
+                match.get(field) != row.get(field)
+                for field in ("name", "power", "energy", "statistic", "parent_id")
+            ):
+                notes.append(
+                    f"{match['name']}: zachowano ręczną nazwę lub źródło zamiast ustawień Energii."
+                )
+            continue
+        if ident in ignored:
+            continue
+        if len(selected) >= 16:
+            notes.append(f"{row['name']}: nie dodano — osiągnięto limit 16 odbiorców.")
+            continue
+        selected.append(deepcopy(row))
+        additions.append(selected[-1])
+        bindings[ident] = ident
+        known.add(ident)
+    for ident in known - native_ids - ignored:
+        match = next(
+            (
+                row
+                for row in selected
+                if consumer_id(row) == ident
+                or ident in (row.get("energy"), row.get("statistic"))
+            ),
+            None,
+        )
+        if match:
+            notes.append(
+                f"{match['name']}: brak w panelu Energia; pozostawiono zapisany odbiornik."
+            )
+    # Only new hierarchy references are applied; an existing manual tree wins.
+    for row in additions:
+        if row.get("parent_id") in bindings:
+            row["parent_id"] = bindings[row["parent_id"]]
+    ids = {consumer_id(row) for row in selected}
+    for row in selected:
+        if row.get("parent_id") not in ids:
+            row.pop("parent_id", None)
+    result["consumer_sync"] = {"known": sorted(known), "ignored": sorted(ignored)}
+    return result, notes
+
+
+def remember_consumer_removals(previous, updated, native):
+    """An explicit user removal must not be undone by the next automatic sync."""
+    from .energy import consumer_id
+
+    def matches(a, b):
+        return consumer_id(a) == consumer_id(b) or bool(
+            {a.get("energy"), a.get("statistic")}
+            & {b.get("energy"), b.get("statistic")} - {None, ""}
+        )
+
+    ignored = set(previous.get("consumer_sync", {}).get("ignored", []))
+    for row in native["consumers"]:
+        was = any(matches(row, item) for item in previous["consumers"])
+        present = any(matches(row, item) for item in updated["consumers"])
+        if was and not present:
+            ignored.add(consumer_id(row))
+        elif present:
+            ignored.discard(consumer_id(row))
+    updated["consumer_sync"] = {
+        **updated.get("consumer_sync", {}),
+        "ignored": sorted(ignored),
+    }
+    return updated

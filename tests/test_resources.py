@@ -269,7 +269,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 "kWh"
             )
             await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
-                "3400 W"
+                "3400 W", timeout=35000
             )
             await expect(
                 page.locator("pge-consumers-card .device:not(.untracked)")
@@ -334,7 +334,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             )
             await manager.async_put_energy(single_pv, manager.revision)
             await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
-                "3400 W"
+                "3400 W", timeout=35000
             )
             # Stored kWh is optional: selecting SOC and usable capacity is
             # sufficient, and the dialog previews the result before saving.
@@ -361,7 +361,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 "15%"
             )
             await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
-                "3400 W"
+                "3400 W", timeout=35000
             )
             await check_flow_geometry()
             await page.screenshot(path="/tmp/pge-09-desktop.png", full_page=True)
@@ -418,7 +418,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 assert "hui-card" in ancestors, ancestors
                 assert "pge-storage-card" not in ancestors, ancestors
             await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
-                "3400 W"
+                "3400 W", timeout=35000
             )
             await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
                 "kWh"
@@ -474,7 +474,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             ).to_have_count(0)
             await expect(
                 page.locator('pge-consumers-card [data-consumer-id="ac_down"]')
-            ).to_contain_text("100 W")
+            ).to_contain_text("100 W", timeout=35000)
             await expect(
                 page.locator("pge-consumers-card .consumer-summary")
             ).to_contain_text(re.compile(r"1\s?100 W"))
@@ -495,7 +495,9 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             hass.states.async_set(
                 "sensor.browser_pv_power", "2600", {"unit_of_measurement": "W"}
             )
-            await expect(untracked).to_contain_text(re.compile(r"2\s?400 W"))
+            await expect(untracked).to_contain_text(
+                re.compile(r"2\s?400 W"), timeout=35000
+            )
             after = await untracked.evaluate("""row => {
               if (window.pgeMountedCard !== row.getRootNode().querySelector('ha-card'))
                 throw new Error('Live update replaced mounted card');

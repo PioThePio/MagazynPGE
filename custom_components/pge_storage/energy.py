@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from homeassistant.util import dt as dt_util
 
+from .battery import capacity_reading
 from .battery import options as battery_options
 from .history import async_read_samples, sample_from_state
 from .ledger import WARSAW, LedgerError, Sample, energy, energy_text
@@ -46,6 +47,10 @@ def validate_energy_config(raw):
             "show_hour",
             "pv_order",
             "battery_forecast",
+            "battery_capacity_entity",
+            "battery_installed_capacity_entity",
+            "pv_names",
+            "consumer_sync",
         }:
             raise ValueError
         sources, consumers = raw.get("sources", {}), raw.get("consumers", [])
@@ -216,6 +221,28 @@ def validate_energy_config(raw):
             entity(flow_clock) not in source_ids(sources.get("pv_power"))
         ):
             raise ValueError
+        capacity_entities = {
+            k: entity(raw[k]) if raw.get(k) else None
+            for k in ("battery_capacity_entity", "battery_installed_capacity_entity")
+        }
+        names = raw.get("pv_names", {})
+        sync = raw.get("consumer_sync", {})
+        if (
+            not isinstance(names, dict)
+            or len(names) > 64
+            or not isinstance(sync, dict)
+            or set(sync) - {"known", "ignored"}
+        ):
+            raise ValueError
+        names = {str(k): str(v).strip() for k, v in names.items() if str(v).strip()}
+        if any(len(k) > 255 or len(v) > 80 for k, v in names.items()):
+            raise ValueError
+        sync = {key: list(sync.get(key, [])) for key in ("known", "ignored")}
+        if any(
+            len(ids) > 256 or any(not isinstance(i, str) or len(i) > 255 for i in ids)
+            for ids in sync.values()
+        ):
+            raise ValueError
         flow_mode = raw.get("flow_mode", "aligned")
         order = raw.get("pv_order", [])
         if (
@@ -226,8 +253,11 @@ def validate_energy_config(raw):
             or len(set(order)) != len(order)
         ):
             raise ValueError
-        order = [entity(v) for v in order]
+        order = [statistic(v) for v in order]
         return {
+            **capacity_entities,
+            "pv_names": names,
+            "consumer_sync": sync,
             "flow_mode": flow_mode,
             "show_hour": raw.get("show_hour", True),
             "pv_order": order,
@@ -266,6 +296,11 @@ def energy_sources(config):
         entity_id
         for value in config["sources"].values()
         for entity_id in source_ids(value)
+    }
+    ids |= {
+        config[k]
+        for k in ("battery_capacity_entity", "battery_installed_capacity_entity")
+        if config.get(k)
     }
     ids |= {
         v
@@ -354,24 +389,8 @@ def consumer_summary(consumers, home_power_w, home_kwh, energy_key="today_kwh"):
     }
 
 
-def battery_capacity(config):
-    """Nominal energy needs both Ah and V; never guess a battery voltage."""
-    explicit = config.get("battery_capacity_kwh")
-    ah, voltage = config.get("battery_capacity_ah"), config.get("battery_voltage")
-    return {
-        "kwh": explicit
-        if explicit
-        else energy_text(energy(ah) * energy(voltage) / 1000)
-        if ah and voltage
-        else None,
-        "basis": "kwh"
-        if explicit
-        else "ah_voltage"
-        if ah and voltage
-        else "incomplete",
-        "ah": ah,
-        "voltage": voltage,
-    }
+def battery_capacity(config, hass=None):
+    return capacity_reading(hass, config)
 
 
 def pv_arrays(hass, config, native=None):
@@ -403,6 +422,12 @@ def pv_arrays(hass, config, native=None):
                     "power_entity": power,
                 }
             )
+        for row in rows:
+            row["name"] = (
+                config.get("pv_names", {}).get(row.get("power_entity"))
+                or config.get("pv_names", {}).get(row["id"])
+                or row["name"]
+            )
         return rows
     for index in range(len(powers) or len(statistics)):
         power = powers[index] if powers else None
@@ -426,6 +451,12 @@ def pv_arrays(hass, config, native=None):
                 if stat
                 else [],
             }
+        )
+    for row in rows:
+        row["name"] = (
+            config.get("pv_names", {}).get(row.get("power_entity"))
+            or config.get("pv_names", {}).get(row["id"])
+            or row["name"]
         )
     return rows
 
@@ -669,7 +700,7 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
                 }
             )
     calculation = {}
-    capacity = battery_capacity(config)
+    capacity = battery_capacity(config, hass)
     battery_stored_basis = (
         "sensor" if config["sources"].get("battery_stored") else "unconfigured"
     )

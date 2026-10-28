@@ -47,15 +47,17 @@ Oba liczniki muszą obejmować ten sam punkt przyłączenia do sieci, mieć nara
 
 Natywne szablony dobrze wyliczają różnice, ale nie zarządzają trwałą, edytowalną listą dowolnej długości ani historycznymi odczytami Recorder. `utility_meter` nadaje się do cykli i taryf, ale nie zapewnia tego rejestru zmiennych dat, faktur i korekt. Helper dla każdego okresu oznaczałby rozrastającą się ręczną konfigurację.
 
-Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, 32 stałych sensorów i niezależnych modułów Lovelace. Nie powstają nowe encje dla kolejnych faktur. Szczegóły i źródła API: [architektura](docs/ARCHITEKTURA.md).
+Rozwiązanie składa się z jednego wpisu integracji, jednego pliku danych HA, 34 stałych sensorów i niezależnych modułów Lovelace. Nie powstają nowe encje dla kolejnych faktur. Szczegóły i źródła API: [architektura](docs/ARCHITEKTURA.md).
 
 ## Moc, średnie i historia energii
 
-Diagram pozwala wybrać średnią 1/5/10/15 s, domyślnie 10 s. Encja zużycia domu zachowuje okno 15 s. Średnie są ważone czasem, więc szybciej raportujący licznik nie dostaje większej wagi. Po uruchomieniu lub zmianie źródeł okno najpierw zbiera dane. Źródło mocy bez odczytu wnosi 0 W, również wyłączony nocą falownik. Okno ogranicza skutki różnych czasów odczytu; bez wspólnych znaczników czasu urządzeń nie gwarantuje całkowitego usunięcia każdego skoku.
+Diagram i lista odbiorców korzystają ze wspólnych, ważonych czasem okien mocy: **1/5/10/15 s oraz 1/5/15/30 min**. Domyślnie diagram wybiera 10 s, odbiorcy 5 s. Po ustawieniu tego samego okna moc domu w obu kartach ma tę samą wartość i czas. Kolumna Moc pokazuje wspólne okno 1 s, a Średnia wybrane okno. Encje historii domu i nieśledzonego zużycia zachowują dotychczasowe okno 15 s.
 
-Lista odbiorców pokazuje moc chwilową, wybraną średnią 1/5/10/15 s oraz kWh wybranego dnia, tygodnia, miesiąca lub roku. Sortowanie odbywa się kliknięciem nagłówka Nazwa / Moc / Średnia / Energia; ponowne kliknięcie odwraca kierunek. Nieśledzone zużycie sortuje się tak samo. Menu średniej odbiorców ma domyślnie 5 s. Podliczniki pozostają pod rodzicem. Moc i średnie odświeżają się co sekundę i przy zmianach źródeł. Kolejność jest utrzymywana przez co najmniej 5 s, przy średniej 10/15 s odpowiednio przez 10/15 s; ręczna zmiana sortowania działa od razu.
+Moce na obu kartach odświeżają się wspólnie co 3 s. Domyślny tryb wyrównany ma 12 s opóźnienia: interpoluje raporty PV i zestawia je z pomiarami sieci/baterii z tego samego czasu. Tryb „Najnowsze odczyty” pokazuje ostatnie dane z możliwością skoków bilansu. Nie odpytujemy urządzeń dodatkowo. Interpolacja jest oszacowaniem. Średnie mocy nie zmieniają źródłowych kWh ani rozliczeń godzinowych.
 
-Diagram aktualizuje moce co 3 s. Domyślny tryb wyrównany ma 12 s opóźnienia: interpoluje raporty PV i zestawia je z pomiarami sieci/baterii z tego samego czasu. Średnie 1/5/10/15 s (domyślnie 10 s) są niezależne od rytmu odświeżania. Pierwsze 27 s zbiera historię; wtedy używa najnowszych dostępnych odczytów. Opcja „Najnowsze odczyty” pozostawia szybki obraz z wygładzaniem i możliwością skoków bilansu. Nie odpytujemy urządzeń dodatkowo. Interpolacja jest oszacowaniem, a nie nowym pomiarem. Zmiana trybu nie zmienia źródłowych kWh ani rozliczeń.
+Po uruchomieniu lub zmianie źródeł odtwarzamy ostatnie 30 minut mocy z Recorder (próbkowanie historyczne co 5 s). Dzięki temu długa średnia nie musi czekać 30 minut, jeśli historia istnieje. Niepełne pokrycie jest oznaczone; nieistniejąca historia nie staje się zerem. Jawnie niedostępne źródło mocy na żywo wnosi 0 W, również falownik wyłączony w nocy. Przy braku wspólnej historii tryb wyrównany najpierw zbiera próbki. Bufor mocy na żywo ogranicza zapis do dwóch próbek na sekundę; nie dotyczy to liczników kWh ani rozliczeń.
+
+Lista odbiorców pokazuje energię wybranego dnia, tygodnia, miesiąca lub roku. Kliknięcie nagłówka Nazwa / Moc / Średnia / Energia sortuje; kolejne odwraca kierunek. Nieśledzone zużycie sortuje się tak samo, podliczniki pozostają pod rodzicem. Kolejność jest utrzymywana przez 5–15 s zależnie od okna, a ręczne sortowanie działa od razu.
 
 Nieśledzone ma dwie własne encje: **Nieśledzone zużycie** (W, pomiar, z długoterminowymi statystykami mocy) oraz **Nieśledzone zużycie dzisiaj** (kWh, podpisana różnica dzienna). Kliknięcie wiersza otwiera historię mocy w HA. Historia zbiera się od aktualizacji, zgodnie z filtrami Recorder użytkownika; nie odtwarzamy wstecz nieistniejących odczytów. Ładowanie baterii jest odjęte od domu przed obliczeniem różnicy, a podliczniki nie dublują rodzica.
 
@@ -102,7 +104,7 @@ Dotychczasowa `custom:pge-storage-card` pozostaje zgodnym zestawem modułów, do
 
 | Moduł w selektorze | Typ YAML | Przeznaczenie |
 |---|---|---|
-| PGE · Odbiorcy w domu | `custom:pge-consumers-card` | Osobna lista urządzeń, moc, średnia 1/5/10/15 s i energia okresu |
+| PGE · Odbiorcy w domu | `custom:pge-consumers-card` | Osobna lista urządzeń, moc, średnia 1 s–30 min i energia okresu |
 | PGE · Energia w domu | `custom:pge-energy-card` | Schemat PV, domu, sieci, akumulatora i magazynu PGE; moc teraz + energia dzisiaj jednocześnie |
 | PGE · Pojedynczy kafelek | `custom:pge-balance-card` | Jedna wybrana wartość, kliknięcie otwiera encję HA |
 | PGE · Miesiące i dni | `custom:pge-history-card` | Miesięczne podsumowanie i wykres; kliknięcie miesiąca otwiera dni i wykres dzienny |
@@ -260,7 +262,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.14.0.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.15.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 
@@ -276,3 +278,19 @@ Każde zadanie chmurowe jest już izolowane: pracuj w istniejącym checkoutcie, 
 ## Przejście z prototypu 0.1
 
 Wersja 0.1 korzystała z gotowego sensora bilansu. Wersja 0.2 używa innego kontraktu pomiarowego i formatu danych. Jeśli zainstalowałeś 0.1, najpierw wyeksportuj jej rejestr i zrób pełny backup. Wyłącz stary wpis; po aktualizacji dodaj **nowy** z parą liczników. Ponownie dodaj daty i faktury po sprawdzeniu dostępności historii obu liczników. Stary wpis i jego plik danych nie są automatycznie kasowane ani przeliczane. Import starego JSON jest odrzucany: sam historyczny bilans nie pozwala odtworzyć dwóch rzeczywistych liczników. Zachowaj stary katalog integracji poza `/config/custom_components` do ewentualnego wycofania aktualizacji.
+
+## Zmiany 0.15.0: źródła i bateria
+
+Nowych odbiorców z panelu Energia dopisujemy przy uruchomieniu i podczas kontroli co 5 minut (maksymalnie 16). Zachowujemy ręczne nazwy, powiązania mocy, kolejność i rodziców. Jawnie usunięty odbiorca nie wraca automatycznie. Usunięcia w Energii i konflikty pokazujemy do sprawdzenia, bez kasowania ręcznych ustawień. Każdej instalacji PV można nadać własną nazwę w konfiguratorze i ustawić jej kolejność. Nie zmienia to nazw encji w HA. Raport importu Energii opisuje powiązania w jej konfiguracji; wybrane ręcznie źródła W są pokazane osobno.
+
+Dłuższe wyjaśnienia otwiera ikonka ⓘ. Opcje modelu i scenariusza PV są w ustawieniach zaawansowanych. Niezapisane zmiany mają widoczny komunikat. Po zmianie źródeł kliknij **Zapisz źródła**; konfiguracja działa bez restartu.
+
+Pojemność baterii można odczytywać z encji **Capacity** (pełna pojemność BMS, nie aktualny zapas). Przy jej niedostępności używamy wybranej **Installed capacity** i pokazujemy, że to wartość zastępcza. Jeśli wybrano encje, ale obie są niedostępne, pojemność pozostaje nieznana. Wpisana wcześniej ręczna pojemność pozostaje zapisana i wraca do użycia po odłączeniu tych encji.
+
+Dla SIMPO 5000 napięcie nominalne wynosi **51,2 V**: 99 Ah × 51,2 V = około **5,07 kWh** pełnej pojemności. To oszacowanie energii, nie całka z pomiaru. SOC wyznacza aktualny zapas, a aktualne minimum SOC — zapas dostępny do rozładowania. Dodano osobne encje pełnej pojemności i energii dostępnej ponad minimum SOC. Napięcie nominalne służy do przeliczenia Ah; **DC bus voltage** jest chwilowym napięciem używanym dla limitu BMS. Nie zastępuje go Maximum allowed charging voltage. Faktyczna moc nadal pochodzi z Power w W; dopuszczalny prąd BMS nie jest bieżącym poborem.
+
+Opcjonalny profil ograniczenia ładowania odczytuje do 7 dni istniejącej historii SOC, mocy, dopuszczalnego prądu ładowania BMS i rzeczywistego napięcia baterii. Przetwarzamy porcje po 6 godzin i wspólne odczyty co minutę. Uczymy tylko podczas ładowania powyżej 25 W, blisko niezależnego limitu BMS; brakujących próbek nie zastępujemy zerem. Profil ma przedziały SOC co 5 punktów procentowych, a przedział wymaga co najmniej 3 obserwacji. Bez odpowiedniej historii estymacja z bieżącej średniej nadal działa. Czasy wykorzystują średnią 1/5/15 min; przy mocy do 25 W nie określamy czasu.
+
+Zapisany profil jest pamięcią wyników historii: kolejne odświeżenia dopisują nowe zamknięte minuty, nie liczą ich ponownie i zachowują starsze obserwacje po usunięciu historii przez Recorder. Podgląd pokazuje pokrycie. Przycisk przebudowy zastępuje profil tym, co da się odczytać teraz; nie odtworzy historii usuniętej przez HA. Dynamiczna zmiana Capacity z 99 na 98 Ah nie usuwa profilu. Zmiana fizycznych źródeł baterii resetuje model dla nowej konfiguracji.
+
+Strzałki ↓/↑ pod mocą sieci pokazują fizyczny import/eksport kWh wybranego okresu, **bez opustu**. Strzałki magazynu PGE pokazują rozliczenie zamkniętych godzin, z opustem zastosowanym wyłącznie do nadwyżek po kompensacji godzinowej. Nie należy porównywać ich jako identycznych wielkości.

@@ -16,6 +16,7 @@ def options(raw):
         "charge_limit_entity",
         "bms_current_entity",
         "voltage_entity",
+        "discharge_current_entity",
         "pv_forecast_entity",
         "home_forecast_entity",
         "forecast_hours",
@@ -61,6 +62,65 @@ def value(hass, entity, units):
         return None
 
 
+def capacity_reading(hass, config):
+    """Full capacity, not remaining charge. Never infer nominal voltage."""
+    voltage = config.get("battery_voltage")
+    for key, basis in (
+        ("battery_capacity_entity", "bms_capacity"),
+        ("battery_installed_capacity_entity", "installed_capacity_fallback"),
+    ):
+        entity = config.get(key)
+        if not entity or hass is None:
+            continue
+        state = hass.states.get(entity)
+        unit = state.attributes.get("unit_of_measurement") if state else None
+        amount = value(hass, entity, {"Ah": 1, "kWh": 1, "Wh": 0.001})
+        if amount is None or amount <= 0:
+            continue
+        kwh = (
+            amount * float(voltage) / 1000
+            if unit == "Ah" and voltage
+            else amount
+            if unit in ("kWh", "Wh")
+            else None
+        )
+        if kwh:
+            return {
+                "kwh": str(kwh),
+                "basis": basis,
+                "ah": str(amount) if unit == "Ah" else None,
+                "voltage": voltage,
+                "entity_id": entity,
+            }
+    if config.get("battery_capacity_entity") or config.get(
+        "battery_installed_capacity_entity"
+    ):
+        return {
+            "kwh": None,
+            "basis": "missing_capacity_reading",
+            "ah": None,
+            "voltage": voltage,
+        }
+    explicit = config.get("battery_capacity_kwh")
+    ah = config.get("battery_capacity_ah")
+    from .ledger import energy, energy_text
+
+    return {
+        "kwh": explicit
+        if explicit
+        else energy_text(energy(ah) * energy(voltage) / 1000)
+        if ah and voltage
+        else None,
+        "basis": "kwh"
+        if explicit
+        else "ah_voltage"
+        if ah and voltage
+        else "incomplete",
+        "ah": ah,
+        "voltage": voltage,
+    }
+
+
 def battery_identity(config):
     sources = config["sources"]
     opt = config["battery_forecast"]
@@ -74,6 +134,8 @@ def battery_identity(config):
             config.get("battery_capacity_kwh"),
             config.get("battery_capacity_ah"),
             config.get("battery_voltage"),
+            config.get("battery_capacity_entity"),
+            config.get("battery_installed_capacity_entity"),
             opt["bms_current_entity"],
             opt["voltage_entity"],
         )
@@ -86,6 +148,7 @@ class BatteryEstimate:
         self.identity = None
         self.profile = {}
         self.last_learning = None
+        self.history_driven = False
 
     def restore(self, raw):
         if not isinstance(raw, dict) or len(raw) > 20:
@@ -106,6 +169,21 @@ class BatteryEstimate:
                 }
             except ValueError, TypeError, KeyError:
                 continue
+
+    def observe(self, soc, charge, bms, stamp):
+        if not (0 <= soc <= 100 and charge > 25 and bms > 25 and charge >= 0.85 * bms):
+            return False
+        if self.last_learning is not None and stamp - self.last_learning < 60:
+            return False
+        key = str(min(95, int(soc // 5) * 5))
+        old = self.profile.get(key, {"watts": charge, "count": 0})
+        count = min(old["count"] + 1, 10000)
+        self.profile[key] = {
+            "watts": old["watts"] + (charge - old["watts"]) / min(count, 60),
+            "count": count,
+        }
+        self.last_learning = stamp
+        return True
 
     def update(self, hass, config, values, now):
         opt = config["battery_forecast"]
@@ -145,17 +223,8 @@ class BatteryEstimate:
             if duration
             else power
         )
-        capacity = float(config.get("battery_capacity_kwh") or 0)
-        if (
-            not capacity
-            and config.get("battery_capacity_ah")
-            and config.get("battery_voltage")
-        ):
-            capacity = (
-                float(config["battery_capacity_ah"])
-                * float(config["battery_voltage"])
-                / 1000
-            )
+        capacity_info = capacity_reading(hass, config)
+        capacity = float(capacity_info["kwh"] or 0)
         minimum = value(hass, opt["min_soc_entity"], {"%": 1})
         limit = value(hass, opt["charge_limit_entity"], {"W": 1, "kW": 1000})
         current = value(hass, opt["bms_current_entity"], {"A": 1})
@@ -171,6 +240,17 @@ class BatteryEstimate:
             "forecast_range_seconds": None,
             "minimum_soc": minimum,
             "capacity_kwh": capacity or None,
+            "capacity_basis": capacity_info["basis"],
+            "stored_kwh": capacity * float(soc) / 100
+            if capacity and soc is not None and 0 <= float(soc) <= 100
+            else None,
+            "available_to_minimum_kwh": capacity * max(0, float(soc) - minimum) / 100
+            if capacity
+            and soc is not None
+            and 0 <= float(soc) <= 100
+            and minimum is not None
+            and 0 <= minimum <= 100
+            else None,
             "learned_bins": len(self.profile),
             "quality": "disabled" if not opt["enabled"] else "collecting",
         }
@@ -193,21 +273,14 @@ class BatteryEstimate:
         # not evidence of battery taper. At most one sample per minute.
         if (
             opt["learn"]
+            and not self.history_driven
             and charge > 25
             and bms
             and bms > 25
             and charge >= 0.85 * bms
             and (self.last_learning is None or now - self.last_learning >= 60)
         ):
-            key = str(min(95, int(soc // 5) * 5))
-            old = self.profile.get(key, {"watts": charge, "count": 0})
-            count = min(old["count"] + 1, 10000)
-            old = {
-                "watts": old["watts"] + (charge - old["watts"]) / min(count, 60),
-                "count": count,
-            }
-            self.profile[key] = old
-            self.last_learning = now
+            self.observe(soc, charge, bms, now)
         if duration < min(seconds, 30) or not direction or abs(mean) <= 25:
             return result
         result["quality"] = "constant_recent_power"

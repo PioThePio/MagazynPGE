@@ -221,7 +221,7 @@ test("energy diagram shows live power and daily energy together without a toggle
   );
   assert.match(
     root.querySelector(".node-grid").textContent,
-    /Pobrano 8,2 kWh.*Oddano 1,6 kWh/,
+    /↓ 8,2 kWh.*↑ 1,6 kWh/,
   );
   assert.match(root.querySelector(".node-pge").textContent, /2197 kWh/);
   assert.equal(root.querySelector("[data-mode]"), null);
@@ -531,7 +531,7 @@ test("PV provenance pairs native energy and power, while battery capacity previe
   card.open("sources");
   assert.match(
     root.querySelector("#pv-import-report").textContent,
-    /Brak pomiaru w Energii → 0 W/,
+    /Brak powiązania W w Energii/,
   );
   assert.match(
     root.querySelector("#pv-import-report").textContent,
@@ -756,7 +756,7 @@ test("consumer sort includes untracked and offers time-window means without brea
   root.querySelector('[data-sort="average"]').click();
   assert.deepEqual(names(), ["Beta", "Nieśledzone zużycie", "Alfa"]);
   assert.equal(root.querySelector("[data-average]").value, "5");
-  assert.equal(root.querySelectorAll("[data-average] option").length, 4);
+  assert.equal(root.querySelectorAll("[data-average] option").length, 8);
   root.querySelector("[data-average]").value = "15";
   root.querySelector("[data-average]").dispatchEvent(new window.Event("change"));
   assert.match(root.querySelector('[data-consumer-id="b"] .device-average').textContent, /700 W/);
@@ -885,5 +885,66 @@ test("current hour leaves the grid power arrow unobstructed", async () => {
   assert.ok(line.hasAttribute("marker-end"));
   assert.match(root.querySelector("style:last-of-type").textContent,/\.hour-buffer\{[^}]*top:31%/);
   assert.match(root.querySelector(".hour-buffer").textContent,/\+0,37/);
+  await window.happyDOM.close();
+});
+
+test("diagram and consumers share the same frozen means including minute windows", async () => {
+  const energy=await setup("pge-energy-card"), devices=await setup("pge-consumers-card");
+  const data=snapshot();
+  const body=JSON.parse(JSON.stringify(data.energy));
+  body.values.home_power="9999";
+  body.home_power_live="9999";
+  body.power_windows={"5":{covered_seconds:5,values:{home_power:700},home_power_w:700,tracked_power_w:0,untracked_power_w:700,consumers:{}},"300":{covered_seconds:300,values:{home_power:600},home_power_w:600,tracked_power_w:0,untracked_power_w:600,consumers:{}}};
+  data.energy.diagram_frame={sequence:10,energy:body,available_energy:"2000"};
+  energy.emit(data);devices.emit(data);
+  energy.root.querySelector("[data-flow-average]").value="5";
+  energy.root.querySelector("[data-flow-average]").dispatchEvent(new energy.window.Event("change"));
+  assert.match(energy.root.querySelector(".node-home strong").textContent,/700 W/);
+  assert.match(devices.root.querySelector(".consumer-total strong").textContent,/700 W/);
+  for(const [instance,selector] of [[energy,"[data-flow-average]"],[devices,"[data-average]"]]) {
+    instance.root.querySelector(selector).value="300";
+    instance.root.querySelector(selector).dispatchEvent(new instance.window.Event("change"));
+  }
+  assert.match(energy.root.querySelector(".node-home strong").textContent,/600 W/);
+  assert.match(devices.root.querySelector(".consumer-total strong").textContent,/600 W/);
+  assert.deepEqual([...devices.root.querySelectorAll("[data-average] option")].map(n=>n.textContent),["1 s","5 s","10 s","15 s","1 min","5 min","15 min","30 min"]);
+  data.energy.values.home_power="12345";
+  energy.emit(data);devices.emit(data);
+  assert.match(devices.root.querySelector(".consumer-total strong").textContent,/600 W/);
+  await energy.window.happyDOM.close();await devices.window.happyDOM.close();
+});
+
+test("PV aliases, capacity sensors and unsaved changes survive source configuration", async () => {
+  const {window,card,root,hass,emit}=await setup("pge-settings-card");
+  hass.states["sensor.cap"]={state:"99",attributes:{unit_of_measurement:"Ah",friendly_name:"Capacity"}};
+  hass.states["sensor.installed"]={state:"100",attributes:{unit_of_measurement:"Ah",friendly_name:"Installed capacity"}};
+  hass.states["sensor.soc"]={state:"60",attributes:{unit_of_measurement:"%"}};
+  const data=snapshot();data.energy.config.battery_capacity_kwh="5.12";data.energy.config.sources={pv_power:"sensor.pv",battery_soc:"sensor.soc"};emit(data);
+  card.open("sources");
+  assert.equal(root.querySelector("#unsaved-sources").hidden,true);
+  root.querySelector('[data-pv-name="sensor.pv"]').value="Stara instalacja";
+  root.querySelector('[data-pv-name="sensor.pv"]').dispatchEvent(new window.Event("input",{bubbles:true}));
+  assert.equal(root.querySelector("#unsaved-sources").hidden,false);
+  root.querySelector('[data-capacity-entity="battery_capacity_entity"]').value="sensor.cap";
+  root.querySelector('[data-capacity-entity="battery_capacity_entity"]').dispatchEvent(new window.Event("change"));
+  root.querySelector('[data-capacity-entity="battery_installed_capacity_entity"]').value="sensor.installed";
+  root.querySelector('[data-capacity-entity="battery_installed_capacity_entity"]').dispatchEvent(new window.Event("change"));
+  assert.match(root.querySelector("#battery-estimate").textContent,/Capacity BMS.*5,07 kWh.*3,04 kWh/);
+  const config=card.readSources();
+  assert.equal(config.battery_voltage,"51.2");
+  assert.equal(config.battery_capacity_kwh,"5.12");
+  assert.equal(config.battery_capacity_entity,"sensor.cap");
+  assert.equal(config.battery_installed_capacity_entity,"sensor.installed");
+  assert.equal(config.pv_names["sensor.pv"],"Stara instalacja");
+  assert.ok(root.querySelectorAll(".help-hint").length>0);
+  assert.equal(root.querySelector(".advanced-battery").open,false);
+  for (const key of ["battery_capacity_entity","battery_installed_capacity_entity"]) {
+    const input=root.querySelector(`[data-capacity-entity="${key}"]`);
+    input.value="";input.dispatchEvent(new window.Event("change"));
+  }
+  assert.equal(root.querySelector("[data-capacity]").value,"5.12");
+  assert.equal(card.readSources().battery_capacity_kwh,"5.12");
+  await card.saveSources();
+  assert.equal(root.querySelector("#unsaved-sources").hidden,true);
   await window.happyDOM.close();
 });

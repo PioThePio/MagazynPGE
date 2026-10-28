@@ -1,6 +1,6 @@
-/* PGE 0.14.0: independent Lovelace modules, no external libraries. */
-import "./pge-settings.js?v=0.14.0";
-const VERSION = "0.14.0";
+/* PGE 0.15.0: independent Lovelace modules, no external libraries. */
+import "./pge-settings.js?v=0.15.0";
+const VERSION = "0.15.0";
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -284,6 +284,8 @@ const localDay = () =>
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+const powerWindows = [1,5,10,15,60,300,900,1800];
+const windowLabel = seconds => seconds < 60 ? `${seconds} s` : `${seconds/60} min`;
 const periodCache = new WeakMap();
 const shiftedDay = (anchor, kind, step) => {
   const [y, m, d] = anchor.split("-").map(Number),
@@ -408,7 +410,7 @@ class EnergyCard extends PeriodCard {
     this.flowAverageSeconds = 10;
   }
   setConfig(config) {
-    this.flowAverageSeconds = [1,5,10,15].includes(Number(config.average_seconds)) ? Number(config.average_seconds) : 10;
+    this.flowAverageSeconds = powerWindows.includes(Number(config.average_seconds)) ? Number(config.average_seconds) : 10;
     super.setConfig(config);
   }
   render() {
@@ -416,8 +418,7 @@ class EnergyCard extends PeriodCard {
     const frame = this.data.energy?.diagram_frame,
       e = frame?.energy || this.data.energy || { values: {}, today: {} },
       powerWindow = e.power_windows?.[String(this.flowAverageSeconds)],
-      v = powerWindow?.covered_seconds >= this.flowAverageSeconds
-        ? { ...e.values, ...powerWindow.values } : e.values;
+      v = powerWindow ? { ...e.values, ...powerWindow.values } : e.values;
     const viewKey = `${this.data.revision}:${this.period}:${this.anchor}:${this.flowAverageSeconds}`;
     if (this._displayFrame !== frame?.sequence || this._displayKey !== viewKey || !this._displayPeriodData) {
       this._displayFrame = frame?.sequence;
@@ -444,8 +445,7 @@ class EnergyCard extends PeriodCard {
         ? e.today.pge_withdrawn_energy : t.pge_withdrawn_energy;
     const order = this.data.energy?.config?.pv_order?.length ? this.data.energy.config.pv_order : [...(e.pv_arrays || [])].map(a=>a.power_entity).reverse();
     const pvArrays = [...(e.pv_arrays || [])].sort((a,b) => { const rank = x => order.indexOf(x.power_entity) < 0 ? 999 : order.indexOf(x.power_entity); return rank(a)-rank(b); }).map(array => ({...array,
-      power_w: powerWindow?.covered_seconds >= this.flowAverageSeconds
-        ? powerWindow.pv_arrays?.[array.id] ?? array.power_w : array.power_w}));
+      power_w: powerWindow ? powerWindow.pv_arrays?.[array.id] : array.power_w}));
     const nodes = [
       {
         key: "pv",
@@ -549,9 +549,9 @@ class EnergyCard extends PeriodCard {
     const eta = this.data.energy?.battery_estimate;
     const duration = seconds => seconds == null ? "—" : seconds < 60 ? "< 1 min" : `${Math.floor(seconds/3600) ? Math.floor(seconds/3600)+" h " : ""}${Math.ceil(seconds%3600/60)} min`;
     const range = seconds => seconds ? `${duration(seconds[0])} – ${duration(seconds[1])}` : "—";
-    const etaHTML = eta && eta.quality !== "disabled" ? `<div class="battery-eta"><div><small>Do 100%</small><b>${duration(eta.charge_seconds)}</b></div><div><small>Do minimum ${eta.minimum_soc == null ? "—" : fmt(eta.minimum_soc)}%</small><b>${duration(eta.discharge_seconds)}</b></div><div><small>Zapas baterii</small><b>${precise(v.battery_stored)} kWh</b></div>${eta.model_range_seconds ? `<small class="eta-model">Profil ładowania: ${range(eta.model_range_seconds)}</small>` : ""}${eta.forecast_range_seconds ? `<small class="eta-model">Scenariusz PV: ${range(eta.forecast_range_seconds)}</small>` : ""}<small class="eta-model">Średnia ${eta.average_minutes} min · ${eta.quality === "missing_capacity" ? "uzupełnij pojemność baterii" : eta.quality === "missing_soc" ? "brak prawidłowego odczytu SOC" : eta.quality === "missing_soc_or_capacity" ? "uzupełnij SOC i pojemność" : eta.quality === "collecting" ? "zbieranie pomiarów / brak przepływu" : "przy obecnym tempie"}${this.data.energy.config?.battery_forecast?.learn ? ` · profil BMS: ${eta.learned_bins}/20 zakresów` : ""}</small></div>` : "";
+    const etaHTML = eta && eta.quality !== "disabled" ? `<div class="battery-eta"><div><small>Do 100%</small><b>${duration(eta.charge_seconds)}</b></div><div><small>Do minimum ${eta.minimum_soc == null ? "—" : fmt(eta.minimum_soc)}%</small><b>${duration(eta.discharge_seconds)}</b></div><div><small>Zapas baterii</small><b>${precise(v.battery_stored)} kWh</b></div><small class="eta-model">${({bms_capacity:"Pojemność BMS",installed_capacity_fallback:"Pojemność znamionowa — zastępcza",kwh:"Pojemność ręczna",ah_voltage:"Pojemność ręczna"})[eta.capacity_basis] || "Pełna pojemność"}: ${eta.capacity_kwh == null ? "—" : new Intl.NumberFormat("pl-PL",{maximumFractionDigits:2}).format(eta.capacity_kwh)} kWh · Do minimum: ${eta.available_to_minimum_kwh == null ? "—" : new Intl.NumberFormat("pl-PL",{maximumFractionDigits:2}).format(eta.available_to_minimum_kwh)} kWh</small>${eta.model_range_seconds ? `<small class="eta-model">Profil ładowania: ${range(eta.model_range_seconds)}</small>` : ""}${eta.forecast_range_seconds ? `<small class="eta-model">Scenariusz PV: ${range(eta.forecast_range_seconds)}</small>` : ""}<small class="eta-model">Średnia ${eta.average_minutes} min · ${eta.quality === "missing_capacity" ? "uzupełnij pojemność baterii" : eta.quality === "missing_soc" ? "brak prawidłowego odczytu SOC" : eta.quality === "missing_soc_or_capacity" ? "uzupełnij SOC i pojemność" : eta.quality === "collecting" ? "zbieranie pomiarów / brak przepływu" : "przy obecnym tempie"}${this.data.energy.config?.battery_forecast?.learn ? ` · profil BMS: ${eta.learned_bins}/20 zakresów` : ""}</small></div>` : "";
     this.frame(
-      `<style>${periodCSS}.hour-buffer{position:absolute;left:43%;top:31%;transform:translate(-50%,-50%);width:18cqw;padding:5px 1px;border:1px solid var(--divider-color,#dce5e8);border-radius:10px;background:var(--card-background-color,#fff);z-index:2;display:grid;text-align:center;gap:2px;font-size:clamp(8px,2cqw,11px)}.hour-buffer strong{font-size:clamp(10px,2.7cqw,15px);white-space:nowrap}.hour-buffer small{font-size:9px}.node.ring{border:4px solid transparent;background:linear-gradient(var(--card-background-color,#fff),var(--card-background-color,#fff)) padding-box,var(--ring) border-box!important}.battery-eta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;padding:12px;border-radius:12px;background:var(--secondary-background-color,#f3f6f7);font-size:12px}.battery-eta b,.battery-eta small{display:block}.battery-eta small{font-size:10px;color:var(--secondary-text-color)}.eta-model{grid-column:1/-1}.flow-average{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--secondary-text-color);white-space:nowrap}.flow-average select{width:auto;min-width:63px;padding:5px;border-radius:8px}.flow-map{position:relative;container-type:inline-size;aspect-ratio:600/580;max-width:660px;margin:0 auto}.flow-map svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.flow-line{fill:none;stroke-width:4}[data-flow="pge"]{stroke-dasharray:4 5}.node{position:absolute;transform:translate(-50%,-50%);padding:0;width:27cqw;height:27cqw;border:2px solid var(--c);border-radius:50%;background:var(--card-background-color,#fff)!important;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;box-shadow:0 3px 16px #00000005}.node ha-icon{--mdc-icon-size:clamp(14px,3.8cqw,22px);color:var(--c)}.node .node-name{font-size:clamp(9px,2.7cqw,13px);color:var(--secondary-text-color);line-height:1.1}.node strong{font-size:clamp(13px,4.1cqw,25px);line-height:1.2;white-space:nowrap}.node .node-energy{font-size:clamp(10px,3cqw,16px);color:var(--secondary-text-color);white-space:nowrap}.node-home{border-width:3px}.node-pge strong{font-size:clamp(12px,3.8cqw,23px)}.flow-small{font-size:clamp(9px,2.5cqw,13px);white-space:nowrap}.soc{display:flex;align-items:center;gap:3px;font-size:clamp(10px,2.7cqw,14px);color:var(--c)}.soc ha-icon{--mdc-icon-size:clamp(11px,3cqw,17px)}.pv-installations{position:absolute;top:3%;width:35%;max-height:40cqw;overflow:auto;display:grid;gap:7px}.pv-left{left:0;top:0}.pv-right{right:0}.pv-installation{padding:7px 8px;background:var(--secondary-background-color,#f5f7f8);border-radius:11px;text-align:left;min-width:0}.pv-installation span{display:block;font-size:clamp(9px,2.5cqw,12px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pv-installation strong{font-size:clamp(11px,3.2cqw,17px)}.battery-stock{position:absolute;bottom:0;left:51%;right:21%;text-align:center;font-size:11px;color:var(--secondary-text-color)}@container(max-width:380px){.node{gap:2px}.pv-installation{padding:5px}.flow-small{font-size:9px}}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Energia w domu")}</h2><label class="flow-average" title="Długość średniej mocy; częstotliwość odświeżania pozostaje niezależna">Średnia<select data-flow-average aria-label="Średnia mocy diagramu">${[1,5,10,15].map(n => `<option value="${n}" ${this.flowAverageSeconds === n ? "selected" : ""}>${n} s</option>`).join("")}</select></label></div>${this.periodHTML()}${this.data.accounting_error || this.data.pending_error ? `<div class="warn">${esc(this.data.accounting_error || this.data.pending_error)}</div>` : ""}<div class="flow-map">${hourHTML}<svg viewBox="0 0 600 580" aria-hidden="true"><defs>${defs}</defs>${arrow("pv", "#dd9a1a", "M390 180V209", Number(v.pv_power))}${arrow("grid", "#3287bd", "M233 290H307", Number(grid))}${arrow("battery", "#32aaa4", "M390 375V398", Number(battery))}<path class="flow-line" data-flow="pge" d="M150 375V398" stroke="#7b61c4" opacity="0.6"/></svg><div class="pv-installations pv-left">${arrayList(0)}</div><div class="pv-installations pv-right">${arrayList(1)}</div>${nodes.map((n) => `<button class="node node-${n.key} ${ring(n.key) ? "ring" : ""}" data-entity="${n.entity}" style="left:${n.x}%;top:${n.y}%;--c:${n.color};${ring(n.key) ? `--ring:${ring(n.key)}` : ""}" title="${esc(n.title || n.name)}${ring(n.key) ? " · Szacowany udział mocy: PV żółty, akumulator turkusowy, sieć niebieski; proporcjonalny podział wspólnego zasilania" : ""}">${n.key === "battery" ? `<span class="soc"><ha-icon icon="${n.icon}"></ha-icon>${fmt(n.soc)}%</span>` : `<ha-icon icon="${n.icon}"></ha-icon>`}<span class="node-name">${n.name}</span><strong>${n.signed ? signedPower(n.value) : fmt(n.value)} ${n.unit}</strong>${n.key === "grid" ? `<span class="flow-small">Pobrano ${precise(t.grid_import_energy)} kWh</span><span class="flow-small">Oddano ${precise(t.grid_export_energy)} kWh</span>` : n.key === "pge" || n.key === "battery" ? `<span class="flow-small" title="${n.key === "pge" ? "Wprowadzone po opuście" : "Władowano"}">↓ ${precise(n.credit)} kWh</span><span class="flow-small" title="${n.key === "pge" ? "Pobrano z magazynu" : "Wyładowano"}">↑ ${precise(n.draw)} kWh</span>` : `<span class="node-energy">${n.signed ? signed(n.energy) : precise(n.energy)} kWh</span>`}</button>`).join("")}</div>${etaHTML}${this._periodError ? `<div class="warn">${esc(this._periodError)}</div>` : ""}</ha-card>`,
+      `<style>${periodCSS}.hour-buffer{position:absolute;left:43%;top:31%;transform:translate(-50%,-50%);width:18cqw;padding:5px 1px;border:1px solid var(--divider-color,#dce5e8);border-radius:10px;background:var(--card-background-color,#fff);z-index:2;display:grid;text-align:center;gap:2px;font-size:clamp(8px,2cqw,11px)}.hour-buffer strong{font-size:clamp(10px,2.7cqw,15px);white-space:nowrap}.hour-buffer small{font-size:9px}.node.ring{border:4px solid transparent;background:linear-gradient(var(--card-background-color,#fff),var(--card-background-color,#fff)) padding-box,var(--ring) border-box!important}.battery-eta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;padding:12px;border-radius:12px;background:var(--secondary-background-color,#f3f6f7);font-size:12px}.battery-eta b,.battery-eta small{display:block}.battery-eta small{font-size:10px;color:var(--secondary-text-color)}.eta-model{grid-column:1/-1}.flow-average{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--secondary-text-color);white-space:nowrap}.flow-average select{width:auto;min-width:63px;padding:5px;border-radius:8px}.flow-map{position:relative;container-type:inline-size;aspect-ratio:600/580;max-width:660px;margin:0 auto}.flow-map svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.flow-line{fill:none;stroke-width:4}[data-flow="pge"]{stroke-dasharray:4 5}.node{position:absolute;transform:translate(-50%,-50%);padding:0;width:27cqw;height:27cqw;border:2px solid var(--c);border-radius:50%;background:var(--card-background-color,#fff)!important;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;box-shadow:0 3px 16px #00000005}.node ha-icon{--mdc-icon-size:clamp(14px,3.8cqw,22px);color:var(--c)}.node .node-name{font-size:clamp(9px,2.7cqw,13px);color:var(--secondary-text-color);line-height:1.1}.node strong{font-size:clamp(13px,4.1cqw,25px);line-height:1.2;white-space:nowrap}.node .node-energy{font-size:clamp(10px,3cqw,16px);color:var(--secondary-text-color);white-space:nowrap}.node-home{border-width:3px}.node-pge strong{font-size:clamp(12px,3.8cqw,23px)}.flow-small{font-size:clamp(9px,2.5cqw,13px);white-space:nowrap}.soc{display:flex;align-items:center;gap:3px;font-size:clamp(10px,2.7cqw,14px);color:var(--c)}.soc ha-icon{--mdc-icon-size:clamp(11px,3cqw,17px)}.pv-installations{position:absolute;top:3%;width:35%;max-height:40cqw;overflow:auto;display:grid;gap:7px}.pv-left{left:0;top:0}.pv-right{right:0}.pv-installation{padding:7px 8px;background:var(--secondary-background-color,#f5f7f8);border-radius:11px;text-align:left;min-width:0}.pv-installation span{display:block;font-size:clamp(9px,2.5cqw,12px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pv-installation strong{font-size:clamp(11px,3.2cqw,17px)}.battery-stock{position:absolute;bottom:0;left:51%;right:21%;text-align:center;font-size:11px;color:var(--secondary-text-color)}@container(max-width:380px){.node{gap:2px}.pv-installation{padding:5px}.flow-small{font-size:9px}}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Energia w domu")}</h2><label class="flow-average" title="Długość średniej mocy; częstotliwość odświeżania pozostaje niezależna">Średnia<select data-flow-average aria-label="Średnia mocy diagramu">${powerWindows.map(n => `<option value="${n}" ${this.flowAverageSeconds === n ? "selected" : ""}>${windowLabel(n)}</option>`).join("")}</select></label></div>${this.periodHTML()}${this.data.accounting_error || this.data.pending_error ? `<div class="warn">${esc(this.data.accounting_error || this.data.pending_error)}</div>` : ""}<div class="flow-map">${hourHTML}<svg viewBox="0 0 600 580" aria-hidden="true"><defs>${defs}</defs>${arrow("pv", "#dd9a1a", "M390 180V209", Number(v.pv_power))}${arrow("grid", "#3287bd", "M233 290H307", Number(grid))}${arrow("battery", "#32aaa4", "M390 375V398", Number(battery))}<path class="flow-line" data-flow="pge" d="M150 375V398" stroke="#7b61c4" opacity="0.6"/></svg><div class="pv-installations pv-left">${arrayList(0)}</div><div class="pv-installations pv-right">${arrayList(1)}</div>${nodes.map((n) => `<button class="node node-${n.key} ${ring(n.key) ? "ring" : ""}" data-entity="${n.entity}" style="left:${n.x}%;top:${n.y}%;--c:${n.color};${ring(n.key) ? `--ring:${ring(n.key)}` : ""}" title="${esc(n.title || n.name)}${ring(n.key) ? " · Szacowany udział mocy: PV żółty, akumulator turkusowy, sieć niebieski; proporcjonalny podział wspólnego zasilania" : ""}">${n.key === "battery" ? `<span class="soc"><ha-icon icon="${n.icon}"></ha-icon>${fmt(n.soc)}%</span>` : `<ha-icon icon="${n.icon}"></ha-icon>`}<span class="node-name">${n.name}</span><strong>${n.signed ? signedPower(n.value) : fmt(n.value)} ${n.unit}</strong>${n.key === "grid" ? `<span class="flow-small" title="Pobrano z sieci, bez opustu">↓ ${precise(t.grid_import_energy)} kWh</span><span class="flow-small" title="Oddano do sieci, bez opustu">↑ ${precise(t.grid_export_energy)} kWh</span>` : n.key === "pge" || n.key === "battery" ? `<span class="flow-small" title="${n.key === "pge" ? "Wprowadzone po opuście" : "Władowano"}">↓ ${precise(n.credit)} kWh</span><span class="flow-small" title="${n.key === "pge" ? "Pobrano z magazynu" : "Wyładowano"}">↑ ${precise(n.draw)} kWh</span>` : `<span class="node-energy">${n.signed ? signed(n.energy) : precise(n.energy)} kWh</span>`}</button>`).join("")}</div>${etaHTML}${this._periodError ? `<div class="warn">${esc(this._periodError)}</div>` : ""}</ha-card>`,
     );
     this.bindPeriod();
     const hourInfo = this.shadowRoot.querySelector("[data-hour-info]");
@@ -601,7 +601,8 @@ class ConsumersCard extends PeriodCard {
   }
   render() {
     this.ensurePeriod();
-    const e = this.data.energy || { values: {}, today: {}, consumers: [] },
+    const e = this.data.energy?.diagram_frame?.energy || this.data.energy || { values: {}, today: {}, consumers: [] },
+      selectedWindow = e.power_windows?.[String(this.averageSeconds)],
       t = this.periodValues(),
       periodRows = new Map(
         (this.periodData?.consumers || []).map((c) => [c.id, c]),
@@ -645,7 +646,8 @@ class ConsumersCard extends PeriodCard {
         values.some((v) => v == null)
           ? null
           : values.reduce((a, b) => a + Number(b), 0),
-      homeW = e.home_power_live ?? e.values.home_power,
+      rawHomeW = e.home_power_live ?? e.values.home_power,
+      homeW = selectedWindow ? selectedWindow.home_power_w : rawHomeW,
       homeKwh = t.home_energy,
       trackedW = sum(
         items
@@ -664,22 +666,22 @@ class ConsumersCard extends PeriodCard {
           .map((c) => c.period_kwh).filter(v => v != null),
       ),
       untrackedW =
-        homeW == null || trackedW == null ? null : Number(homeW) - trackedW,
+        rawHomeW == null || trackedW == null ? null : Number(rawHomeW) - trackedW,
       untrackedKwh =
         homeKwh == null || trackedKwh == null
           ? null
           : Number(homeKwh) - trackedKwh;
-    const window = e.power_windows?.[String(this.averageSeconds)],
-      meanHome = window?.home_power_w ?? homeW,
-      meanTracked = window?.tracked_power_w ?? trackedW,
-      meanUntracked = window?.untracked_power_w ?? untrackedW;
-    for (const item of items) item.average_w = window?.consumers?.[item.id] ?? item.power_w;
+    const window = selectedWindow,
+      meanHome = window ? window.home_power_w : homeW,
+      meanTracked = window ? window.tracked_power_w : trackedW,
+      meanUntracked = window ? window.untracked_power_w : untrackedW;
+    for (const item of items) item.average_w = window ? window.consumers?.[item.id] : item.power_w;
     const untracked = {id: "__untracked__", name: "Nieśledzone zużycie",
       power_w: untrackedW, average_w: meanUntracked, period_kwh: untrackedKwh};
     byId.set(untracked.id, untracked);
     if (!children.has(null)) children.set(null, []);
     children.get(null).push(untracked);
-    const orderKey = `${this.data.revision}:${this.sortMode}:${this.sortDirection}:${this.averageSeconds}:${Math.floor(Date.now() / (Math.max(5, this.averageSeconds) * 1000))}:${items.map(c => c.id).join(",")}`;
+    const orderKey = `${this.data.revision}:${this.sortMode}:${this.sortDirection}:${this.averageSeconds}:${Math.floor(Date.now() / (Math.max(5, Math.min(15,this.averageSeconds)) * 1000))}:${items.map(c => c.id).join(",")}`;
     if (this._orderKey !== orderKey) {
       this._orderKey = orderKey;
       for (const [parent, group] of children) {
@@ -693,9 +695,9 @@ class ConsumersCard extends PeriodCard {
         }).map(c => c.id));
       }
     }
-    const values = (power, kwh, mean) =>
-      `<span class="device-values"><strong role="cell">${fmt(power)} W</strong><small role="cell" class="device-average" title="Średnia ważona czasem z ${this.averageSeconds} s">${fmt(mean)} W</small><small role="cell">${precise(kwh)} kWh</small></span>`;
-    const toolbar = `<label class="average-options">Średnia<select data-average aria-label="Okno średniej">${[1,5,10,15].map(n => `<option value="${n}" ${this.averageSeconds === n ? "selected" : ""}>${n} s</option>`).join("")}</select></label>`;
+    const values = (power, kwh, mean, covered) =>
+      `<span class="device-values"><strong role="cell">${fmt(power)} W</strong><small role="cell" class="device-average" title="Średnia ważona czasem z ${windowLabel(this.averageSeconds)}${covered != null && covered < this.averageSeconds ? ` · niepełne dane: ${fmt(covered)} / ${this.averageSeconds} s` : ""}">${fmt(mean)} W${covered != null && covered < this.averageSeconds ? " ·" : ""}</small><small role="cell">${precise(kwh)} kWh</small></span>`;
+    const toolbar = `<label class="average-options">Średnia<select data-average aria-label="Okno średniej">${powerWindows.map(n => `<option value="${n}" ${this.averageSeconds === n ? "selected" : ""}>${windowLabel(n)}</option>`).join("")}</select></label>`;
     const headers = `<div class="device-header" role="row">${[["name","Nazwa"],["power","Moc"],["average","Średnia"],["energy","Energia"]].map(([key,label]) => `<div role="columnheader" aria-sort="${this.sortMode === key ? this.sortDirection === "asc" ? "ascending" : "descending" : "none"}"><button data-sort="${key}" aria-pressed="${this.sortMode === key}">${label}${this.sortMode === key ? this.sortDirection === "asc" ? " ▴" : " ▾" : ""}</button></div>`).join("")}</div>`;
     const rows = (parent, depth = 0, visited = new Set()) =>
       (children.get(parent) || [])
@@ -706,11 +708,11 @@ class ConsumersCard extends PeriodCard {
           seen.add(c.id);
           const nested = children.get(c.id)?.length,
             open = this._expanded.has(c.id);
-          return `<div class="device ${c.id === "__untracked__" ? "untracked" : ""} ${nested ? "device-folder" : ""}" style="--depth:${depth}"><div class="device-line"><div class="device-content" role="row" data-consumer-id="${esc(c.id)}"><div class="device-name-cell" role="cell">${depth ? '<span class="tree-stem">└</span>' : ""}<button class="device-name" title="${esc(c.name)}">${esc(c.name)}</button></div>${values(c.power_w, c.period_kwh, c.average_w)}</div></div><div class="bar"><i style="width:${c.power_w != null && homeW > 0 ? Math.max(0, Math.min(100, (100 * Number(c.power_w)) / Number(homeW))) : 0}%"></i></div></div>${nested ? rows(c.id, depth + 1, seen) : ""}`;
+          return `<div class="device ${c.id === "__untracked__" ? "untracked" : ""} ${nested ? "device-folder" : ""}" style="--depth:${depth}"><div class="device-line"><div class="device-content" role="row" data-consumer-id="${esc(c.id)}"><div class="device-name-cell" role="cell">${depth ? '<span class="tree-stem">└</span>' : ""}<button class="device-name" title="${esc(c.name)}">${esc(c.name)}</button></div>${values(c.power_w, c.period_kwh, c.average_w, c.id === "__untracked__" ? window?.untracked_covered_seconds : window?.consumer_coverage_seconds?.[c.id])}</div></div><div class="bar"><i style="width:${c.power_w != null && homeW > 0 ? Math.max(0, Math.min(100, (100 * Number(c.power_w)) / Number(homeW))) : 0}%"></i></div></div>${nested ? rows(c.id, depth + 1, seen) : ""}`;
         })
         .join("");
     this.frame(
-      `<style>${periodCSS}.average-options{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:12px;color:var(--secondary-text-color);margin:8px 0}.average-options select{width:auto;min-width:70px;padding:5px 8px;border-radius:8px}.consumer-total{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.consumer-total>div{background:var(--secondary-background-color,#f3f6f7);padding:13px;border-radius:13px}.consumer-total small{display:block;font-size:11px;color:var(--secondary-text-color)}.consumer-total strong{display:block;font-size:clamp(19px,5cqw,27px);margin-top:4px}.consumer-summary{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--secondary-text-color);padding:5px 0 12px}.device-header,.device-content{display:grid;grid-template-columns:minmax(0,1.35fr) repeat(3,minmax(0,1fr));align-items:center;gap:5px;width:100%;min-width:0}.device-header{padding:9px 0;background:var(--secondary-background-color,#f3f6f7);border-radius:8px;font-size:11px}.device-header>div{text-align:right;min-width:0}.device-header>div:first-child{text-align:left}.device-header button{font-size:11px;padding:3px;color:var(--secondary-text-color);white-space:nowrap}.device-header [aria-sort=ascending] button,.device-header [aria-sort=descending] button{color:var(--primary-color);font-weight:700}.device{padding:11px 0 9px;border-top:1px solid var(--divider-color,#e7edef)}.device-name-cell{display:flex;align-items:center;min-width:0;padding-left:calc(var(--depth,0)*10px)}.folder-button,.tree-stem{flex:0 0 15px;padding:0;text-align:center;color:var(--pge-teal);font-size:13px}.device-name{font-size:12px;min-width:0;padding:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.untracked .device-name{white-space:normal;line-height:1.2}.device-values{display:contents}.device-values>*{text-align:right;white-space:nowrap;font-size:11px}.device-values strong{font-size:12px}.device-average{color:var(--pge-teal)}.device-values small:last-child{color:var(--secondary-text-color)}.bar{height:3px;margin-top:7px;background:var(--secondary-background-color,#edf2f3);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pge-teal)}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Odbiorcy w domu")}</h2><span class="chip">Moc na żywo</span></div>${this.periodHTML()}<div class="consumer-total"><div><small>Cały dom · teraz</small><strong>${fmt(homeW)} W</strong><small>⌀ ${fmt(meanHome)} W · ${this.averageSeconds} s</small></div><div><small>Cały dom · okres</small><strong>${precise(homeKwh)} kWh</strong></div></div><div class="consumer-summary"><span>Śledzone</span><span>${fmt(trackedW)} W · ⌀ ${fmt(meanTracked)} W · ${precise(trackedKwh)} kWh</span></div>${toolbar}<div class="devices" role="table" aria-label="Odbiorcy w domu">${headers}${rows(null) || '<div class="empty">Dodaj odbiorców w panelu Energia.</div>'}</div>${(untrackedW != null && untrackedW < -0.05) || (untrackedKwh != null && untrackedKwh < -0.05) ? '<div class="warn">Suma śledzonych przekracza bilans domu. Sprawdź powiązania i punkty pomiarowe.</div>' : ""}${this._periodError ? `<div class="warn">${esc(this._periodError)}</div>` : ""}</ha-card>`,
+      `<style>${periodCSS}.average-options{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:12px;color:var(--secondary-text-color);margin:8px 0}.average-options select{width:auto;min-width:70px;padding:5px 8px;border-radius:8px}.consumer-total{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.consumer-total>div{background:var(--secondary-background-color,#f3f6f7);padding:13px;border-radius:13px}.consumer-total small{display:block;font-size:11px;color:var(--secondary-text-color)}.consumer-total strong{display:block;font-size:clamp(19px,5cqw,27px);margin-top:4px}.consumer-summary{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--secondary-text-color);padding:5px 0 12px}.device-header,.device-content{display:grid;grid-template-columns:minmax(0,1.35fr) repeat(3,minmax(0,1fr));align-items:center;gap:5px;width:100%;min-width:0}.device-header{padding:9px 0;background:var(--secondary-background-color,#f3f6f7);border-radius:8px;font-size:11px}.device-header>div{text-align:right;min-width:0}.device-header>div:first-child{text-align:left}.device-header button{font-size:11px;padding:3px;color:var(--secondary-text-color);white-space:nowrap}.device-header [aria-sort=ascending] button,.device-header [aria-sort=descending] button{color:var(--primary-color);font-weight:700}.device{padding:11px 0 9px;border-top:1px solid var(--divider-color,#e7edef)}.device-name-cell{display:flex;align-items:center;min-width:0;padding-left:calc(var(--depth,0)*10px)}.folder-button,.tree-stem{flex:0 0 15px;padding:0;text-align:center;color:var(--pge-teal);font-size:13px}.device-name{font-size:12px;min-width:0;padding:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.untracked .device-name{white-space:normal;line-height:1.2}.device-values{display:contents}.device-values>*{text-align:right;white-space:nowrap;font-size:11px}.device-values strong{font-size:12px}.device-average{color:var(--pge-teal)}.device-values small:last-child{color:var(--secondary-text-color)}.bar{height:3px;margin-top:7px;background:var(--secondary-background-color,#edf2f3);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pge-teal)}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Odbiorcy w domu")}</h2><span class="chip">Wspólne pomiary</span></div>${this.periodHTML()}<div class="consumer-total"><div><small>Cały dom · średnia</small><strong>${fmt(homeW)} W</strong><small>⌀ ${windowLabel(this.averageSeconds)} · wspólne dane z diagramem</small></div><div><small>Cały dom · okres</small><strong>${precise(homeKwh)} kWh</strong></div></div><div class="consumer-summary"><span>Śledzone</span><span>${fmt(trackedW)} W · ⌀ ${fmt(meanTracked)} W · ${precise(trackedKwh)} kWh</span></div>${toolbar}${window && window.covered_seconds < this.averageSeconds ? `<div class="mean-coverage sub">Niepełne okno: ${fmt(window.covered_seconds)} / ${this.averageSeconds} s danych</div>` : ""}<div class="devices" role="table" aria-label="Odbiorcy w domu">${headers}${rows(null) || '<div class="empty">Dodaj odbiorców w panelu Energia.</div>'}</div>${(untrackedW != null && untrackedW < -0.05) || (untrackedKwh != null && untrackedKwh < -0.05) ? '<div class="warn">Suma śledzonych przekracza bilans domu. Sprawdź powiązania i punkty pomiarowe.</div>' : ""}${this._periodError ? `<div class="warn">${esc(this._periodError)}</div>` : ""}</ha-card>`,
     );
     this.bindPeriod();
     for (const button of this.shadowRoot.querySelectorAll("[data-sort]"))
@@ -955,7 +957,7 @@ class SettingsCard extends PGEBase {
       return;
     this._settingsIdentity = identity;
     this.frame(
-      `<style>dialog{color:var(--primary-text-color);background:var(--card-background-color,#fff);border:0;border-radius:20px;width:min(940px,96vw);max-height:90dvh;padding:0;box-shadow:0 20px 80px #0004}dialog::backdrop{background:#14283280;backdrop-filter:blur(3px)}.dialog-head{position:sticky;top:0;background:var(--card-background-color,#fff);z-index:2;padding:16px 20px;border-bottom:1px solid var(--divider-color,#dbe5e9);display:flex;justify-content:space-between;align-items:center}.tabs{display:flex;gap:6px;padding:12px 16px}.tabs .active{color:var(--primary-color,#3287bd);background:var(--secondary-background-color,#edf5f6)}.source-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.source-grid label{display:flex;flex-direction:column;gap:6px;font-size:12px}.source-section{margin:0 0 26px;padding-bottom:22px;border-bottom:1px solid var(--divider-color,#e7edef)}.source-field{min-width:0;display:grid;gap:6px;align-content:start}.source-field>label,.mode-label{font-size:12px;display:grid;gap:7px}.source-field select{width:100%;font-size:12px}.selected-source{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--secondary-background-color,#f4f7f8);padding:9px;border-radius:9px;min-width:0}.selected-source span{min-width:0}.selected-source b{display:block;font-size:12px;overflow-wrap:anywhere}.selected-source small{display:block;font-size:10px;color:var(--secondary-text-color);overflow-wrap:anywhere}.source-missing{box-shadow:inset 3px 0 #bd6639}.source-missing small{color:#bd6639}.pv-report-row{margin-top:10px;padding-top:10px;border-top:1px solid var(--divider-color,#dbe3e7);overflow-wrap:anywhere}.pv-report-row div{margin-top:4px}.pv-report-row small,.source-origin{font-size:10px;color:var(--secondary-text-color)}.source-count{display:inline;font-size:11px;color:var(--secondary-text-color)}.section-note{margin:8px 0 14px}.source-notice{padding:10px 12px;border-radius:10px;background:var(--secondary-background-color,#f4f7f8);font-size:12px;line-height:1.5;margin-bottom:14px}.import-box{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.dashboard-box{border-top:1px solid var(--divider-color,#e7edef);padding-top:12px;margin-top:12px}.dashboard-box a{color:var(--primary-color);font-weight:600}.source-section h3{margin-bottom:12px}.consumer-config{display:grid;grid-template-columns:1fr 1.1fr 1.1fr 1fr auto;gap:8px;margin:10px 0}.consumer-config input,.consumer-config select{width:100%;font-size:12px}.footer{display:flex;align-items:center;justify-content:space-between;margin-top:20px}#source-status{font-size:12px;margin-top:10px}@media(max-width:600px){.consumer-config{grid-template-columns:1fr 1fr}.source-grid{grid-template-columns:1fr}dialog{width:96vw;max-height:94dvh}}</style><ha-card><div class="head" style="margin-bottom:8px"><h2>${esc(this.config.title || "Rozliczenia i ustawienia")}</h2><ha-icon icon="mdi:tune-variant"></ha-icon></div><div class="row">${admin ? '<button id="open-sources" class="primary">Źródła energii</button><button id="open-invoices">Faktury</button><button id="open-plan">Plan i partie</button>' : '<span class="sub">Ustawienia są dostępne dla administratora.</span>'}</div>${admin ? '<div class="dashboard-box"><button id="create-dashboard">▦ Utwórz dashboard z osobnych kart</button><button id="repair-dashboard">Uporządkuj obecny dashboard</button><div id="dashboard-status" class="sub" role="status"></div></div>' : ""}</ha-card><dialog><div class="dialog-head"><h2>Magazyn PGE</h2><button id="close-dialog" aria-label="Zamknij">✕</button></div><div class="tabs"><button data-tab="sources">Źródła energii</button><button data-tab="invoices">Faktury</button><button data-tab="plan">Plan i partie</button></div><div id="settings-panel"></div><div class="sub" style="padding:12px 20px;text-align:right">Integracja ${esc(this.data.version || "—")} · Karta ${VERSION}</div></dialog>`,
+      `<style>dialog{color:var(--primary-text-color);background:var(--card-background-color,#fff);border:0;border-radius:20px;width:min(940px,96vw);max-height:90dvh;padding:0;box-shadow:0 20px 80px #0004}dialog::backdrop{background:#14283280;backdrop-filter:blur(3px)}.dialog-head{position:sticky;top:0;background:var(--card-background-color,#fff);z-index:2;padding:16px 20px;border-bottom:1px solid var(--divider-color,#dbe5e9);display:flex;justify-content:space-between;align-items:center}.tabs{display:flex;gap:6px;padding:12px 16px}.tabs .active{color:var(--primary-color,#3287bd);background:var(--secondary-background-color,#edf5f6)}.source-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.source-grid label{display:flex;flex-direction:column;gap:6px;font-size:12px}.source-section{margin:0 0 26px;padding-bottom:22px;border-bottom:1px solid var(--divider-color,#e7edef)}.source-field{min-width:0;display:grid;gap:6px;align-content:start}.source-field>label,.mode-label{font-size:12px;display:grid;gap:7px}.source-field select{width:100%;font-size:12px}.selected-source{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--secondary-background-color,#f4f7f8);padding:9px;border-radius:9px;min-width:0}.selected-source span{min-width:0}.selected-source b{display:block;font-size:12px;overflow-wrap:anywhere}.selected-source small{display:block;font-size:10px;color:var(--secondary-text-color);overflow-wrap:anywhere}.source-missing{box-shadow:inset 3px 0 #bd6639}.source-missing small{color:#bd6639}.pv-report-row{margin-top:10px;padding-top:10px;border-top:1px solid var(--divider-color,#dbe3e7);overflow-wrap:anywhere}.pv-report-row div{margin-top:4px}.pv-report-row small,.source-origin{font-size:10px;color:var(--secondary-text-color)}.source-count{display:inline;font-size:11px;color:var(--secondary-text-color)}.section-note{margin:8px 0 14px}.source-notice{padding:10px 12px;border-radius:10px;background:var(--secondary-background-color,#f4f7f8);font-size:12px;line-height:1.5;margin-bottom:14px}.import-box{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.dashboard-box{border-top:1px solid var(--divider-color,#e7edef);padding-top:12px;margin-top:12px}.dashboard-box a{color:var(--primary-color);font-weight:600}.source-section h3{margin-bottom:12px}.help-hint{display:inline-block;margin:5px 0}.help-hint>summary{list-style:none;cursor:pointer;color:var(--primary-color);padding:3px;font-size:17px}.help-hint[open]{display:block;padding:8px;border:1px solid var(--divider-color);border-radius:8px}.advanced-battery{grid-column:1/-1}.advanced-battery>summary{font-weight:600}.advanced-battery .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.consumer-config{display:grid;grid-template-columns:1fr 1.1fr 1.1fr 1fr auto;gap:8px;margin:10px 0}.consumer-config input,.consumer-config select{width:100%;font-size:12px}.footer{display:flex;align-items:center;justify-content:space-between;margin-top:20px}#source-status{font-size:12px;margin-top:10px}@media(max-width:600px){.consumer-config{grid-template-columns:1fr 1fr}.source-grid{grid-template-columns:1fr}dialog{width:96vw;max-height:94dvh}}</style><ha-card><div class="head" style="margin-bottom:8px"><h2>${esc(this.config.title || "Rozliczenia i ustawienia")}</h2><ha-icon icon="mdi:tune-variant"></ha-icon></div><div class="row">${admin ? '<button id="open-sources" class="primary">Źródła energii</button><button id="open-invoices">Faktury</button><button id="open-plan">Plan i partie</button>' : '<span class="sub">Ustawienia są dostępne dla administratora.</span>'}</div>${admin ? '<div class="dashboard-box"><button id="create-dashboard">▦ Utwórz dashboard z osobnych kart</button><button id="repair-dashboard">Uporządkuj obecny dashboard</button><div id="dashboard-status" class="sub" role="status"></div></div>' : ""}</ha-card><dialog><div class="dialog-head"><h2>Magazyn PGE</h2><button id="close-dialog" aria-label="Zamknij">✕</button></div><div class="tabs"><button data-tab="sources">Źródła energii</button><button data-tab="invoices">Faktury</button><button data-tab="plan">Plan i partie</button></div><div id="settings-panel"></div><div class="sub" style="padding:12px 20px;text-align:right">Integracja ${esc(this.data.version || "—")} · Karta ${VERSION}</div></dialog>`,
     );
     if (admin)
       for (const tab of ["sources", "invoices", "plan"])
@@ -993,6 +995,7 @@ class SettingsCard extends PGEBase {
   open(tab = "sources") {
     if (!this._hass.user?.is_admin) return;
     this._energyRevision = this.data.revision;
+    this._sourceDirty=false;
     this._gridMode = null;
     this._batteryMode = null;
     this._capacityMode = null;
@@ -1011,8 +1014,9 @@ class SettingsCard extends PGEBase {
     for (const b of this.shadowRoot.querySelectorAll("[data-tab]"))
       b.classList.toggle("active", b.dataset.tab === tab);
     const panel = this.shadowRoot.getElementById("settings-panel");
-    if (panel.querySelector("[data-source]"))
+    if (panel.querySelector("[data-source]")) {
       this._sourceDraft = this.readSources();
+    }
     if (tab === "sources") {
       this.sourcesHTML();
       return;
@@ -1101,10 +1105,17 @@ class SettingsCard extends PGEBase {
       statistics,
       directions,
       battery_capacity_kwh:
-        root.querySelector("[data-capacity]")?.value || null,
+        (root.querySelector('[data-capacity-entity="battery_capacity_entity"]')?.value || root.querySelector('[data-capacity-entity="battery_installed_capacity_entity"]')?.value || (!root.querySelector("[data-capacity]") && !root.querySelector("[data-capacity-ah]")))
+          ? draft.battery_capacity_kwh || null
+          : root.querySelector("[data-capacity]")?.value || null,
       battery_capacity_ah:
-        root.querySelector("[data-capacity-ah]")?.value || null,
+        (root.querySelector('[data-capacity-entity="battery_capacity_entity"]')?.value || root.querySelector('[data-capacity-entity="battery_installed_capacity_entity"]')?.value || (!root.querySelector("[data-capacity]") && !root.querySelector("[data-capacity-ah]")))
+          ? draft.battery_capacity_ah || null
+          : root.querySelector("[data-capacity-ah]")?.value || null,
       battery_voltage: root.querySelector("[data-voltage]")?.value || null,
+      battery_capacity_entity: root.querySelector('[data-capacity-entity="battery_capacity_entity"]')?.value || null,
+      battery_installed_capacity_entity: root.querySelector('[data-capacity-entity="battery_installed_capacity_entity"]')?.value || null,
+      pv_names: Object.fromEntries([...root.querySelectorAll("[data-pv-name]")].map(n=>[n.dataset.pvName,n.value.trim()]).filter(([,name])=>name)),
       flow_clock_source: list(sources.pv_power).includes(root.querySelector("[data-flow-clock]")?.value) ? root.querySelector("[data-flow-clock]").value : null,
       flow_mode: root.querySelector("[data-flow-mode]")?.value || "aligned",
       show_hour: root.querySelector("[data-show-hour]")?.checked ?? true,
@@ -1138,7 +1149,12 @@ class SettingsCard extends PGEBase {
     const status = this.shadowRoot.getElementById("source-status");
     try {
       const result = await this.call("energy_defaults");
-      this._sourceDraft = result.config;
+      const pending=this.readSources();
+      const consumers=[...(pending.consumers||[])];
+      const ident=row=>row.id||row.statistic||row.energy||row.power;
+      for(const row of result.config.consumers||[]) if(!consumers.some(old=>ident(old)===ident(row)||(old.energy && old.energy===row.energy)||(old.statistic && old.statistic===row.statistic))) consumers.push(row);
+      this._sourceDraft = {...result.config,...pending,sources:{...result.config.sources,...pending.sources},statistics:{...result.config.statistics,...pending.statistics},consumers};
+      this._sourceDirty=true;
       this._importReport = result.report || [];
       this._importWarnings = result.warnings || [];
       this._energyRevision = this.data.revision;
@@ -1170,7 +1186,7 @@ class SettingsCard extends PGEBase {
     };
     const pvReport = report.filter((item) => item.type === "solar");
     const pvReportHTML = pvReport.length
-      ? `<div id="pv-import-report" class="source-notice"><b>Instalacje PV w Energii: ${pvReport.length}</b><div class="sub">Liczniki kWh i pomiary W są osobnymi polami. Nie dobieramy sensorów mocy po nazwie licznika.</div>${pvReport.map((item) => `<div class="pv-report-row"><b>${esc(item.name)}</b><div>kWh: ${item.energy.map((detail) => `<span title="${esc(detail.origin?.path)}">${esc(detail.name)} <small>(${esc(detail.id)})</small></span>`).join(" + ") || "brak"}</div><div>W: ${item.power.map((detail) => `<span title="${esc(detail.origin?.path)}">${esc(detail.name)} <small>(${esc(detail.id)})</small></span>`).join(" + ") || "Brak pomiaru w Energii → 0 W"}</div></div>`).join("")}</div>`
+      ? `<div id="pv-import-report" class="source-notice"><b>Instalacje PV w Energii: ${pvReport.length}</b><div class="sub">Liczniki kWh i pomiary W są osobnymi polami. Nie dobieramy sensorów mocy po nazwie licznika.</div>${pvReport.map((item) => `<div class="pv-report-row"><b>${esc(item.name)}</b><div>kWh: ${item.energy.map((detail) => `<span title="${esc(detail.origin?.path)}">${esc(detail.name)} <small>(${esc(detail.id)})</small></span>`).join(" + ") || "brak"}</div><div>W: ${item.power.map((detail) => `<span title="${esc(detail.origin?.path)}">${esc(detail.name)} <small>(${esc(detail.id)})</small></span>`).join(" + ") || "Brak powiązania W w Energii — wybór poniżej"}</div></div>`).join("")}</div>`
       : "";
     const field = (key) => {
       const [title, unit] = sourceRoles[key],
@@ -1248,16 +1264,18 @@ class SettingsCard extends PGEBase {
       (config.battery_capacity_ah && !config.battery_capacity_kwh
         ? "ah"
         : "kwh");
-    const orderedPV = [...list(config.sources.pv_power)].reverse().sort((a,b) => {const rank = id => (config.pv_order || []).indexOf(id)<0 ? 999 : config.pv_order.indexOf(id);return rank(a)-rank(b);});
-    const clockField = `<div class="form-grid"><label>Odświeżanie diagramu<select data-flow-mode><option value="aligned" ${config.flow_mode !== "latest" ? "selected" : ""}>Wyrównane · co 3 s, opóźnienie 12 s</option><option value="latest" ${config.flow_mode === "latest" ? "selected" : ""}>Najnowsze odczyty · co 3 s</option></select></label><label><input type="checkbox" data-show-hour ${config.show_hour !== false ? "checked" : ""}> Pokaż bieżącą godzinę między Siecią a Domem</label></div><div class="sub">Wyrównanie interpoluje raporty PV. Nie zmienia liczników kWh. Pierwsze 27 s służy zebraniu danych.</div><div><b>Kolejność instalacji po lewej</b>${orderedPV.map(id=>`<div data-pv-order="${esc(id)}"><span>${esc(sourceName(id))}</span><button data-pv-up="${esc(id)}" aria-label="Przesuń wyżej">↑</button><button data-pv-down="${esc(id)}" aria-label="Przesuń niżej">↓</button></div>`).join("")}</div>`;
+    const aliasIds = [...new Set([...list(config.sources.pv_power),...(this.data.energy?.pv_arrays||[]).map(a=>a.power_entity||a.id).filter(Boolean)])];
+    const orderedPV = aliasIds.reverse().sort((a,b) => {const rank = id => (config.pv_order || []).indexOf(id)<0 ? 999 : config.pv_order.indexOf(id);return rank(a)-rank(b);});
+    const clockField = `<div class="form-grid"><label>Odświeżanie diagramu<select data-flow-mode><option value="aligned" ${config.flow_mode !== "latest" ? "selected" : ""}>Wyrównane · co 3 s, opóźnienie 12 s</option><option value="latest" ${config.flow_mode === "latest" ? "selected" : ""}>Najnowsze odczyty · co 3 s</option></select></label><label><input type="checkbox" data-show-hour ${config.show_hour !== false ? "checked" : ""}> Pokaż bieżącą godzinę między Siecią a Domem</label></div><div class="sub">Wyrównanie interpoluje raporty PV. Nie zmienia liczników kWh. Pierwsze 27 s służy zebraniu danych.</div><div><b>Kolejność instalacji po lewej</b>${orderedPV.map(id=>`<div data-pv-order="${esc(id)}"><input data-pv-name="${esc(id)}" aria-label="Nazwa instalacji PV" placeholder="${esc(sourceName(id))}" value="${esc(config.pv_names?.[id] || "")}"><button data-pv-up="${esc(id)}" aria-label="Przesuń wyżej">↑</button><button data-pv-down="${esc(id)}" aria-label="Przesuń niżej">↓</button></div>`).join("")}</div>`;
     const batteryOpt = config.battery_forecast || {};
     const batterySelect = (key,label,units) => `<label>${label}<select data-battery-option="${key}"><option value="">Nie podłączono</option>${Object.entries(this._hass.states).filter(([id,state])=>/^(sensor|number)\./.test(id) && units.includes(state.attributes?.unit_of_measurement) && !Object.values(this.data.entities||{}).includes(id)).map(([id,state])=>`<option value="${esc(id)}" ${batteryOpt[key]===id ? "selected" : ""}>${esc(state.attributes.friendly_name||id)} (${esc(id)})</option>`).join("")}</select></label>`;
-    const batteryTimeFields = `<h3>Czas ładowania i rozładowania</h3><label><input data-eta-enabled type="checkbox" ${batteryOpt.enabled !== false ? "checked" : ""}> Pokazuj estymację czasu</label><div class="form-grid"><label>Średnia mocy<select data-eta-average>${[1,5,15].map(n=>`<option value="${n}" ${(batteryOpt.average_minutes||5)===n ? "selected" : ""}>${n} min</option>`).join("")}</select></label>${batterySelect("min_soc_entity","Aktualne minimum SOC",["%"])}${batterySelect("charge_limit_entity","Limit mocy ładowania (opcjonalnie)",["W","kW"])}${batterySelect("bms_current_entity","Dopuszczalny prąd ładowania BMS (opcjonalnie)",["A"])}${batterySelect("voltage_entity","Napięcie baterii dla limitu BMS",["V"])}</div><label><input data-eta-learn type="checkbox" ${batteryOpt.learn ? "checked" : ""}> Ucz profil ograniczenia ładowania</label><div class="sub">Uczenie wymaga prądu dopuszczanego przez BMS i napięcia. Brak pełnego profilu nie blokuje estymacji z obecnej mocy. Moc poniżej 25 W nie daje czasu.</div><h3>Opcjonalny scenariusz PV</h3><div class="form-grid">${batterySelect("pv_forecast_entity","Prognozowana produkcja w horyzoncie (energia)",["kWh","Wh"])}${batterySelect("home_forecast_entity","Prognozowane zużycie domu w tym samym horyzoncie",["kWh","Wh"])}<label>Wspólny horyzont · godziny<input data-forecast-hours type="number" min="1" max="24" value="${esc(batteryOpt.forecast_hours||6)}"></label></div><div class="sub">Wybierz dwie zgodne prognozy energii pozostałej w tym samym horyzoncie. Nie sumujemy automatycznie prognoz kilku instalacji ani nie zgadujemy formatu atrybutów.</div>`;
-    const capacityFields = `<label class="mode-label">Jednostka pojemności<select data-capacity-mode><option value="kwh" ${capacityMode === "kwh" ? "selected" : ""}>kWh</option><option value="ah" ${capacityMode === "ah" ? "selected" : ""}>Ah + napięcie nominalne</option></select></label>${capacityMode === "kwh" ? `<label class="mode-label">Pojemność odpowiadająca 0–100% SOC · kWh<input data-capacity type="number" min="0" step="any" placeholder="opcjonalnie" value="${esc(config.battery_capacity_kwh)}"></label>` : `<label class="mode-label">Łączna pojemność zestawu · Ah<input data-capacity-ah type="number" min="0" step="any" placeholder="np. 99" value="${esc(config.battery_capacity_ah)}"></label><label class="mode-label">Napięcie nominalne zestawu · V<input data-voltage type="number" min="0" step="any" placeholder="z dokumentacji baterii" value="${esc(config.battery_voltage)}"></label>`}`;
-    const warnings =
-      this._importWarnings || this.data.energy?.import_warnings || [];
+    const batteryTimeFields = `<h3>Czas ładowania i rozładowania</h3><label><input data-eta-enabled type="checkbox" ${batteryOpt.enabled !== false ? "checked" : ""}> Pokazuj estymację czasu</label><div class="form-grid"><label>Średnia mocy<select data-eta-average>${[1,5,15].map(n=>`<option value="${n}" ${(batteryOpt.average_minutes||5)===n ? "selected" : ""}>${n} min</option>`).join("")}</select></label>${batterySelect("min_soc_entity","Aktualne minimum SOC",["%"])}${batterySelect("charge_limit_entity","Limit mocy ładowania (opcjonalnie)",["W","kW"])}${batterySelect("bms_current_entity","Dopuszczalny prąd ładowania BMS (opcjonalnie)",["A"])}${batterySelect("voltage_entity","Aktualne napięcie · DC bus voltage",["V"])}${batterySelect("discharge_current_entity","Dopuszczalny prąd rozładowania BMS (informacja)",["A"])}</div><label><input data-eta-learn type="checkbox" ${batteryOpt.learn ? "checked" : ""}> Używaj profilu ładowania z historii HA</label><div class="sub">Profil odtwarzamy z ostatnich 7 dni historii SOC, Power, limitu prądu BMS i napięcia. Cache zachowuje wcześniejsze obserwacje. Brak pełnego profilu pozostawia zwykłą estymację. Moc do 25 W nie daje czasu.</div><button type="button" id="rebuild-profile">Przelicz profil z historii HA</button><div id="profile-history-status" class="sub"></div><h3>Opcjonalny scenariusz PV</h3><div class="form-grid">${batterySelect("pv_forecast_entity","Prognozowana produkcja w horyzoncie (energia)",["kWh","Wh"])}${batterySelect("home_forecast_entity","Prognozowane zużycie domu w tym samym horyzoncie",["kWh","Wh"])}<label>Wspólny horyzont · godziny<input data-forecast-hours type="number" min="1" max="24" value="${esc(batteryOpt.forecast_hours||6)}"></label></div><div class="sub">Wybierz dwie zgodne prognozy energii pozostałej w tym samym horyzoncie. Nie sumujemy automatycznie prognoz kilku instalacji ani nie zgadujemy formatu atrybutów.</div>`;
+    const capacityEntitySelect = (key,label) => `<label>${label}<select data-capacity-entity="${key}"><option value="">Wpisana ręcznie</option>${Object.entries(this._hass.states).filter(([id,state])=>id.startsWith("sensor.") && ["Ah","kWh","Wh"].includes(state.attributes?.unit_of_measurement) && !Object.values(this.data.entities||{}).includes(id)).map(([id,state])=>`<option value="${esc(id)}" ${config[key]===id ? "selected" : ""}>${esc(state.attributes.friendly_name||id)} (${esc(id)})</option>`).join("")}</select></label>`;
+    const capacityBindings = `${capacityEntitySelect("battery_capacity_entity","Pełna pojemność BMS · Capacity")}${capacityEntitySelect("battery_installed_capacity_entity","Pojemność znamionowa · Installed capacity (zastępcza)")}<label>Napięcie nominalne dla encji Ah · V<input data-voltage type="number" min="0" step="any" placeholder="51,2 dla Twojego SIMPO" value="${esc(config.battery_voltage || (config.battery_capacity_entity || config.battery_installed_capacity_entity ? "51.2" : ""))}"></label>`;
+    const capacityFields = `<label class="mode-label">Jednostka pojemności<select data-capacity-mode><option value="kwh" ${capacityMode === "kwh" ? "selected" : ""}>kWh</option><option value="ah" ${capacityMode === "ah" ? "selected" : ""}>Ah + napięcie nominalne</option></select></label>${capacityMode === "kwh" ? `<label class="mode-label">Pojemność odpowiadająca 0–100% SOC · kWh<input data-capacity type="number" min="0" step="any" placeholder="opcjonalnie" value="${esc(config.battery_capacity_kwh)}"></label>` : `<label class="mode-label">Łączna pojemność zestawu · Ah<input data-capacity-ah type="number" min="0" step="any" placeholder="np. 99" value="${esc(config.battery_capacity_ah)}"></label>`}`;
+    const warnings = (this._importWarnings || this.data.energy?.import_warnings || []).filter(w=>!w.includes("panel Energia nie ma pomiaru bieżącej mocy"));
     this.shadowRoot.getElementById("settings-panel").innerHTML =
-      `<div style="padding:8px 20px 24px"><div class="source-section import-box"><button id="import-energy-panel" class="primary">Wczytaj z panelu Energia</button><span class="sub">Kopiujemy źródła. Każde można zmienić poniżej.</span></div>${warnings.length ? `<div class="source-notice">${warnings.map((w) => `<div>${esc(w)}</div>`).join("")}</div>` : ""}<div class="source-section"><h3>Panele słoneczne</h3>${pvReportHTML}${clockField}<div class="sub section-note">Brak odczytu mocy danego źródła oznacza 0 W. Pozostałe źródła są nadal sumowane. Każda instalacja jest widoczna osobno. Wybierz licznik łączny albo jego składowe — nie oba naraz.</div><div class="source-grid">${["pv_energy", "pv_power"].map(field).join("")}</div></div><div class="source-section"><h3>Dom</h3><div class="source-notice">Liczymy automatycznie: PV + sieć + rozładowanie − eksport − ładowanie. Własna encja jest opcjonalna. Brakująca moc wnosi 0 W.</div><div class="source-grid">${["home_power", "home_energy"].map(field).join("")}</div></div><div class="source-section"><h3>Sieć · energia i moc</h3><div class="sub section-note">kWh = ile przepłynęło. W/kW = ile płynie teraz. Dla Victrona wybierz liczniki „energymeter_consumption” i „energymeter_feed_in”; moc z punktu przyłączenia do sieci, łącznie dla faz. Liczniki faktur PGE pozostają wybraną wcześniej parą.</div><div class="source-grid">${["grid_import_energy", "grid_export_energy"].map(field).join("")}</div><div class="source-grid" style="margin-top:16px">${mode("grid", gridMode)}${gridMode === "signed" ? direction("grid") : ""}</div><div class="source-grid" style="margin-top:12px">${(gridMode === "signed" ? ["grid_power"] : ["grid_import_power", "grid_export_power"]).map(field).join("")}</div><div class="sub section-note">${gridMode === "signed" ? "Z jednego pomiaru wyliczamy pobór = max(moc, 0), oddawanie = max(−moc, 0), po uwzględnieniu wybranego znaku. Osobnych sensorów kierunków nie potrzebujesz." : "Oba kierunki mierzone oddzielnie, wartości nieujemne. Nie wybieraj dodatkowo sensora +/−."}</div></div><div class="source-section"><h3>Lokalny akumulator</h3><div class="sub section-note">To fizyczna bateria w domu. Importujemy to, co zapisano w Energii. Brakująca moc jest liczona jako 0 W. Zapas baterii w kWh jest opcjonalny i nie jest potrzebny do obliczania mocy domu.</div><div class="source-grid">${["battery_soc", "battery_stored"].map(field).join("")}${capacityFields}${batteryTimeFields}</div><div id="battery-estimate" class="source-notice" role="status"></div><div class="sub section-note">Własna encja zapasu kWh jest opcjonalna — chodzi o sensor pokazujący aktualnie zgromadzoną energię, a nie licznik ładowania. Zostaw ją pustą i wybierz SOC. Pojemność wpisz w kWh albo wybierz Ah + napięcie nominalne. Samo 99 Ah nie wystarczy: kWh = Ah × V / 1000. Do procentów wystarczy sam SOC.</div><div class="source-grid">${mode("battery", batteryMode)}${batteryMode === "signed" ? direction("battery") : ""}</div><div class="source-grid" style="margin-top:12px">${(batteryMode === "signed" ? ["battery_power"] : ["battery_charge_power", "battery_discharge_power"]).map(field).join("")}</div><div class="sub section-note">Moc: chwilowe ładowanie lub rozładowanie w W/kW. Znak ustaw zgodnie z odczytem Victrona — sprawdź podczas ładowania.</div><div class="source-grid">${["battery_charge_energy", "battery_discharge_energy"].map(field).join("")}</div><div class="sub section-note">Liczniki kWh: łączna energia wtłoczona do baterii i z niej pobrana. W Energii służą do bilansu dnia; nie stosujemy tu opustu PGE.</div></div><div class="source-section"><h3>Odbiorcy w domu</h3><div class="sub">Pokazywani na osobnej karcie „Odbiorcy w domu”. Nie dodajemy ich ponownie do bilansu domu.</div>${config.consumers
+      `<div style="padding:8px 20px 24px"><div class="source-section import-box"><button id="import-energy-panel" class="primary">Wczytaj z panelu Energia</button><span class="sub">Kopiujemy źródła. Każde można zmienić poniżej.</span></div>${warnings.length ? `<div class="source-notice">${warnings.map((w) => `<div>${esc(w)}</div>`).join("")}</div>` : ""}<div class="source-section"><h3>Panele słoneczne</h3>${pvReportHTML}${clockField}<div class="sub section-note">Brak odczytu mocy danego źródła oznacza 0 W. Pozostałe źródła są nadal sumowane. Każda instalacja jest widoczna osobno. Wybierz licznik łączny albo jego składowe — nie oba naraz.</div><div class="source-grid">${["pv_energy", "pv_power"].map(field).join("")}</div></div><div class="source-section"><h3>Dom</h3><div class="source-notice">Liczymy automatycznie: PV + sieć + rozładowanie − eksport − ładowanie. Własna encja jest opcjonalna. Brakująca moc wnosi 0 W.</div><div class="source-grid">${["home_power", "home_energy"].map(field).join("")}</div></div><div class="source-section"><h3>Sieć · energia i moc</h3><div class="sub section-note">kWh = ile przepłynęło. W/kW = ile płynie teraz. Dla Victrona wybierz liczniki „energymeter_consumption” i „energymeter_feed_in”; moc z punktu przyłączenia do sieci, łącznie dla faz. Liczniki faktur PGE pozostają wybraną wcześniej parą.</div><div class="source-grid">${["grid_import_energy", "grid_export_energy"].map(field).join("")}</div><div class="source-grid" style="margin-top:16px">${mode("grid", gridMode)}${gridMode === "signed" ? direction("grid") : ""}</div><div class="source-grid" style="margin-top:12px">${(gridMode === "signed" ? ["grid_power"] : ["grid_import_power", "grid_export_power"]).map(field).join("")}</div><div class="sub section-note">${gridMode === "signed" ? "Z jednego pomiaru wyliczamy pobór = max(moc, 0), oddawanie = max(−moc, 0), po uwzględnieniu wybranego znaku. Osobnych sensorów kierunków nie potrzebujesz." : "Oba kierunki mierzone oddzielnie, wartości nieujemne. Nie wybieraj dodatkowo sensora +/−."}</div></div><div class="source-section"><h3>Lokalny akumulator</h3><div class="sub section-note">To fizyczna bateria w domu. Importujemy to, co zapisano w Energii. Brakująca moc jest liczona jako 0 W. Zapas baterii w kWh jest opcjonalny i nie jest potrzebny do obliczania mocy domu.</div><div class="source-grid">${["battery_soc", "battery_stored"].map(field).join("")}${config.battery_capacity_entity || config.battery_installed_capacity_entity ? capacityBindings : `${capacityBindings}${capacityFields}`}<details class="advanced-battery"><summary>Estymacja czasu i ustawienia zaawansowane</summary>${batteryTimeFields}</details></div><div id="battery-estimate" class="source-notice" role="status"></div><div class="sub section-note">Własna encja zapasu kWh jest opcjonalna — chodzi o sensor pokazujący aktualnie zgromadzoną energię, a nie licznik ładowania. Zostaw ją pustą i wybierz SOC. Pojemność wpisz w kWh albo wybierz Ah + napięcie nominalne. Samo 99 Ah nie wystarczy: kWh = Ah × V / 1000. Do procentów wystarczy sam SOC.</div><div class="source-grid">${mode("battery", batteryMode)}${batteryMode === "signed" ? direction("battery") : ""}</div><div class="source-grid" style="margin-top:12px">${(batteryMode === "signed" ? ["battery_power"] : ["battery_charge_power", "battery_discharge_power"]).map(field).join("")}</div><div class="sub section-note">Moc: chwilowe ładowanie lub rozładowanie w W/kW. Znak ustaw zgodnie z odczytem Victrona — sprawdź podczas ładowania.</div><div class="source-grid">${["battery_charge_energy", "battery_discharge_energy"].map(field).join("")}</div><div class="sub section-note">Liczniki kWh: łączna energia wtłoczona do baterii i z niej pobrana. W Energii służą do bilansu dnia; nie stosujemy tu opustu PGE.</div></div><div class="source-section"><h3>Odbiorcy w domu</h3><div class="sub">Pokazywani na osobnej karcie „Odbiorcy w domu”. Nie dodajemy ich ponownie do bilansu domu.</div>${config.consumers
         .map(
           (c, i) =>
             `<div class="consumer-config"><input aria-label="Nazwa odbiorcy" placeholder="np. Pompa ciepła" value="${esc(c.name)}"><select data-power aria-label="Moc odbiorcy">${this.options("W", c.power)}</select><select data-energy aria-label="Licznik odbiorcy">${this.options("kWh", c.energy).replace("Nie podłączono", c.statistic ? "Statystyki Energii" : "Nie podłączono")}</select><select data-parent aria-label="Urządzenie nadrzędne"><option value="">Bez urządzenia nadrzędnego</option>${config.consumers
@@ -1273,16 +1291,38 @@ class SettingsCard extends PGEBase {
         .join(
           "",
         )}<button id="add-consumer">＋ Dodaj odbiorcę</button></div><div class="footer"><button id="save-sources" class="primary">Zapisz źródła</button><span class="sub">Bez restartu HA</span></div><div id="source-status" role="status"></div></div>`;
+    const panel=this.shadowRoot.getElementById("settings-panel");
+    panel.insertAdjacentHTML("afterbegin",`<div id="unsaved-sources" role="status" class="source-notice" ${this._sourceDirty ? "" : "hidden"}>Niezapisane zmiany — kliknij „Zapisz źródła”.</div>`);
+    const markDirty=()=>{this._sourceDirty=true;const node=this.shadowRoot.getElementById("unsaved-sources");if(node) node.hidden=false;};
+    panel.oninput=markDirty;
+    panel.onchange=markDirty;
+    for (const node of panel.querySelectorAll(".section-note,.source-section>.sub,.source-grid .sub,.source-section>.source-notice:not(#pv-import-report):not(#battery-estimate),#pv-import-report>.sub")) {
+      if (node.textContent.trim().length<100 || node.querySelector("input,select,button")) continue;
+      const help=window.document.createElement("details");help.className="help-hint";
+      help.innerHTML=`<summary aria-label="Wyjaśnienie">ⓘ</summary><div class="sub">${node.innerHTML}</div>`;
+      node.replaceWith(help);
+    }
+    for(const input of panel.querySelectorAll("[data-capacity-entity],[data-battery-option]")) {
+      const selected=input.dataset.capacityEntity ? config[input.dataset.capacityEntity] : config.battery_forecast?.[input.dataset.batteryOption];
+      if(selected && ![...input.options].some(option=>option.value===selected)) {const option=window.document.createElement("option");option.value=selected;option.textContent=`${selected} · brak odczytu / sprawdź jednostkę`;input.appendChild(option);}
+      input.value=selected||"";
+    }
+    for (const input of panel.querySelectorAll("[data-capacity-entity]")) input.onchange=()=>{this._sourceDraft=this.readSources();this._sourceDirty=true;this.sourcesHTML();};
+    if(this.data.energy?.consumer_sync_notes?.length) panel.insertAdjacentHTML("beforeend",`<details class="help-hint"><summary>Synchronizacja odbiorców ⓘ · ${this.data.energy.consumer_sync_notes.length} uwag</summary>${this.data.energy.consumer_sync_notes.map(n=>`<div class="sub">${esc(n)}</div>`).join("")}</details>`);
+    const rebuild=panel.querySelector("#rebuild-profile");
+    if(rebuild) rebuild.onclick=async()=>{const status=panel.querySelector("#profile-history-status");rebuild.disabled=true;status.textContent="Odczytywanie historii…";try{const result=await this.call("rebuild_battery_profile");status.textContent=result.status==="complete" ? `Historia: ${result.covered_minutes} min, obserwacje limitu BMS: ${result.eligible_minutes}, braki: ${result.missing_minutes} min.` : result.status==="disabled" ? "Włącz profil i zapisz źródła przed przeliczeniem." : "Uzupełnij źródła BMS i zapisz ustawienia.";}catch(error){status.textContent=error.message;}finally{rebuild.disabled=false;}};
     this.shadowRoot.getElementById("import-energy-panel").onclick = () =>
       this.importPanel();
     this.shadowRoot.getElementById("add-consumer").onclick = () => {
-      this._sourceDraft = this.readSources();
+      this._sourceDirty = true;
+        this._sourceDraft = this.readSources();
       if (this._sourceDraft.consumers.length < 16)
         this._sourceDraft.consumers.push({ name: "", power: "", energy: "" });
       this.sourcesHTML();
     };
     for (const button of this.shadowRoot.querySelectorAll("[data-remove]"))
       button.onclick = () => {
+        this._sourceDirty = true;
         this._sourceDraft = this.readSources();
         const [removed] = this._sourceDraft.consumers.splice(
           Number(button.dataset.remove),
@@ -1298,11 +1338,13 @@ class SettingsCard extends PGEBase {
       const row=button.closest("[data-pv-order]"), previous=row.previousElementSibling, next=row.nextElementSibling;
       if (button.dataset.pvUp && previous?.hasAttribute("data-pv-order")) row.parentNode.insertBefore(row,previous);
       if (button.dataset.pvDown && next?.hasAttribute("data-pv-order")) row.parentNode.insertBefore(next,row);
+      this._sourceDirty=true;this.shadowRoot.getElementById("unsaved-sources").hidden=false;
     };
     for (const input of this.shadowRoot.querySelectorAll(
       "[data-source][data-multi]",
     ))
       input.onchange = () => {
+        this._sourceDirty = true;
         this._sourceDraft = this.readSources();
         this.sourcesHTML();
       };
@@ -1312,6 +1354,7 @@ class SettingsCard extends PGEBase {
       button.onclick = () => {
         const key = button.dataset.removeSource,
           id = button.dataset.id;
+        this._sourceDirty = true;
         this._sourceDraft = this.readSources();
         const rest = list(this._sourceDraft.sources[key]).filter(
           (v) => v !== id,
@@ -1331,6 +1374,7 @@ class SettingsCard extends PGEBase {
     for (const input of this.shadowRoot.querySelectorAll("[data-power-mode]"))
       input.onchange = () => {
         const kind = input.dataset.powerMode;
+        this._sourceDirty = true;
         this._sourceDraft = this.readSources();
         this[kind === "grid" ? "_gridMode" : "_batteryMode"] = input.value;
         for (const role of kind === "grid"
@@ -1344,15 +1388,17 @@ class SettingsCard extends PGEBase {
         this.sourcesHTML();
       };
     for (const input of this.shadowRoot.querySelectorAll(
-      '[data-capacity],[data-capacity-ah],[data-voltage],[data-source="battery_soc"],[data-source="battery_stored"]',
+      '[data-capacity],[data-capacity-ah],[data-voltage],[data-capacity-entity],[data-source="battery_soc"],[data-source="battery_stored"]',
     )) {
       input.addEventListener("input", () => this.updateBatteryPreview());
       input.addEventListener("change", () => this.updateBatteryPreview());
     }
-    this.shadowRoot.querySelector("[data-capacity-mode]").onchange = (
+    const capacityModeInput=this.shadowRoot.querySelector("[data-capacity-mode]");
+    if(capacityModeInput) capacityModeInput.onchange = (
       event,
     ) => {
-      this._sourceDraft = this.readSources();
+      this._sourceDirty = true;
+        this._sourceDraft = this.readSources();
       this._capacityMode = event.target.value;
       this.sourcesHTML();
     };
@@ -1392,16 +1438,23 @@ class SettingsCard extends PGEBase {
           : null,
       explicit = number(config.battery_capacity_kwh),
       ah = number(config.battery_capacity_ah),
-      voltage = number(config.battery_voltage),
-      capacity =
-        explicit || (ah > 0 && voltage > 0 ? (ah * voltage) / 1000 : null);
+      voltage = number(config.battery_voltage);
+    const fromEntity=id=>{
+      const selected=state(id), amount=number(selected?.state),unit=selected?.attributes?.unit_of_measurement;
+      if(!(amount>0))return null;
+      return unit==="Ah" ? voltage>0 ? amount*voltage/1000 : null : unit==="kWh" ? amount : unit==="Wh" ? amount/1000 : null;
+    };
+    const primary=fromEntity(config.battery_capacity_entity), fallback=fromEntity(config.battery_installed_capacity_entity);
+    const bound=Boolean(config.battery_capacity_entity || config.battery_installed_capacity_entity);
+    const capacity=bound ? primary || fallback : explicit || (ah>0 && voltage>0 ? ah*voltage/1000 : null);
+    const capacityBasis=bound ? primary ? "Capacity BMS" : fallback ? "Installed capacity — wartość zastępcza" : "brak odczytu pojemności / napięcia nominalnego" : "pojemność ręczna";
     if (soc != null && soc >= 0 && soc <= 100 && capacity > 0)
-      output.textContent = `Zapas obliczony: ${format(soc)}% × ${format(capacity)} kWh = ${format((soc * capacity) / 100)} kWh.${!explicit && ah && voltage ? ` Pojemność: ${format(ah)} Ah × ${format(voltage)} V / 1000 = ${format(capacity)} kWh.` : ""}`;
+      output.textContent = `${capacityBasis}. Zapas obliczony: ${format(soc)}% × ${format(capacity)} kWh = ${format((soc * capacity) / 100)} kWh.${!explicit && ah && voltage ? ` Pojemność: ${format(ah)} Ah × ${format(voltage)} V / 1000 = ${format(capacity)} kWh.` : ""}`;
     else if (ah > 0 && !voltage)
       output.textContent =
         "Podaj napięcie nominalne baterii w V. Samo Ah nie określa pojemności kWh.";
     else if (soc != null)
-      output.textContent = `Poziom baterii: ${format(soc)}%. Możesz zostawić zapas kWh pusty albo podać pojemność użytkową.`;
+      output.textContent = `Poziom baterii: ${format(soc)}%. ${bound ? capacityBasis : "Wybierz Capacity lub wpisz pojemność."}`;
     else
       output.textContent =
         "Zapas kWh jest opcjonalny. Pozostaw własną encję pustą; do obliczenia zapasu wybierz SOC (%) i wpisz pojemność użytkową baterii (kWh).";
@@ -1415,6 +1468,8 @@ class SettingsCard extends PGEBase {
       await this.call("put_energy", { revision: this._energyRevision, config });
       this._energyRevision = this.data.revision;
       this._sourceDraft = config;
+      this._sourceDirty=false;
+      const dirty=this.shadowRoot.getElementById("unsaved-sources");if(dirty)dirty.hidden=true;
       status.textContent =
         "Źródła zapisane. Karty i encje zostały zaktualizowane.";
       status.className = "";
