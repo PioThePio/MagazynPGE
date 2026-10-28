@@ -221,7 +221,7 @@ test("energy diagram shows live power and daily energy together without a toggle
   );
   assert.match(
     root.querySelector(".node-grid").textContent,
-    /↓ 8,2 kWh.*↑ 1,6 kWh/,
+    /↓ 1,6 kWh.*↑ 8,2 kWh/,
   );
   assert.match(root.querySelector(".node-pge").textContent, /2197 kWh/);
   assert.equal(root.querySelector("[data-mode]"), null);
@@ -947,4 +947,17 @@ test("PV aliases, capacity sensors and unsaved changes survive source configurat
   await card.saveSources();
   assert.equal(root.querySelector("#unsaved-sources").hidden,true);
   await window.happyDOM.close();
+});
+
+test("partial home energy is explained under an info icon on both cards", async () => {
+  for (const name of ["pge-energy-card", "pge-consumers-card"]) {
+    const {window,root,emit}=await setup(name);
+    const data=snapshot();
+    data.energy.calculation={home_energy:{coverage:{partial:true}}};
+    emit(data);
+    assert.ok(root.querySelector('.energy-coverage summary[aria-label="Niepełna historia energii"]'));
+    assert.match(root.querySelector(".energy-coverage").textContent,/Brakujących danych nie zastępujemy zerem/);
+    assert.equal(root.querySelector(".energy-coverage").open,false);
+    await window.happyDOM.close();
+  }
 });

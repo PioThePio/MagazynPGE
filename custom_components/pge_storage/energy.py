@@ -790,11 +790,15 @@ def energy_snapshot(hass, config, core, cache, stats=None, native=None):
         }
     if (
         stat_values
-        and stats.get("home_energy") is not None
+        and (
+            stats.get("home_coverage") is not None
+            or stats.get("home_energy") is not None
+        )
         and not config["sources"].get("home_energy")
         and not config["statistics"].get("home_energy")
     ):
         today["home_energy"] = stats["home_energy"]
+        calculation["home_energy"]["coverage"] = stats.get("home_coverage")
     totals = consumer_summary(
         consumers, values.get("home_power"), today.get("home_energy")
     )

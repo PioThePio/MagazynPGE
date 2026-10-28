@@ -4,7 +4,7 @@ from hashlib import sha256
 from pathlib import Path
 
 DOMAIN = "pge_storage"
-VERSION = "0.15.0"
+VERSION = "0.15.1"
 TIME_ZONE = "Europe/Warsaw"
 DEFAULT_MAX_AGE_HOURS = 24
 STORAGE_VERSION = 2

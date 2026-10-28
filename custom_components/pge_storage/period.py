@@ -201,7 +201,7 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
             partial(
                 statistics.statistics_during_period,
                 hass,
-                bounds.begin - timedelta(hours=1),
+                bounds.begin - timedelta(days=2),
                 bounds.as_of,
                 statistical,
                 "hour",
@@ -253,6 +253,7 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
     ):
         if not mappings[role] and _absent(config, role):
             values[role] = "0"
+    home_coverage = None
     if not mappings["home_energy"]:
         terms = {
             "pv_energy": 1,
@@ -274,6 +275,10 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
                 bounds.as_of,
             )
             values["home_energy"] = balanced["value"] if balanced else None
+            home_coverage = balanced or {
+                "partial": True,
+                "sources": {source: coverage.get(source) for source in signed},
+            }
         elif all(values[role] is not None for role in terms):
             home = sum(
                 (energy(values[role]) * sign for role, sign in terms.items()), energy(0)
@@ -325,6 +330,7 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
         "is_current": bounds.is_current,
         "as_of": bounds.as_of.isoformat(),
         "values": values,
+        "home_coverage": home_coverage,
         "coverage": coverage,
         "partial": any(row is None or row["partial"] for row in coverage.values())
         or any(values_by_id.get(source) is None for source in ids),

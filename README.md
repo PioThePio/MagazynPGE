@@ -262,7 +262,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.15.0.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.15.1.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 
@@ -293,4 +293,10 @@ Opcjonalny profil ograniczenia ładowania odczytuje do 7 dni istniejącej histor
 
 Zapisany profil jest pamięcią wyników historii: kolejne odświeżenia dopisują nowe zamknięte minuty, nie liczą ich ponownie i zachowują starsze obserwacje po usunięciu historii przez Recorder. Podgląd pokazuje pokrycie. Przycisk przebudowy zastępuje profil tym, co da się odczytać teraz; nie odtworzy historii usuniętej przez HA. Dynamiczna zmiana Capacity z 99 na 98 Ah nie usuwa profilu. Zmiana fizycznych źródeł baterii resetuje model dla nowej konfiguracji.
 
-Strzałki ↓/↑ pod mocą sieci pokazują fizyczny import/eksport kWh wybranego okresu, **bez opustu**. Strzałki magazynu PGE pokazują rozliczenie zamkniętych godzin, z opustem zastosowanym wyłącznie do nadwyżek po kompensacji godzinowej. Nie należy porównywać ich jako identycznych wielkości.
+Strzałki pod mocą sieci pokazują **↓ eksport do sieci / ↑ import z sieci**, czyli fizyczne przepływy kWh wybranego okresu, **bez opustu**. Strzałki magazynu PGE pokazują rozliczenie zamkniętych godzin, z opustem zastosowanym wyłącznie do nadwyżek po kompensacji godzinowej. Nie należy porównywać ich jako identycznych wielkości.
+
+## Poprawka 0.15.1: energia domu i strzałki sieci
+
+Dom w kWh liczymy jako PV + import + rozładowanie − eksport − ładowanie. Każdy licznik wnosi wszystkie dostępne przyrosty z wybranego okresu kalendarzowego. Nie przecinamy list znaczników czasu różnych źródeł: brak nocnej statystyki PV nie usuwa nocnego poboru z sieci i baterii. Dotyczy to bieżącego dnia i poprzednich dni, tygodni, miesięcy oraz roku. Odczyt początkowy wyszukujemy także w dwóch dobach poprzedzających okres, co pozwala uwzględnić pierwszą poranną produkcję po nocnym wyłączeniu falownika. Jeżeli w tym zakresie nie ma odczytu początkowego, liczymy dostępne późniejsze przyrosty i oznaczamy niepełną historię. Brak całej historii wymaganego źródła pozostawia zużycie domu nieznane. Informację o niepełnym zakresie otwiera ⓘ na obu kartach. Nieśledzone zużycie korzysta z poprawionego zużycia domu.
+
+W sieci **↓ oznacza energię oddaną do sieci, ↑ pobraną z sieci** — kierunki względem tego zasobu, tak jak w baterii. Znak bieżącej mocy pozostaje + pobór, − eksport. Rozliczenia PGE nadal korzystają z odrębnego, rygorystycznego bilansowania godzinowego; poprawka widoku fizycznej energii go nie zmienia.

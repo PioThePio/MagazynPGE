@@ -19,7 +19,7 @@ def test_year_counts_available_summer_history_without_january_baseline():
     assert result["partial"] is True
 
 
-def test_common_boundaries_prevent_charging_from_a_different_span_in_home_total():
+def test_independent_counter_ranges_preserve_all_available_energy():
     begin = datetime(2026, 10, 19, tzinfo=UTC)
     at = int(begin.timestamp())
     pv = {at: "100", at + 3600: "110", at + 7200: "130"}
@@ -30,7 +30,7 @@ def test_common_boundaries_prevent_charging_from_a_different_span_in_home_total(
         begin,
         begin + timedelta(hours=2),
     )
-    assert result["value"] == "15"
+    assert result["value"] == "25"
     assert result["partial"] is True
 
 
@@ -46,3 +46,37 @@ def test_counter_resets_use_native_sum_and_absent_history_remains_unknown():
         )["value"]
         == "1.25"
     )
+
+
+def test_sparse_pv_never_discards_night_grid_consumption_and_missing_is_unknown():
+    begin = datetime(2026, 10, 28, tzinfo=UTC)
+    at = int(begin.timestamp())
+    end = begin + timedelta(days=1)
+    grid = {at + h * 3600: str(100 + h) for h in range(25)}
+    pv = {at - 7 * 3600: "50", at + 8 * 3600: "50.2", at + 16 * 3600: "52.47"}
+    result = balanced_total({"pv": pv, "grid": grid}, {"pv": 1, "grid": 1}, begin, end)
+    assert result["value"] == "26.47"
+    assert result["partial"] is True
+    assert result["sources"]["grid"]["value"] == "24"
+    stale_baseline = available_total(
+        {at - 7 * 3600: "50", at + 24 * 3600: "52.47"}, begin, end
+    )
+    assert stale_baseline["partial"] is True
+    assert stale_baseline["baseline_at"] == (begin - timedelta(hours=7)).isoformat()
+    assert (
+        balanced_total({"pv": {}, "grid": grid}, {"pv": 1, "grid": 1}, begin, end)
+        is None
+    )
+
+
+def test_sources_need_no_identical_report_timestamps():
+    begin = datetime(2026, 10, 28, tzinfo=UTC)
+    at = int(begin.timestamp())
+    result = balanced_total(
+        {"grid": {at: "100", at + 3600: "110"}, "pv": {at - 60: "20", at + 3540: "22"}},
+        {"grid": 1, "pv": 1},
+        begin,
+        begin + timedelta(hours=1),
+    )
+    assert result["value"] == "12"
+    assert result["partial"] is True

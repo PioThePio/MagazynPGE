@@ -38,26 +38,24 @@ def available_total(points, begin, end):
         "value": energy_text(total),
         "start": datetime.fromtimestamp(max(first, sequence[0][0]), UTC).isoformat(),
         "end": datetime.fromtimestamp(sequence[-1][0], UTC).isoformat(),
-        "partial": sequence[0][0] > first
+        "baseline_at": datetime.fromtimestamp(sequence[0][0], UTC).isoformat(),
+        "partial": sequence[0][0] != first
         or sequence[-1][0] < last
         or any(b[1] < a[1] for a, b in zip(sequence, sequence[1:], strict=False)),
     }
 
 
 def balanced_total(series, terms, begin, end):
-    """Balance only observed sums sharing exactly the same time boundaries."""
-    present = {key: points for key, points in series.items() if points}
-    if not present:
-        return None
-    common = set.intersection(*(set(points) for points in present.values()))
-    aligned = {
-        key: {stamp: points[stamp] for stamp in common}
-        for key, points in present.items()
-    }
+    """Sum each source's available energy without intersecting report times.
+
+    Energy counters report independently. An unavailable PV overnight must not
+    discard recorded grid/battery consumption from that part of the day.
+    This is a physical energy view, never the strict financial hour book.
+    """
     totals = {
-        key: available_total(points, begin, end) for key, points in aligned.items()
+        key: available_total(points, begin, end) for key, points in series.items()
     }
-    if any(row is None for row in totals.values()):
+    if not totals or any(row is None for row in totals.values()):
         return None
     result = sum(
         (energy(row["value"]) * terms[key] for key, row in totals.items()), energy(0)
@@ -66,8 +64,8 @@ def balanced_total(series, terms, begin, end):
         return None
     return {
         "value": energy_text(result),
-        "partial": len(present) < len(series)
-        or any(row["partial"] for row in totals.values()),
+        "partial": any(row["partial"] for row in totals.values()),
+        "sources": totals,
     }
 
 
@@ -81,7 +79,7 @@ async def async_available_statistics(hass, ids, begin, end, hourly=None):
             partial(
                 statistics.statistics_during_period,
                 hass,
-                begin - timedelta(hours=1),
+                begin - timedelta(days=2),
                 end,
                 ids,
                 "hour",

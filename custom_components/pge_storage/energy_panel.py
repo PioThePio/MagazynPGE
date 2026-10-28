@@ -378,7 +378,7 @@ async def async_statistics_today(hass, config):
         {stat: points.get(stat, {}) for stat in signed}, signed, midnight, end
     )
     # Only supply a derived home value if all configured energy inputs are
-    # represented in the statistics used for this common time window.
+    # represented in the statistics for the requested calendar period.
     covered = all(
         not config["sources"].get(role) or config["statistics"].get(role)
         for role in terms
@@ -393,6 +393,9 @@ async def async_statistics_today(hass, config):
         },
         "coverage": coverage,
         "home_energy": home["value"] if home and covered else None,
+        "home_coverage": (home or {"partial": True, "sources": coverage})
+        if covered
+        else None,
     }
 
 

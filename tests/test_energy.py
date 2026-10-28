@@ -150,3 +150,38 @@ def test_signed_power_cannot_be_mixed_with_separate_direction_sources():
                 }
             }
         )
+
+
+def test_missing_configured_pv_history_does_not_fall_back_to_partial_home_total():
+    now = datetime(2026, 10, 28, 12, tzinfo=UTC)
+    config = validate_energy_config(
+        {
+            "statistics": {
+                "pv_energy": ["test:pv1", "test:pv2"],
+                "grid_import_energy": ["test:grid"],
+                "grid_export_energy": ["test:export"],
+            },
+            "presence": {"battery": False},
+        }
+    )
+    stats = {
+        "day": "2026-10-28",
+        "values": {
+            "test:pv1": "2",
+            "test:pv2": None,
+            "test:grid": "10",
+            "test:export": "0",
+        },
+        "home_energy": None,
+        "home_coverage": {"partial": True},
+    }
+    with patch("custom_components.pge_storage.energy.dt_util.utcnow", return_value=now):
+        result = energy_snapshot(
+            SimpleNamespace(states=SimpleNamespace(get=lambda _id: None)),
+            config,
+            {},
+            {},
+            stats,
+        )
+    assert result["today"]["home_energy"] is None
+    assert result["calculation"]["home_energy"]["coverage"]["partial"] is True

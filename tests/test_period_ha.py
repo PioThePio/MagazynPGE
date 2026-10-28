@@ -291,3 +291,102 @@ async def test_year_uses_available_history_and_today_uses_native_five_minute_row
         today = await async_statistics_today(hass, manager.energy_config)
     assert today["values"]["fresh:pv"] == "0.75"
     assert float(today["home_energy"]) == pytest.approx(1.4375)
+
+
+async def test_sparse_daylight_pv_preserves_all_home_energy_today_and_closed_day(ha):
+    """Regression: 17.32 kWh must not shrink to the shared PV daylight hours."""
+    hass, _ = ha
+    begin = datetime(2026, 10, 10, tzinfo=WARSAW).astimezone(UTC)
+    terms = {
+        "sparse:pv": ("pv_energy", 1, 2.47),
+        "sparse:grid": ("grid_import_energy", 1, 13.65),
+        "sparse:export": ("grid_export_energy", -1, 0.1),
+        "sparse:charge": ("battery_charge_energy", -1, 2.2),
+        "sparse:discharge": ("battery_discharge_energy", 1, 3.5),
+    }
+    for stat, (_role, _sign, total) in terms.items():
+        if stat == "sparse:pv":
+            # The inverter is off overnight. Its last actual cumulative sum
+            # is from the preceding afternoon, not from the midnight bucket.
+            samples = [(-7, 100), (8, 100.2), (12, 101.4), (16, 100 + total)]
+        else:
+            samples = [(h, 100 + total * min(h, 20) / 20) for h in range(25)]
+        async_add_external_statistics(
+            hass,
+            {
+                "statistic_id": stat,
+                "source": "sparse",
+                "name": None,
+                "unit_class": "energy",
+                "unit_of_measurement": "kWh",
+                "mean_type": StatisticMeanType.NONE,
+                "has_sum": True,
+            },
+            [
+                {"start": begin + timedelta(hours=h - 1), "sum": value, "state": value}
+                for h, value in samples
+            ],
+        )
+    await hass.async_block_till_done()
+    future = hass.loop.create_future()
+    get_instance(hass).queue_task(SynchronizeTask(future))
+    await asyncio.wait_for(future, 10)
+    for entity in ("sensor.sparse_i", "sensor.sparse_e"):
+        hass.states.async_set(entity, "0", {"unit_of_measurement": "kWh"})
+    flow = await hass.config_entries.flow.async_init(
+        "pge_storage", context={"source": "user"}
+    )
+    configured = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {
+            "import_entity_id": "sensor.sparse_i",
+            "export_entity_id": "sensor.sparse_e",
+            "max_age_hours": 24,
+        },
+    )
+    await hass.async_block_till_done()
+    manager = configured["result"].runtime_data
+    await manager.async_put_energy(
+        {
+            "statistics": {
+                role: [stat] for stat, (role, _sign, _value) in terms.items()
+            },
+            "presence": {"solar": True, "battery": True},
+        },
+        manager.revision,
+    )
+    closed = await async_energy_period(
+        manager, "day", "2026-10-10", begin + timedelta(days=2)
+    )
+    now = begin + timedelta(hours=22)
+    current = await async_energy_period(manager, "day", "2026-10-10", now)
+    with patch(
+        "custom_components.pge_storage.energy_panel.dt_util.utcnow", return_value=now
+    ):
+        today = await async_statistics_today(hass, manager.energy_config)
+    for result in (closed, current):
+        assert float(result["values"]["home_energy"]) == pytest.approx(17.32)
+        assert float(result["values"]["pv_energy"]) == pytest.approx(2.47)
+        assert float(result["values"]["grid_import_energy"]) == pytest.approx(13.65)
+        assert result["home_coverage"]["partial"] is True
+    assert float(today["home_energy"]) == pytest.approx(17.32)
+    assert today["home_coverage"]["partial"] is True
+    # Independent reference: the same native bucket changes used by HA Energy.
+    reference = await get_instance(hass).async_add_executor_job(
+        lambda: statistics.statistics_during_period(
+            hass,
+            begin,
+            begin + timedelta(days=1),
+            set(terms),
+            "hour",
+            {"energy": "kWh"},
+            {"change"},
+        )
+    )
+    expected = sum(
+        terms[stat][1]
+        * sum(row["change"] for row in rows if row.get("change") is not None)
+        for stat, rows in reference.items()
+    )
+    assert expected == pytest.approx(17.32)
+    assert float(closed["values"]["home_energy"]) == pytest.approx(expected)
