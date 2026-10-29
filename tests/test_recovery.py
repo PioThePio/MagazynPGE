@@ -266,3 +266,29 @@ def test_adjacent_new_outage_does_not_retract_a_closed_recovery():
     result = reconcile(previous, {}, {}, end + timedelta(minutes=50))
     assert [b["status"] for b in result["blocks"]] == ["estimated", "pending"]
     assert HourBook(recoveries=result["blocks"]).interval(start, end)["net_kwh"] == "-6"
+
+
+def test_quiet_export_counter_is_valid_and_does_not_create_a_false_outage():
+    now = datetime(2026, 10, 1, 8, tzinfo=UTC)
+    old_report = now - timedelta(days=1)
+    states = {
+        entity: State(
+            entity, value, {"unit_of_measurement": "kWh"}, last_reported=old_report
+        )
+        for entity, value in [(SOURCES["import"], "1000"), (SOURCES["export"], "500")]
+    }
+    hass = SimpleNamespace(states=SimpleNamespace(get=states.get))
+    cache = empty(SOURCES)
+    observe(cache, hass, now)
+    observe(cache, hass, now + timedelta(seconds=30))
+    assert cache["last"]["at"] == (now + timedelta(seconds=30)).isoformat()
+    assert cache["unavailable"] is False and not cache["gaps"]
+    # HA itself was then off for two hours; export may still correctly retain
+    # the same valid numeric value while import advances.
+    later = now + timedelta(hours=2)
+    states[SOURCES["import"]] = State(
+        SOURCES["import"], "1010", {"unit_of_measurement": "kWh"}, last_reported=later
+    )
+    observe(cache, hass, later)
+    assert len(cache["gaps"]) == 1
+    assert cache["gaps"][0]["after"]["export"] == "500"

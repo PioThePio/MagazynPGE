@@ -262,7 +262,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.16.0.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.16.1.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 
@@ -303,7 +303,7 @@ W sieci **↓ oznacza energię oddaną do sieci, ↑ pobraną z sieci** — kier
 
 ## Uzupełnianie po przerwach — 0.16.0
 
-Integracja zapisuje parę narastających liczników i czas w trwałych punktach kontrolnych (co 15 s oraz przy prawidłowym zamknięciu integracji). Po restarcie HA, niedostępności źródła albo przerwie świeżych raportów obu liczników powyżej 90 s wykrywa powrót poprawnej pary. Nie przyjmuje stanów odtworzonych przez RestoreState ani starego odczytu jednego kierunku. Spadek licznika zatrzymuje uzupełnienie i zgłasza problem; nie staje się ujemnym zużyciem.
+Integracja zapisuje parę narastających liczników i czas w trwałych punktach kontrolnych (co 15 s oraz przy prawidłowym zamknięciu integracji). Po restarcie HA, niedostępności źródła albo przerwie pracy punktów kontrolnych HA powyżej 90 s wykrywa powrót poprawnej pary. Nie przyjmuje stanów odtworzonych przez RestoreState ani niedostępnego odczytu jednego kierunku. Stały licznik, np. eksport w nocy, jest poprawny niezależnie od czasu ostatniej zmiany/raportu; sam brak zmiany wartości nie dowodzi przerwy komunikacji. Spadek licznika zatrzymuje uzupełnienie i zgłasza problem; nie staje się ujemnym zużyciem.
 
 Brakująca energia jest rozliczana **raz i szacunkowo**, jako `0,8 × eksport − import`, bez kompensowania całej przerwy 1:1 i bez proporcjonalnego przypisywania jej do godzin. Przykład 8:30–14:50: import 1000→1010 i eksport 500→505 daje **−6 kWh**. Osobno uwzględniamy znane fragmenty godzin przed przerwą i po powrocie. Zatwierdzenie następuje po zamknięciu pierwszej godziny po powrocie i odczytaniu jej granicy; w przykładzie po 15:00, gdy granica pojawi się w Recorder. Przy braku granic wpis oczekuje na dane — nie wymyślamy odczytu początkowego.
 

@@ -45,16 +45,13 @@ def empty(sources):
 
 
 def observe(cache, hass, now):
-    """Only a fresh pair is eligible; counter totals may stay unchanged."""
+    """A valid pair is eligible; a quiet counter is not an unavailable meter."""
     if cache.get("error"):
         return
     try:
         states = {k: hass.states.get(v) for k, v in cache["sources"].items()}
         values = {k: energy(sample_from_state(s).value) for k, s in states.items()}
-        if any(
-            s.attributes.get("restored") or now - s.last_reported > MAX_SILENCE
-            for s in states.values()
-        ):
+        if any(s.attributes.get("restored") for s in states.values()):
             raise ValueError
     except LedgerError, ValueError, AttributeError, TypeError:
         cache["unavailable"] = True
