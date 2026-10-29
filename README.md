@@ -262,7 +262,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.16.1.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.17.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 
@@ -312,3 +312,15 @@ W „Rozliczeniu miesięcznym” jest tabela **Uzupełnienia po przerwach**: zak
 Szacunkowy przyrost przypisujemy przy powrocie odczytów, także po zmianie daty. FIFO i ważność energii nadal obowiązują, a magazyn pozostaje ≥0; brak zapasu pokazuje Niedobór. Przy przekroczeniu daty lub miesiąca oznaczamy niepewność przypisania energii i terminów. Przerwa przecinająca nową fakturę wymaga dokładniejszych odczytów: automatyczne doliczenie mogłoby ponownie uwzględnić energię już objętą saldem faktury, więc saldo pozostaje wtedy nieznane z objaśnieniem.
 
 Mechanizm działa od zapisania pierwszego punktu kontrolnego po tej aktualizacji. Nie rekonstruuje sam dawnych przerw bez zachowanej pary liczników i odczytów granicznych. Kopia JSON zawiera `recovery_cache`; odczyt starszych kopii pozostaje obsługiwany. Nie zapisujemy korekt do źródłowych statystyk HA ani do faktur. To ostrożny szacunek, a nie gwarancja zgodności z rozliczeniem operatora.
+
+## Czas baterii i podgląd profilu — 0.17.0
+
+Pod diagramem jest jeden przycisk z czasem: **Wystarczy na…** podczas rozładowania, **Do pełna…** podczas ładowania, a podczas postoju lub znikomej mocy — kreska. Czas pracy nadal oznacza rozładowanie do aktualnej wartości wybranej encji minimum SOC; nie podstawiamy stałych 20%. Kliknięcie baterii lub czasu otwiera osobne okno z poziomem SOC, energią w baterii, energią dostępną ponad minimum, rezerwą, dodatkowym teoretycznym czasem rezerwy i łącznym czasem do 0%. Czas rezerwy liczymy tylko podczas rzeczywistego rozładowania. To oszacowanie przy dotychczasowym poborze; ESS zwykle nie udostępnia rezerwy, a 0% SOC nie oznacza fizycznego opróżnienia ogniw.
+
+Zapas całkowity to `pełna pojemność × SOC / 100`; energia dostępna to `pełna pojemność × max(SOC − minimum SOC, 0) / 100`. Przykładowo bateria 5,07 kWh przy SOC 40% ma około 2,03 kWh energii, lecz przy minimum 20% do zwykłego wykorzystania pozostaje około 1,01 kWh. Rezerwa nie może być większa od aktualnej energii w baterii, również gdy SOC spadnie już poniżej minimum.
+
+Średnia mocy używana do czasu jest odtwarzana z dostępnej historii Recorder (do 15 min), więc po uruchomieniu nie trzeba zbierać całego okna od zera. Niepełna lub brakująca historia nie jest uzupełniana fikcyjnymi pomiarami. Bez odpowiedniego fragmentu historii pierwsza estymacja pojawia się po około 30 s, następnie okno płynnie rośnie przez 1 min do wybranych 5/15 min. Pod czasem widać faktyczną długość średniej. Zmiana kierunku przepływu rozpoczyna nowe okno, a moc do 25 W nie daje czasu. Niepełny profil ładowania nie blokuje zwykłego szacowania czasu.
+
+Profil można obejrzeć w **Źródła energii → Lokalny akumulator → Estymacja czasu i ustawienia zaawansowane → Profil ładowania**. Wykres pokazuje W według SOC, tabela — moc i liczbę obserwacji dla każdego przedziału 5 punktów procentowych. Zielone zakresy mają co najmniej 3 obserwacje; szare mają ich mniej, a brak danych pozostaje pusty. Profil nadal pochodzi z historii BMS, nie z domyślnych założeń. Widok aktualizuje się bez zamykania okna ani zmiany niezapisanych ustawień.
+
+Objaśnienia konfiguratora są zwykłymi dymkami po najechaniu na ⓘ, bez rozwijania tekstu. Informacyjne rozwijacze usunięto z głównego diagramu i odbiorców. Okno szczegółów baterii pozostaje otwarte podczas aktualizacji danych; przycisk zamknięcia i Escape działają na komputerze i telefonie.

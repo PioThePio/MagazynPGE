@@ -145,7 +145,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             # Global extra JS executes before HA installs its element registry.
             # The module must instead be requested by Lovelace after that point.
             assert CARD_URL not in await response.text()
-            period = page.locator("pge-energy-card h2")
+            period = page.locator("pge-energy-card ha-card > .head h2")
             await expect(period).to_contain_text("Energia w domu", timeout=30000)
             await expect(page.locator("pge-balance-card").first).to_contain_text(
                 "Magazyn PGE"
@@ -176,7 +176,7 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 return await page.evaluate("window.getSelection().toString()")
 
             assert "Energia w domu" in await select_text(
-                page.locator("pge-energy-card h2")
+                page.locator("pge-energy-card ha-card > .head h2")
             )
             await page.locator("pge-settings-card #open-invoices").click()
             await expect(page.locator("pge-admin-panel #day")).to_be_visible()
@@ -360,6 +360,25 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             await expect(page.locator("pge-energy-card .node-battery")).to_contain_text(
                 "15%"
             )
+            await page.locator("pge-energy-card .node-battery").click()
+            battery_dialog = page.locator("pge-energy-card #battery-dialog")
+            await expect(battery_dialog).to_be_visible()
+            await expect(battery_dialog).to_contain_text("Energia w baterii")
+            hass.states.async_set(
+                "sensor.browser_battery_soc", "16", {"unit_of_measurement": "%"}
+            )
+            await hass.async_block_till_done()
+            await expect(battery_dialog).to_contain_text("1,6 kWh")
+            await expect(battery_dialog).to_be_visible()
+            await page.screenshot(
+                path="/tmp/pge-17-battery-details-desktop.png", full_page=True
+            )
+            await page.keyboard.press("Escape")
+            await expect(battery_dialog).not_to_be_visible()
+            hass.states.async_set(
+                "sensor.browser_battery_soc", "15", {"unit_of_measurement": "%"}
+            )
+            await hass.async_block_till_done()
             await expect(page.locator("pge-energy-card .node-home")).to_contain_text(
                 "3400 W", timeout=35000
             )
@@ -383,6 +402,15 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             await check_legacy_stack()
             await check_flow_geometry()
             await page.screenshot(path="/tmp/pge-09-mobile.png", full_page=True)
+            await page.locator("pge-energy-card .node-battery").click()
+            await expect(battery_dialog).to_be_visible()
+            dimensions = await battery_dialog.bounding_box()
+            assert dimensions["width"] <= 390
+            await page.screenshot(
+                path="/tmp/pge-17-battery-details-mobile.png", full_page=True
+            )
+            await page.locator("pge-energy-card #close-battery").click()
+            await expect(battery_dialog).not_to_be_visible()
 
             await page.set_viewport_size({"width": 1440, "height": 1000})
             await page.locator("pge-settings-card #create-dashboard").click()

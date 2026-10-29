@@ -936,7 +936,8 @@ test("PV aliases, capacity sensors and unsaved changes survive source configurat
   assert.equal(config.battery_capacity_entity,"sensor.cap");
   assert.equal(config.battery_installed_capacity_entity,"sensor.installed");
   assert.equal(config.pv_names["sensor.pv"],"Stara instalacja");
-  assert.ok(root.querySelectorAll(".help-hint").length>0);
+  assert.ok(root.querySelectorAll("button.help-hint[title]").length>0);
+  assert.equal(root.querySelector("details.help-hint"),null);
   assert.equal(root.querySelector(".advanced-battery").open,false);
   for (const key of ["battery_capacity_entity","battery_installed_capacity_entity"]) {
     const input=root.querySelector(`[data-capacity-entity="${key}"]`);
@@ -949,15 +950,11 @@ test("PV aliases, capacity sensors and unsaved changes survive source configurat
   await window.happyDOM.close();
 });
 
-test("partial home energy is explained under an info icon on both cards", async () => {
+test("dashboard has no expandable information hints", async () => {
   for (const name of ["pge-energy-card", "pge-consumers-card"]) {
     const {window,root,emit}=await setup(name);
-    const data=snapshot();
-    data.energy.calculation={home_energy:{coverage:{partial:true}}};
-    emit(data);
-    assert.ok(root.querySelector('.energy-coverage summary[aria-label="Niepełna historia energii"]'));
-    assert.match(root.querySelector(".energy-coverage").textContent,/Brakujących danych nie zastępujemy zerem/);
-    assert.equal(root.querySelector(".energy-coverage").open,false);
+    const data=snapshot();data.energy.calculation={home_energy:{coverage:{partial:true}}};emit(data);
+    assert.equal(root.querySelector(".energy-coverage,.help-hint"),null);
     await window.happyDOM.close();
   }
 });
@@ -974,5 +971,66 @@ test("recovery history shows one conservative correction and its replacement sta
   data.hourly.recoveries[0].status="replaced";emit(data);await tick();
   assert.match(root.querySelector("#recovery-history").textContent,/Zastąpiono dokładną historią/);
   assert.equal(root.querySelectorAll("#recovery-history tbody tr").length,1);
+  await window.happyDOM.close();
+});
+
+test("one battery time opens persistent reserve details and follows charging direction", async () => {
+  const {window,root,emit}=await setup("pge-energy-card");
+  const data=snapshot();
+  data.energy.battery_estimate={direction:"discharging",quality:"constant_recent_power",discharge_seconds:7200,charge_seconds:null,averaging_seconds:60,target_averaging_seconds:300,minimum_soc:20,stored_kwh:3,available_to_minimum_kwh:2,reserve_kwh:1,reserve_discharge_seconds:3600,total_discharge_seconds:10800,history_seeded:true};
+  emit(data);
+  assert.match(root.querySelector("#battery-eta").textContent,/Wystarczy na.*2 h/);
+  assert.doesNotMatch(root.querySelector("#battery-eta").textContent,/minimum|Rezerwa|Do 100/);
+  assert.match(root.querySelector("#battery-eta").textContent,/Średnia 1 min/);
+  root.querySelector(".node-battery").click();
+  const dialog=root.querySelector("#battery-dialog");
+  assert.equal(dialog.open,true);
+  assert.match(dialog.textContent,/Energia w baterii3,0 kWh/);
+  assert.match(dialog.textContent,/Dodatkowy czas do 0%\+1 h/);
+  for(let i=0;i<10;i++){data.energy.battery_estimate.minimum_soc=30;emit(data);}
+  assert.equal(root.querySelector("#battery-dialog"),dialog);
+  assert.equal(dialog.open,true);
+  assert.match(dialog.textContent,/Aktualne minimum SOC30%/);
+  root.querySelector("#close-battery").click();
+  emit(data);assert.equal(dialog.open,false);
+  Object.assign(data.energy.battery_estimate,{direction:"charging",charge_seconds:1800,discharge_seconds:null});emit(data);
+  assert.match(root.querySelector("#battery-eta").textContent,/Do pełna.*30 min/);
+  root.querySelector("#battery-eta").click();assert.equal(dialog.open,true);
+  root.querySelector("#close-battery").click();
+  Object.assign(data.energy.battery_estimate,{direction:"idle",charge_seconds:null});emit(data);
+  assert.equal(root.querySelector("#battery-eta strong").textContent,"—");
+  await window.happyDOM.close();
+});
+
+test("profile table and W chart refresh inside settings without closing or expanding hints", async () => {
+  const {window,root,card,emit}=await setup("pge-settings-card");
+  const data=snapshot();
+  data.energy.battery_estimate={profile_bins:Array.from({length:20},(_,i)=>({soc_from:i*5,soc_to:i*5+5,watts:i>=18?500:null,observations:i===19?3:i===18?1:0,usable:i===19})),history:{covered_minutes:20,eligible_minutes:4,missing_minutes:2}};
+  emit(data);card.open("sources");
+  root.querySelector(".advanced-battery").open=true;
+  assert.equal(root.querySelectorAll("#battery-profile-view tbody tr").length,20);
+  assert.equal(root.querySelectorAll("#battery-profile-view svg rect").length,2);
+  assert.match(root.querySelector("#battery-profile-view").textContent,/Gotowe zakresy: 1\/20/);
+  assert.equal(root.querySelector("#battery-profile-view tbody tr td:nth-child(2)").textContent,"—");
+  assert.ok(root.querySelector("button.help-hint").title.length>90);
+  assert.equal(root.querySelector("details.help-hint"),null);
+  data.energy.battery_estimate.profile_bins[18].observations=3;data.energy.battery_estimate.profile_bins[18].usable=true;
+  emit(data);
+  assert.equal(root.querySelector("dialog").open,true);
+  assert.equal(root.querySelector(".advanced-battery").open,true);
+  assert.match(root.querySelector("#battery-profile-view").textContent,/Gotowe zakresy: 2\/20/);
+  await window.happyDOM.close();
+});
+
+test("battery dialog remains modal when ETA first arrives or is disabled", async () => {
+  const {window,root,emit}=await setup("pge-energy-card");
+  root.querySelector(".node-battery").click();
+  const dialog=root.querySelector("#battery-dialog");
+  assert.equal(dialog.open,true);
+  const data=snapshot();data.energy.battery_estimate={direction:"charging",quality:"collecting",charge_seconds:null,averaging_seconds:1};
+  emit(data);assert.equal(root.querySelector("#battery-dialog"),dialog);assert.equal(dialog.open,true);
+  data.energy.battery_estimate.quality="disabled";emit(data);
+  assert.equal(root.querySelector("#battery-dialog"),dialog);assert.equal(dialog.open,true);
+  root.querySelector("#close-battery").click();
   await window.happyDOM.close();
 });

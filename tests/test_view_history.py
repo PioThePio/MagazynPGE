@@ -205,6 +205,7 @@ async def test_native_recorder_restores_power_and_bms_samples(ha):
     begin = now - timedelta(minutes=30, seconds=20)
     config = validate_energy_config(
         {
+            "battery_capacity_kwh": "5",
             "sources": {
                 "pv_power": "sensor.history_pv",
                 "grid_power": "sensor.history_grid",
@@ -251,6 +252,21 @@ async def test_native_recorder_restores_power_and_bms_samples(ha):
         hass, config, {"import": "sensor.i", "export": "sensor.e"}, now
     )
     flow = AlignedFlow()
+    estimator = BatteryEstimate()
+    estimator.seed(frames, config, now.timestamp())
+    eta = estimator.update(
+        hass,
+        config,
+        {
+            "battery_soc": "96",
+            "battery_charge_power": "500",
+            "battery_discharge_power": "0",
+        },
+        now.timestamp() + 0.01,
+    )
+    assert eta["history_seeded"] is True
+    assert eta["averaging_seconds"] == 300
+    assert eta["charge_seconds"] == 1440
     flow.seed(frames, reports, "native")
     result = flow.capture(frames[-1][1], 0, now.timestamp() + 0.01, "native", "latest")
     assert result["energy"]["power_windows"]["1800"]["covered_seconds"] == 1800, (

@@ -149,6 +149,7 @@ class BatteryEstimate:
         self.profile = {}
         self.last_learning = None
         self.history_driven = False
+        self.history_seeded = False
 
     def restore(self, raw):
         if not isinstance(raw, dict) or len(raw) > 20:
@@ -169,6 +170,56 @@ class BatteryEstimate:
                 }
             except ValueError, TypeError, KeyError:
                 continue
+
+    def seed(self, frames, config, now):
+        """Restore a continuous direction from recorded power, keeping newer live samples."""
+        identity = battery_identity(config)
+        if self.identity is not None and self.identity != identity:
+            self.profile = {}
+        live = list(self.samples) if self.identity == identity else []
+        self.identity = identity
+        self.samples.clear()
+        sources = config["sources"]
+        roles = (
+            ["battery_power"]
+            if sources.get("battery_power")
+            else [
+                k
+                for k in ("battery_charge_power", "battery_discharge_power")
+                if sources.get(k)
+            ]
+        )
+        if not roles:
+            self.samples.extend(live)
+            return
+        latest = None
+        for stamp, frame in frames:
+            if stamp > now or stamp < now - 905:
+                continue
+            known = frame.get("power_history_known", {})
+            if any(not known.get(role, False) for role in roles):
+                self.samples.clear()
+                continue
+            values = frame.get("values", {})
+            power = float(values.get("battery_charge_power") or 0) - float(
+                values.get("battery_discharge_power") or 0
+            )
+            if not isfinite(power):
+                self.samples.clear()
+                continue
+            direction = 1 if power > 25 else -1 if power < -25 else 0
+            if self.samples and self.samples[-1][2] != direction:
+                self.samples.clear()
+            self.samples.append((stamp, power, direction))
+            latest = stamp
+        self.history_seeded = bool(self.samples and self.samples[-1][2])
+        for row in live:
+            if latest is not None and row[0] <= latest:
+                continue
+            if self.samples and self.samples[-1][2] != row[2]:
+                self.samples.clear()
+                self.history_seeded = False
+            self.samples.append(row)
 
     def observe(self, soc, charge, bms, stamp):
         if not (0 <= soc <= 100 and charge > 25 and bms > 25 and charge >= 0.85 * bms):
@@ -192,6 +243,7 @@ class BatteryEstimate:
             if self.identity is not None:
                 self.profile = {}
             self.samples.clear()
+            self.history_seeded = False
             self.identity = identity
             self.last_learning = None
         soc = values.get("battery_soc")
@@ -203,6 +255,7 @@ class BatteryEstimate:
         direction = 1 if power > 25 else -1 if power < -25 else 0
         if self.samples and self.samples[-1][2] != direction:
             self.samples.clear()
+            self.history_seeded = False
         self.samples.append((now, power, direction))
         while len(self.samples) > 1 and self.samples[1][0] < now - 900:
             self.samples.popleft()
@@ -234,10 +287,28 @@ class BatteryEstimate:
             "average_minutes": opt["average_minutes"],
             "average_power_w": round(mean),
             "covered_seconds": round(duration),
+            "averaging_seconds": round(duration),
+            "target_averaging_seconds": seconds,
+            "history_seeded": self.history_seeded,
+            "direction": "charging"
+            if direction > 0
+            else "discharging"
+            if direction < 0
+            else "idle",
             "charge_seconds": None,
             "discharge_seconds": None,
+            "reserve_discharge_seconds": None,
+            "total_discharge_seconds": None,
+            "reserve_kwh": capacity * min(float(soc), minimum) / 100
+            if capacity
+            and soc is not None
+            and 0 <= float(soc) <= 100
+            and minimum is not None
+            and 0 <= minimum <= 100
+            else None,
             "model_range_seconds": None,
             "forecast_range_seconds": None,
+            "soc": float(soc) if soc is not None and 0 <= float(soc) <= 100 else None,
             "minimum_soc": minimum,
             "capacity_kwh": capacity or None,
             "capacity_basis": capacity_info["basis"],
@@ -252,6 +323,16 @@ class BatteryEstimate:
             and 0 <= minimum <= 100
             else None,
             "learned_bins": len(self.profile),
+            "profile_bins": [
+                {
+                    "soc_from": i,
+                    "soc_to": i + 5,
+                    "watts": self.profile.get(str(i), {}).get("watts"),
+                    "observations": self.profile.get(str(i), {}).get("count", 0),
+                    "usable": self.profile.get(str(i), {}).get("count", 0) >= 3,
+                }
+                for i in range(0, 100, 5)
+            ],
             "quality": "disabled" if not opt["enabled"] else "collecting",
         }
         if (
@@ -311,6 +392,12 @@ class BatteryEstimate:
         elif minimum is not None and 0 <= minimum <= 100:
             result["discharge_seconds"] = round(
                 capacity * max(0, soc - minimum) / 100 * 3600000 / abs(mean)
+            )
+            result["reserve_discharge_seconds"] = round(
+                capacity * min(soc, minimum) / 100 * 3600000 / abs(mean)
+            )
+            result["total_discharge_seconds"] = (
+                result["discharge_seconds"] + result["reserve_discharge_seconds"]
             )
         # Both inputs are explicitly energy remaining in the same chosen
         # horizon. We never guess the schema of third-party forecast attributes.

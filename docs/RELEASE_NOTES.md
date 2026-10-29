@@ -1,13 +1,12 @@
-MagazynPGE 0.16.1 — trwałe, szacunkowe uzupełnienia po przerwach HA i liczników.
+MagazynPGE 0.17.0 — prosty czas baterii, szczegóły rezerwy i podgląd profilu.
 
-Po powrocie poprawnej pary liczników brakujące przyrosty zostają rozliczone raz: eksport ×0,8 − import. Import 10 kWh i eksport 5 kWh dają −6 kWh. Nie rozkładamy przerwy na wymyślone godziny. Znane fragmenty godzin na brzegach są uwzględnione osobno. Zapis jest zatwierdzany po zamknięciu pierwszej godziny po powrocie, gdy dostępne są jej granice. Brak granic pozostawia wpis oczekujący.
+- Jeden czas pod diagramem: „Wystarczy na…” przy rozładowaniu, „Do pełna…” przy ładowaniu. Bez wypisywania minimum SOC na głównym ekranie. Postój/znikoma moc: kreska.
+- Kliknięcie baterii lub czasu otwiera szczegóły: energia całkowita, dostępna energia, aktualne minimum SOC, rezerwa i jej dodatkowy teoretyczny czas do 0%. Minimum pochodzi z encji, bez sztywnego 20%. Okno nie znika przy odświeżaniu.
+- Średnia mocy do czasu startuje z dostępnej historii Recorder. Bez historii zaczyna od krótszego okna po około 30 s i stopniowo dochodzi do wybranych 1/5/15 min. Widać faktycznie używaną długość średniej.
+- Profil ładowania w ustawieniach zaawansowanych baterii: wykres W według SOC i tabela obserwacji. Brakujące zakresy nie są zerami; odróżniamy zakresy gotowe (≥3 obserwacje) od niepełnych.
+- ⓘ w konfiguratorze pokazuje dymek po najechaniu, bez rozwijacza. Informacyjne rozwijacze z głównego diagramu i listy odbiorców usunięto.
+- Odczyty historii kończą się przed zamknięciem bazy Recorder podczas zatrzymywania HA.
 
-Punkty kontrolne przetrwają restart. Ponowne odświeżenie nie dolicza energii drugi raz, także gdy po powrocie pojawi się spóźniony koszyk statystyk. Rzeczywista historia godzin zastępuje szacunek po potwierdzeniu granic i zgodności sum obu liczników. Przywrócenie jednego kierunku nie wystarcza; spadek licznika zatrzymuje automatyczne uzupełnienie.
+Aktualizacja: HACS → 0.17.0 → restart HA → Ctrl+F5. Wybrane źródła, minimum SOC, pojemność i profil pozostają zachowane. Nie trzeba ponownie konfigurować baterii. Rezerwa jest oszacowaniem podczas rozładowania, nie obietnicą energii dostępnej poniżej limitu ESS.
 
-Tabela „Uzupełnienia po przerwach” w rozliczeniu miesięcznym pokazuje zakresy, przyrosty, zmianę magazynu i status. Saldo ze szacunkiem ma ≈; encje udostępniają atrybuty jakości. FIFO, wygaśnięcia, magazyn ≥0 i Niedobór nadal działają. Przekroczenie daty/miesiąca jest oznaczone jako niepewne. Przerwa przecinająca fakturę wymaga dokładniejszych danych, aby nie podwoić rozliczonej energii.
-
-Aktualizacja: HACS → 0.16.1 → restart HA → Ctrl+F5. Mechanizm jest automatyczny dla skonfigurowanych liczników PGE, bez nowych ustawień. Faktury i źródła pozostają zachowane. Zabezpieczenie zaczyna działać od zapisania pierwszego punktu kontrolnego; nie odtwarza dawnych przerw bez odczytów. Wynik szacunkowy może różnić się od faktury operatora.
-
-Weryfikacja: zestaw 180 testów Python, 30 testów interfejsu, Ruff, składnia JS i metadane wydania.
-
-0.16.1 dodatkowo uwzględnia liczniki stojące w miejscu: nocny brak przyrostu lub nowych raportów eksportu nie blokuje punktów kontrolnych i nie udaje awarii. Detekcja przerwy pracy HA używa zapisanych czasów punktów kontrolnych, a nie wieku ostatniego raportu energii.
+Weryfikacja: 184 testy Python i 33 testy DOM; rzeczywisty Recorder oraz Chromium na komputerze i telefonie, w tym aktualizacje otwartego okna i zamykanie Escape.

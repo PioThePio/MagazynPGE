@@ -8,7 +8,7 @@ from datetime import UTC, datetime, time, timedelta
 from uuid import uuid4
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HassJob, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import (
     async_track_point_in_utc_time,
@@ -127,6 +127,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self._recovery_task = None
         self._recovery_unavailable_seen = False
         self._recovery_closing = False
+        self._active_refreshes = set()
+        self._shutdown_complete = False
         self._recovery_checkpoint_at = dt_util.utcnow()
         self.hourly_cache = validate_archive(None, self.sources, dt_util.utcnow())
         self.hourly_pending = {}
@@ -208,6 +210,9 @@ class LedgerCoordinator(DataUpdateCoordinator):
             lambda: self._report_unsub() if self._report_unsub else None
         )
         self.entry.async_on_unload(self._stop_recovery)
+        self.entry.async_on_unload(
+            self.hass.async_add_shutdown_job(HassJob(self._stop_recovery))
+        )
         self._schedule_midnight()
         self.entry.async_on_unload(
             lambda: self._midnight_cancel() if self._midnight_cancel else None
@@ -296,8 +301,17 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self.publish()
 
     async def _stop_recovery(self):
+        if self._shutdown_complete:
+            return
         self._recovery_closing = True
         try:
+            pending = [
+                task
+                for task in self._active_refreshes
+                if task is not asyncio.current_task()
+            ]
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
             if self._recovery_task is not None:
                 await self._recovery_task
             await self._checkpoint_recovery(dt_util.utcnow())
@@ -305,6 +319,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
             _LOGGER.exception(
                 "Cannot save final PGE recovery checkpoint; retaining previous durable pair"
             )
+        finally:
+            self._shutdown_complete = True
 
     async def _checkpoint_recovery(self, now):
         async with self.lock:
@@ -319,10 +335,17 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 self.recovery_cache = updated
 
     async def _energy_statistics_tick(self, _now):
-        await self.async_refresh_planning_history()
-        await self.async_refresh_energy()
-        await self.async_refresh_usage()
-        self.publish()
+        if self._recovery_closing:
+            return
+        task = asyncio.current_task()
+        self._active_refreshes.add(task)
+        try:
+            await self.async_refresh_planning_history()
+            await self.async_refresh_energy()
+            await self.async_refresh_usage()
+            self.publish()
+        finally:
+            self._active_refreshes.discard(task)
 
     async def _planning_tick(self, _now):
         await self._energy_statistics_tick(_now)
@@ -409,6 +432,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
                     if self.energy_config != config:
                         return
                     self.aligned_flow.seed(frames, reports, identity)
+                    self.battery_estimator.seed(frames, config, now.timestamp())
                     self._history_identity = identity
                 profile, metadata = await restore_battery_profile(
                     self.hass,
