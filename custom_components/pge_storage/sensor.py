@@ -274,6 +274,12 @@ class PGESensor(CoordinatorEntity, SensorEntity):
             )
         return {
             **power_attributes,
+            "recovery_estimated": self.coordinator.data.get("current", {}).get(
+                "recovery_estimated", False
+            ),
+            "recovery_intervals": self.coordinator.data.get("current", {}).get(
+                "recovery_intervals", 0
+            ),
             "accounting_model": self.coordinator.data.get("accounting_model"),
             "accounting_as_of": self.coordinator.data.get("accounting_as_of"),
             "sources": self.coordinator.sources,

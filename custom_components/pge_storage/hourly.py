@@ -95,8 +95,67 @@ def validate_archive(raw, sources, now):
 
 
 class HourBook:
-    def __init__(self, hours=None, pending=None):
+    def __init__(self, hours=None, pending=None, recoveries=None):
         self.hours = {**(hours or {}), **(pending or {})}
+        self.recoveries = [b for b in (recoveries or []) if b["status"] != "replaced"]
+
+    def parts(self, begin, end):
+        cursor = begin
+        while cursor < end:
+            block = next(
+                (
+                    b
+                    for b in self.recoveries
+                    if datetime.fromisoformat(b["start"])
+                    <= cursor
+                    < datetime.fromisoformat(b["end"])
+                ),
+                None,
+            )
+            if block:
+                stop = min(end, datetime.fromisoformat(block["end"]))
+                if block["status"] != "estimated":
+                    yield cursor, stop, None
+                else:
+                    events = [
+                        e
+                        for e in block["events"]
+                        if cursor <= datetime.fromisoformat(e["start"]) < stop
+                    ]
+                    fields = (
+                        "raw_import_kwh",
+                        "raw_export_kwh",
+                        "import_kwh",
+                        "export_kwh",
+                        "credited_kwh",
+                        "net_kwh",
+                    )
+                    yield (
+                        cursor,
+                        stop,
+                        {
+                            "start": cursor.isoformat(),
+                            "end": stop.isoformat(),
+                            "basis": "outage_estimate",
+                            "events": events,
+                            **{
+                                key: energy_text(
+                                    sum((energy(e[key]) for e in events), ZERO)
+                                )
+                                for key in fields
+                            },
+                        },
+                    )
+                cursor = stop
+                continue
+            stop = min(cursor + timedelta(hours=1), end)
+            row = self.hours.get(cursor.isoformat())
+            yield (
+                cursor,
+                stop,
+                row if row and datetime.fromisoformat(row["end"]) == stop else None,
+            )
+            cursor = stop
 
     def interval(self, begin, end):
         """Strict totals of independently netted hours; missing is never zero."""
@@ -116,17 +175,15 @@ class HourBook:
             ),
             ZERO,
         )
-        missing, count, cursor = [], 0, begin
-        while cursor < end:
-            stop = min(cursor + timedelta(hours=1), end)
-            row = self.hours.get(cursor.isoformat())
-            if row is None or datetime.fromisoformat(row["end"]) != stop:
+        missing, count, estimated = [], 0, 0
+        for cursor, stop, row in self.parts(begin, end):
+            if row is None:
                 missing.append(cursor.isoformat())
             else:
                 for key in totals:
                     totals[key] += energy(row[key])
-                count += 1
-            cursor += timedelta(hours=1)
+                count += int((stop - cursor).total_seconds() // 3600)
+                estimated += int(row["basis"] == "outage_estimate")
         return {
             **{
                 key: energy_text(value) if not missing else None
@@ -136,6 +193,8 @@ class HourBook:
             "missing_count": len(missing),
             "first_missing": missing[0] if missing else None,
             "known_hours": count,
+            "estimated_intervals": estimated,
+            "estimated": estimated > 0,
             "start": begin.isoformat(),
             "end": end.isoformat(),
         }
@@ -147,10 +206,11 @@ class HourBook:
                 "missing_hourly_history",
                 f"Brak danych godzinowych: {summary['missing_count']} godz.; pierwsza {summary['first_missing']}. Nie zastępujemy ich zerami.",
             )
-        cursor = begin
-        while cursor < end:
-            yield self.hours[cursor.isoformat()]
-            cursor += timedelta(hours=1)
+        for _start, _stop, row in self.parts(begin, end):
+            if row.get("basis") == "outage_estimate":
+                yield from row["events"]
+            else:
+                yield row
 
 
 def seed_inventory(plan, records):
@@ -191,6 +251,20 @@ def replay(book, records, plan, end):
             "missing_anchor", "Dodaj fakturę lub punkt początkowy z saldem."
         )
     last = relevant[-1]
+    reset = next((r for r in reversed(relevant) if r.invoice_balance is not None), None)
+    for block in book.recoveries:
+        if block.get("status") != "estimated":
+            continue
+        for event in block.get("gap_rows", []):
+            a, b = (
+                datetime.fromisoformat(event["observed_start"]),
+                datetime.fromisoformat(event["observed_end"]),
+            )
+            if reset is not None and a < boundary(reset.day) < b:
+                raise LedgerError(
+                    "recovery_invoice_overlap",
+                    "Przerwa przecina datę faktury. Potrzebne dokładniejsze odczyty, aby nie policzyć ponownie energii rozliczonej na fakturze.",
+                )
     begin = boundary(last.day)
     # Carry through invoice-free records, with strict hour coverage for every leg.
     balance, previous = None, None
@@ -315,6 +389,8 @@ def accounting_snapshot(book, records, plan, end):
         balance, flows = state["balance"], state["flows"]
         current.update(
             {
+                "recovery_estimated": flows.get("estimated", False),
+                "recovery_intervals": flows.get("estimated_intervals", 0),
                 "estimated_balance": energy_text(balance),
                 "available_energy": energy_text(max(ZERO, balance)),
                 "deficit": energy_text(max(ZERO, -balance)),

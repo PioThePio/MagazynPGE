@@ -21,3 +21,6 @@ if source.exists() and summary:
     with Path(summary).open("a") as output:
         output.write("## Failed test identifiers (no logs or values)\n\n")
         output.write("\n".join(f"- `{name}`" for name in sorted(identifiers)))
+
+    for name in sorted(identifiers):
+        print(f"::notice title=Failed test identifier::{name}")

@@ -91,6 +91,7 @@ def row_for(manager, start, stop, *, label, partial):
         "balance_kwh": None,
         "withdrawn_kwh": financial["pge_withdrawn_energy"],
         "coverage": flows,
+        "estimated": flows.get("estimated", False),
         "accounting_model": "clock_hour_net_0.8_v1",
     }
     try:

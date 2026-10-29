@@ -306,6 +306,19 @@ async def read_hours(hass, sources, start, now):
                 for direction in sources
             },
         }
+    boundary_states = {}
+    for direction, source in sources.items():
+        for dataset, duration in ((rows, 3600), (short, 300)):
+            for row in dataset.get(source, []):
+                at = datetime.fromtimestamp(int(row["start"]) + duration, UTC)
+                if at != hour_floor(at) or row.get("state") is None:
+                    continue
+                boundary_states.setdefault(at.isoformat(), {})[direction] = str(
+                    row["state"]
+                )
+    boundary_states = {
+        k: v for k, v in boundary_states.items() if set(v) == set(sources)
+    }
     details = {
         direction: {
             "entity_id": source,
@@ -322,6 +335,7 @@ async def read_hours(hass, sources, start, now):
     return {
         "live_context": live_context,
         "finalized": finalized,
+        "boundary_states": boundary_states,
         "pending": pending,
         "invalid": invalid,
         "current": current,

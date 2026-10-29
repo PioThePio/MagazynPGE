@@ -961,3 +961,18 @@ test("partial home energy is explained under an info icon on both cards", async 
     await window.happyDOM.close();
   }
 });
+
+test("recovery history shows one conservative correction and its replacement status", async () => {
+  const {window,root,emit}=await setup("pge-history-card");
+  const data=snapshot();
+  data.hourly={recoveries:[{status:"estimated",timing_uncertain:false,gap_rows:[{observed_start:"2026-10-01T06:30:00+00:00",observed_end:"2026-10-01T12:50:00+00:00",raw_import_kwh:"10",raw_export_kwh:"5",net_kwh:"-6"}]}]};
+  emit(data);await tick();
+  assert.match(root.querySelector("#recovery-history").textContent,/Uzupełnienia po przerwach/);
+  assert.match(root.querySelector("#recovery-history").textContent,/Rozliczenie szacunkowe/);
+  assert.equal(root.querySelectorAll("#recovery-history tbody tr").length,1);
+  assert.match(root.querySelector("#recovery-history").textContent,/-6,0 kWh/);
+  data.hourly.recoveries[0].status="replaced";emit(data);await tick();
+  assert.match(root.querySelector("#recovery-history").textContent,/Zastąpiono dokładną historią/);
+  assert.equal(root.querySelectorAll("#recovery-history tbody tr").length,1);
+  await window.happyDOM.close();
+});

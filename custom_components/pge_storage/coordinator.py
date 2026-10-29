@@ -80,6 +80,11 @@ from .planning import (
     validate_plan,
 )
 from .power import PowerWindows
+from .recovery import empty as empty_recovery
+from .recovery import observe as observe_recovery
+from .recovery import proven_hours
+from .recovery import reconcile as reconcile_recovery
+from .recovery import validate as validate_recovery
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -118,6 +123,11 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.usage_error = None
         self.usage_baseline = None
         self._midnight_cancel = None
+        self.recovery_cache = empty_recovery(self.sources)
+        self._recovery_task = None
+        self._recovery_unavailable_seen = False
+        self._recovery_closing = False
+        self._recovery_checkpoint_at = dt_util.utcnow()
         self.hourly_cache = validate_archive(None, self.sources, dt_util.utcnow())
         self.hourly_pending = {}
         self.hourly_current = {}
@@ -174,6 +184,14 @@ class LedgerCoordinator(DataUpdateCoordinator):
             if data and isinstance(data.get("battery_history", {}), dict)
             else {}
         )
+        self.recovery_cache = validate_recovery(
+            data.get("recovery_cache") if data else None,
+            self.sources,
+            dt_util.utcnow(),
+            self.hourly_cache["hours"],
+        )
+        if self.recovery_cache["last"]:
+            self.recovery_cache["unavailable"] = True
         await self._auto_energy_defaults()
         await self.async_refresh_planning_history()
         await self.async_refresh_energy()
@@ -189,6 +207,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.entry.async_on_unload(
             lambda: self._report_unsub() if self._report_unsub else None
         )
+        self.entry.async_on_unload(self._stop_recovery)
         self._schedule_midnight()
         self.entry.async_on_unload(
             lambda: self._midnight_cancel() if self._midnight_cancel else None
@@ -262,8 +281,42 @@ class LedgerCoordinator(DataUpdateCoordinator):
 
     @callback
     def _power_tick(self, _now):
+        if self._recovery_closing:
+            return
+        now = dt_util.utcnow()
+        if (
+            self._recovery_unavailable_seen
+            or now - self._recovery_checkpoint_at >= timedelta(seconds=15)
+        ) and (self._recovery_task is None or self._recovery_task.done()):
+            self._recovery_checkpoint_at = now
+            self._recovery_task = self.hass.async_create_task(
+                self._checkpoint_recovery(now)
+            )
         if self.energy_config["sources"] or self.energy_config["consumers"]:
             self.publish()
+
+    async def _stop_recovery(self):
+        self._recovery_closing = True
+        try:
+            if self._recovery_task is not None:
+                await self._recovery_task
+            await self._checkpoint_recovery(dt_util.utcnow())
+        except Exception:
+            _LOGGER.exception(
+                "Cannot save final PGE recovery checkpoint; retaining previous durable pair"
+            )
+
+    async def _checkpoint_recovery(self, now):
+        async with self.lock:
+            updated = deepcopy(self.recovery_cache)
+            updated["unavailable"] |= self._recovery_unavailable_seen
+            self._recovery_unavailable_seen = False
+            observe_recovery(updated, self.hass, now)
+            if updated != self.recovery_cache:
+                await self.store.async_save(
+                    {**self._payload(), "recovery_cache": updated}
+                )
+                self.recovery_cache = updated
 
     async def _energy_statistics_tick(self, _now):
         await self.async_refresh_planning_history()
@@ -400,7 +453,9 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.usage_error = None
 
     def hour_book(self):
-        return HourBook(self.hourly_cache["hours"])
+        return HourBook(
+            self.hourly_cache["hours"], recoveries=self.recovery_cache["blocks"]
+        )
 
     def _payload(self):
         return {
@@ -415,6 +470,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
             "battery_model": deepcopy(self.battery_estimator.profile),
             "battery_history": deepcopy(self.battery_history),
             "hourly_cache": self.hourly_cache,
+            "recovery_cache": self.recovery_cache,
             "profile_basis": self.profile_basis,
             "accounting_model": MODEL,
         }
@@ -527,6 +583,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
                     "battery_model": deepcopy(self.battery_estimator.profile),
                     "battery_history": deepcopy(self.battery_history),
                     "hourly_cache": self.hourly_cache,
+                    "recovery_cache": self.recovery_cache,
                     "profile_basis": self.profile_basis,
                     "accounting_model": MODEL,
                 }
@@ -547,6 +604,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
             start = min(start, boundary(self.records[0].day))
         self.hourly_error = None
         try:
+            recovery = deepcopy(self.recovery_cache)
+            observe_recovery(recovery, self.hass, now)
             result = await read_hours(self.hass, self.sources, start, now)
             hours = {
                 key: row
@@ -567,11 +626,26 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 self.sources,
                 now,
             )
-            if updated != self.hourly_cache or self.battery_estimator.profile:
+            recovery = reconcile_recovery(
+                recovery, result.get("boundary_states", {}), hours, now
+            )
+            proven = await proven_hours(self.hass, self.sources, recovery, hours)
+            if proven:
+                recovery = reconcile_recovery(recovery, {}, hours, now, proven)
+            if (
+                updated != self.hourly_cache
+                or recovery != self.recovery_cache
+                or self.battery_estimator.profile
+            ):
                 await self.store.async_save(
-                    {**self._payload(), "hourly_cache": updated}
+                    {
+                        **self._payload(),
+                        "hourly_cache": updated,
+                        "recovery_cache": recovery,
+                    }
                 )
                 self.hourly_cache = updated
+                self.recovery_cache = recovery
             self.hourly_pending = result["pending"]
             self.hourly_current = result["current"]
             self.hourly_live_context = result["live_context"]
@@ -579,13 +653,13 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self.hourly_as_of = result["finalized_through"]
             self.hourly_revision += 1
             self.hourly_accounting = accounting_snapshot(
-                HourBook(hours), self.records, self.planning, self.hourly_as_of
+                self.hour_book(), self.records, self.planning, self.hourly_as_of
             )
             self.planning_history_error = None
         except Exception as err:
             self.hourly_error = str(err)
             self.hourly_accounting = accounting_snapshot(
-                HourBook(self.hourly_cache["hours"]),
+                self.hour_book(),
                 self.records,
                 self.planning,
                 self.hourly_as_of,
@@ -627,6 +701,11 @@ class LedgerCoordinator(DataUpdateCoordinator):
 
     @callback
     def _source_changed(self, _event) -> None:
+        if _event.data.get("entity_id") in self.sources.values():
+            try:
+                sample_from_state(_event.data.get("new_state"))
+            except LedgerError:
+                self._recovery_unavailable_seen = True
         self.hourly_projector.observe(_event, self.sources, dt_util.utcnow())
         entity = _event.data.get("entity_id")
         if entity in source_ids(self.energy_config["sources"].get("pv_power")):
@@ -726,6 +805,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
         snapshot["hourly"] = {
             "model": MODEL,
             "current": self.hourly_current,
+            "recoveries": deepcopy(self.recovery_cache["blocks"]),
+            "recovery_error": self.recovery_cache.get("error"),
             "sources": self.hourly_details,
             "closed_hours": len(self.hourly_cache["hours"]),
             "finalization_delay_minutes": 0,
@@ -940,6 +1021,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         profile_basis=None,
         battery_model=None,
         battery_history=None,
+        recovery_cache=None,
     ) -> None:
         records = self._validated([row.to_dict() for row in records])
         changed_plan = planning is not None
@@ -972,6 +1054,13 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self.hourly_cache
             if hourly_cache is None
             else validate_archive(hourly_cache, self.sources, dt_util.utcnow())
+        )
+        recovery_cache = (
+            self.recovery_cache
+            if recovery_cache is None
+            else validate_recovery(
+                recovery_cache, self.sources, dt_util.utcnow(), hourly_cache["hours"]
+            )
         )
         learned = BatteryEstimate()
         learned.history_driven = True
@@ -1007,6 +1096,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 "battery_model": learned.profile,
                 "battery_history": next_battery_history,
                 "hourly_cache": hourly_cache,
+                "recovery_cache": recovery_cache,
                 "profile_basis": profile_basis,
                 "accounting_model": MODEL,
             }
@@ -1024,6 +1114,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         else:
             self.battery_estimator.profile = deepcopy(learned.profile)
         self.hourly_cache = hourly_cache
+        self.recovery_cache = recovery_cache
         self.profile_basis = profile_basis
         self.diagram_clock.frame = None
         await self._async_refresh_planning_history()
@@ -1152,6 +1243,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
             "battery_model": deepcopy(self.battery_estimator.profile),
             "battery_history": deepcopy(self.battery_history),
             "hourly_cache": self.hourly_cache,
+            "recovery_cache": self.recovery_cache,
             "profile_basis": self.profile_basis,
             "accounting_model": MODEL,
         }
@@ -1185,5 +1277,6 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 document.get("battery_history", {})
                 if isinstance(document.get("battery_history", {}), dict)
                 else {},
+                document.get("recovery_cache") or empty_recovery(self.sources),
             )
             self._watch_energy()

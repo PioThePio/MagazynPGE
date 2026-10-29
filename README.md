@@ -262,7 +262,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.15.1.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.16.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 
@@ -300,3 +300,15 @@ Strzałki pod mocą sieci pokazują **↓ eksport do sieci / ↑ import z sieci*
 Dom w kWh liczymy jako PV + import + rozładowanie − eksport − ładowanie. Każdy licznik wnosi wszystkie dostępne przyrosty z wybranego okresu kalendarzowego. Nie przecinamy list znaczników czasu różnych źródeł: brak nocnej statystyki PV nie usuwa nocnego poboru z sieci i baterii. Dotyczy to bieżącego dnia i poprzednich dni, tygodni, miesięcy oraz roku. Odczyt początkowy wyszukujemy także w dwóch dobach poprzedzających okres, co pozwala uwzględnić pierwszą poranną produkcję po nocnym wyłączeniu falownika. Jeżeli w tym zakresie nie ma odczytu początkowego, liczymy dostępne późniejsze przyrosty i oznaczamy niepełną historię. Brak całej historii wymaganego źródła pozostawia zużycie domu nieznane. Informację o niepełnym zakresie otwiera ⓘ na obu kartach. Nieśledzone zużycie korzysta z poprawionego zużycia domu.
 
 W sieci **↓ oznacza energię oddaną do sieci, ↑ pobraną z sieci** — kierunki względem tego zasobu, tak jak w baterii. Znak bieżącej mocy pozostaje + pobór, − eksport. Rozliczenia PGE nadal korzystają z odrębnego, rygorystycznego bilansowania godzinowego; poprawka widoku fizycznej energii go nie zmienia.
+
+## Uzupełnianie po przerwach — 0.16.0
+
+Integracja zapisuje parę narastających liczników i czas w trwałych punktach kontrolnych (co 15 s oraz przy prawidłowym zamknięciu integracji). Po restarcie HA, niedostępności źródła albo przerwie świeżych raportów obu liczników powyżej 90 s wykrywa powrót poprawnej pary. Nie przyjmuje stanów odtworzonych przez RestoreState ani starego odczytu jednego kierunku. Spadek licznika zatrzymuje uzupełnienie i zgłasza problem; nie staje się ujemnym zużyciem.
+
+Brakująca energia jest rozliczana **raz i szacunkowo**, jako `0,8 × eksport − import`, bez kompensowania całej przerwy 1:1 i bez proporcjonalnego przypisywania jej do godzin. Przykład 8:30–14:50: import 1000→1010 i eksport 500→505 daje **−6 kWh**. Osobno uwzględniamy znane fragmenty godzin przed przerwą i po powrocie. Zatwierdzenie następuje po zamknięciu pierwszej godziny po powrocie i odczytaniu jej granicy; w przykładzie po 15:00, gdy granica pojawi się w Recorder. Przy braku granic wpis oczekuje na dane — nie wymyślamy odczytu początkowego.
+
+W „Rozliczeniu miesięcznym” jest tabela **Uzupełnienia po przerwach**: zakres, import, eksport, szacunkowa zmiana i status. Saldo zawierające szacunek ma oznaczenie ≈; encje mają atrybuty `recovery_estimated` i `recovery_intervals`. Ponowne uruchomienie lub odświeżenie nie dodaje wpisu ponownie. Nakładające się późne koszyki statystyk nie są liczone drugi raz. Jeśli wróci rzeczywista historia wszystkich granic godzin i zgadzają się sumy obu liczników, dokładne rozliczenie zastępuje szacunek. Sam skok w pierwszej statystyce po powrocie nie jest dowodem takiej historii. Przy przerwie wewnątrz jednej godziny jej kompletne, zgodne sumy graniczne wystarczają do dokładnego rozliczenia.
+
+Szacunkowy przyrost przypisujemy przy powrocie odczytów, także po zmianie daty. FIFO i ważność energii nadal obowiązują, a magazyn pozostaje ≥0; brak zapasu pokazuje Niedobór. Przy przekroczeniu daty lub miesiąca oznaczamy niepewność przypisania energii i terminów. Przerwa przecinająca nową fakturę wymaga dokładniejszych odczytów: automatyczne doliczenie mogłoby ponownie uwzględnić energię już objętą saldem faktury, więc saldo pozostaje wtedy nieznane z objaśnieniem.
+
+Mechanizm działa od zapisania pierwszego punktu kontrolnego po tej aktualizacji. Nie rekonstruuje sam dawnych przerw bez zachowanej pary liczników i odczytów granicznych. Kopia JSON zawiera `recovery_cache`; odczyt starszych kopii pozostaje obsługiwany. Nie zapisujemy korekt do źródłowych statystyk HA ani do faktur. To ostrożny szacunek, a nie gwarancja zgodności z rozliczeniem operatora.

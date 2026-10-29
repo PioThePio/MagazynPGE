@@ -1,6 +1,6 @@
-/* PGE 0.15.1: independent Lovelace modules, no external libraries. */
-import "./pge-settings.js?v=0.15.1";
-const VERSION = "0.15.1";
+/* PGE 0.16.0: independent Lovelace modules, no external libraries. */
+import "./pge-settings.js?v=0.16.0";
+const VERSION = "0.16.0";
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -262,7 +262,7 @@ class BalanceCard extends PGEBase {
     if (inventory && key === "deficit")
       value = Math.max(0, -Number(inventory.balance_kwh));
     this.frame(
-      `<ha-card style="padding:16px"><button id="metric" style="width:100%;text-align:left;padding:0"><div class="row"><ha-icon icon="${icon}" style="color:${color};background:${color}15;border-radius:12px;padding:10px;box-sizing:content-box"></ha-icon><span class="sub">${esc(this.config.title || title)}</span></div><div style="font-size:clamp(22px,7cqw,32px);font-weight:700;margin-top:14px;white-space:nowrap">${fmt(value)} <small style="font-size:14px;font-weight:400">kWh</small></div></button></ha-card>`,
+      `<ha-card style="padding:16px"><button id="metric" style="width:100%;text-align:left;padding:0"><div class="row"><ha-icon icon="${icon}" style="color:${color};background:${color}15;border-radius:12px;padding:10px;box-sizing:content-box"></ha-icon><span class="sub">${esc(this.config.title || title)}</span></div><div style="font-size:clamp(22px,7cqw,32px);font-weight:700;margin-top:14px;white-space:nowrap">${current.recovery_estimated ? '<span title="Saldo zawiera szacunkowe uzupełnienie po przerwie">≈ </span>' : ""}${fmt(value)} <small style="font-size:14px;font-weight:400">kWh</small></div></button></ha-card>`,
     );
     this.shadowRoot.getElementById("metric").onclick = () => this.info(key);
   }
@@ -764,10 +764,14 @@ class HistoryCard extends PGEBase {
   render() {
     if (!this.shadowRoot.querySelector("ha-card")) {
       this.frame(
-        `<ha-card><div class="head"><h2>${esc(this.config.title || "Rozliczenie miesięczne")}</h2><button id="refresh" title="Odśwież">↻</button></div><div id="monthly-chart"></div><div class="scroll"><table><thead><tr><th>Miesiąc</th><th>Pobrano</th><th>Oddano</th><th>Magazyn</th><th>Netto</th></tr></thead><tbody id="months"></tbody></table></div><div id="history-note" class="sub">Wczytywanie miesięcy…</div></ha-card>`,
+        `<ha-card><div class="head"><h2>${esc(this.config.title || "Rozliczenie miesięczne")}</h2><button id="refresh" title="Odśwież">↻</button></div><div id="monthly-chart"></div><div class="scroll"><table><thead><tr><th>Miesiąc</th><th>Pobrano</th><th>Oddano</th><th>Magazyn</th><th>Netto</th></tr></thead><tbody id="months"></tbody></table></div><div id="history-note" class="sub">Wczytywanie miesięcy…</div><div id="recovery-history"></div></ha-card>`,
       );
       this.shadowRoot.getElementById("refresh").onclick = () => this.load(true);
     }
+    const recoveryRows = [...(this.data.hourly?.recoveries || [])].reverse();
+    const recoveryNode = this.shadowRoot.getElementById("recovery-history");
+    if (recoveryNode) recoveryNode.innerHTML = recoveryRows.length ? `<h3>Uzupełnienia po przerwach</h3><div class="scroll"><table><thead><tr><th>Przerwa</th><th>Pobrano</th><th>Oddano</th><th>Zmiana magazynu</th></tr></thead><tbody>${recoveryRows.slice(0,30).map(b => (b.gap_rows || []).map(r => `<tr><td>${esc(new Date(r.observed_start).toLocaleString("pl-PL",{timeZone:"Europe/Warsaw"}))}<br>${esc(new Date(r.observed_end).toLocaleString("pl-PL",{timeZone:"Europe/Warsaw"}))}<small>${b.status === "replaced" ? "Zastąpiono dokładną historią" : b.status === "estimated" ? "Rozliczenie szacunkowe" : "Oczekuje na granice zamkniętej godziny"}${b.timing_uncertain ? " · przypisano przy powrocie; niepewny podział dat i ważności" : ""}</small></td><td>${precise(r.raw_import_kwh)}</td><td>${precise(r.raw_export_kwh)}</td><td>${b.status === "replaced" ? "—" : signed(r.net_kwh)} kWh</td></tr>`).join("")).join("")}</tbody></table></div>` : "";
+    if (recoveryNode && this.data.hourly?.recovery_error) recoveryNode.insertAdjacentHTML("beforeend", `<div class="warn">${esc(this.data.hourly.recovery_error)}</div>`);
     if (this._key !== `${this.data.entry_id}:${this.data.revision}:${this.data.hourly_revision || 0}`) {
       this._key = `${this.data.entry_id}:${this.data.revision}:${this.data.hourly_revision || 0}`;
       this.days.clear();
@@ -823,7 +827,7 @@ class HistoryCard extends PGEBase {
       .reverse()
       .map(
         (r) =>
-          `<tr class="month-row" data-month="${r.month}"><td><button aria-expanded="${this.expanded.has(r.month)}">${this.expanded.has(r.month) ? "▾" : "▸"} ${esc(month(r.month))}</button>${r.partial ? "<small>do dziś</small>" : ""}</td><td class="minus">${fmt(r.import_kwh)}</td><td class="plus">${fmt(r.credited_kwh)}</td><td class="balance">${fmt(r.balance_kwh)}</td><td>${fmt(r.net_kwh)}</td></tr>${this.expanded.has(r.month) ? `<tr><td colspan="5" class="details-cell" data-days="${r.month}">${this.dailyHTML(r.month)}</td></tr>` : ""}`,
+          `<tr class="month-row" data-month="${r.month}"><td><button aria-expanded="${this.expanded.has(r.month)}">${this.expanded.has(r.month) ? "▾" : "▸"} ${esc(month(r.month))}</button>${r.partial ? "<small>do dziś</small>" : ""}${r.estimated ? "<small>≈ zawiera szacunek</small>" : ""}</td><td class="minus">${fmt(r.import_kwh)}</td><td class="plus">${fmt(r.credited_kwh)}</td><td class="balance">${fmt(r.balance_kwh)}</td><td>${fmt(r.net_kwh)}</td></tr>${this.expanded.has(r.month) ? `<tr><td colspan="5" class="details-cell" data-days="${r.month}">${this.dailyHTML(r.month)}</td></tr>` : ""}`,
       )
       .join("");
     for (const row of this.shadowRoot.querySelectorAll("[data-month]"))
@@ -874,7 +878,7 @@ class HistoryCard extends PGEBase {
         },
       ],
       { height: 175 },
-    )}</div><div class="daily-table"><table><thead><tr><th>Dzień</th><th>Pobrano</th><th>Oddano</th><th>Magazyn</th><th>Netto</th></tr></thead><tbody>${[...rows].reverse().map((r) => `<tr><td>${esc(day(r.day))}${r.partial ? " ·" : ""}</td><td class="minus">${fmt(r.import_kwh)}</td><td class="plus">${fmt(r.credited_kwh)}</td><td class="balance">${fmt(r.balance_kwh)}</td><td>${fmt(r.net_kwh)}</td></tr>`).join("")}</tbody></table></div>`;
+    )}</div><div class="daily-table"><table><thead><tr><th>Dzień</th><th>Pobrano</th><th>Oddano</th><th>Magazyn</th><th>Netto</th></tr></thead><tbody>${[...rows].reverse().map((r) => `<tr><td>${esc(day(r.day))}${r.partial ? " ·" : ""}${r.estimated ? " ≈" : ""}</td><td class="minus">${fmt(r.import_kwh)}</td><td class="plus">${fmt(r.credited_kwh)}</td><td class="balance">${fmt(r.balance_kwh)}</td><td>${fmt(r.net_kwh)}</td></tr>`).join("")}</tbody></table></div>`;
   }
 }
 class ProjectionCard extends PGEBase {

@@ -190,7 +190,13 @@ async def test_full_integration_recorder_gui_api_and_restart(ha):
     # Reload above went through HA's unload/setup paths and durable Store.
     restarted = entry.runtime_data
     assert restarted is not manager
-    assert restarted.export() == exported
+    # Financial/configuration data must survive exactly. The independent
+    # recovery checkpoint legitimately catches the newer live counter after
+    # reload (the test changed export to 10012.5 after taking the backup).
+    assert {k: v for k, v in restarted.export().items() if k != "recovery_cache"} == {
+        k: v for k, v in exported.items() if k != "recovery_cache"
+    }
+    assert restarted.recovery_cache["last"]["export"] == "10012.5"
     assert restarted.data["current"]["estimated_balance"] is None
     assert source_before.state == "7410"
     assert (
