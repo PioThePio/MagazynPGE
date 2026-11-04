@@ -85,6 +85,7 @@ from .recovery import observe as observe_recovery
 from .recovery import proven_hours
 from .recovery import reconcile as reconcile_recovery
 from .recovery import validate as validate_recovery
+from .reporting import ReportCadence
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,6 +113,7 @@ class LedgerCoordinator(DataUpdateCoordinator):
         self.battery_estimator = BatteryEstimate()
         self.battery_estimator.history_driven = True
         self._report_unsub = None
+        self.report_cadence = ReportCadence()
         self.energy_import_warnings = []
         self.consumer_sync_notes = []
         self.battery_history = {}
@@ -360,9 +362,16 @@ class LedgerCoordinator(DataUpdateCoordinator):
             repr(self.energy_config),
             dt_util.utcnow().timestamp(),
         )
+        consumer_ids = {
+            item["power"]
+            for item in self.energy_config["consumers"]
+            if item.get("power")
+        }
+        self.report_cadence.configure(consumer_ids)
+        report_ids = set(pv_ids) | consumer_ids
         self._report_unsub = (
-            async_track_state_report_event(self.hass, pv_ids, self._pv_reported)
-            if pv_ids
+            async_track_state_report_event(self.hass, report_ids, self._pv_reported)
+            if report_ids
             else None
         )
         if self._energy_unsub:
@@ -377,6 +386,9 @@ class LedgerCoordinator(DataUpdateCoordinator):
     @callback
     def _pv_reported(self, event):
         entity = event.data["entity_id"]
+        self.report_cadence.report(entity, dt_util.utcnow().timestamp())
+        if entity not in source_ids(self.energy_config["sources"].get("pv_power")):
+            return
         self.diagram_clock.report(
             entity,
             dt_util.utcnow().timestamp(),
@@ -656,6 +668,14 @@ class LedgerCoordinator(DataUpdateCoordinator):
             proven = await proven_hours(self.hass, self.sources, recovery, hours)
             if proven:
                 recovery = reconcile_recovery(recovery, {}, hours, now, proven)
+            financial_changed = (
+                updated != self.hourly_cache
+                or any(
+                    recovery.get(key) != self.recovery_cache.get(key)
+                    for key in ("blocks", "error")
+                )
+                or result["finalized_through"] != self.hourly_as_of
+            )
             if (
                 updated != self.hourly_cache
                 or recovery != self.recovery_cache
@@ -675,7 +695,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
             self.hourly_live_context = result["live_context"]
             self.hourly_details = result["sources"]
             self.hourly_as_of = result["finalized_through"]
-            self.hourly_revision += 1
+            if financial_changed:
+                self.hourly_revision += 1
             self.hourly_accounting = accounting_snapshot(
                 self.hour_book(), self.records, self.planning, self.hourly_as_of
             )
@@ -732,6 +753,8 @@ class LedgerCoordinator(DataUpdateCoordinator):
                 self._recovery_unavailable_seen = True
         self.hourly_projector.observe(_event, self.sources, dt_util.utcnow())
         entity = _event.data.get("entity_id")
+        if _event.data.get("new_state") is not None:
+            self.report_cadence.report(entity, dt_util.utcnow().timestamp())
         if entity in source_ids(self.energy_config["sources"].get("pv_power")):
             self.diagram_clock.report(
                 entity,
@@ -976,6 +999,16 @@ class LedgerCoordinator(DataUpdateCoordinator):
         energy_view["home_power_live"] = energy_view["values"].get("home_power")
         if stable["covered_seconds"] >= 15:
             energy_view["values"]["home_power"] = str(stable["home_power_w"])
+        snapshot["energy"]["report_cadence"] = self.report_cadence.snapshot(
+            dt_util.utcnow().timestamp()
+        )
+        for entity, cadence in snapshot["energy"]["report_cadence"].items():
+            state = self.hass.states.get(entity)
+            cadence["last_report_age_seconds"] = (
+                max(0, (dt_util.utcnow() - state.last_reported).total_seconds())
+                if state is not None
+                else None
+            )
         snapshot["energy"]["import_warnings"] = self.energy_import_warnings
         snapshot["energy"]["consumer_sync_notes"] = self.consumer_sync_notes
         snapshot["energy"]["import_report"] = (

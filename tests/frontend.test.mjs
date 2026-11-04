@@ -1034,3 +1034,23 @@ test("battery dialog remains modal when ETA first arrives or is disabled", async
   root.querySelector("#close-battery").click();
   await window.happyDOM.close();
 });
+
+
+test("consumer report diagnostics show cadence without changing power or energy", async () => {
+  const device = await setup("pge-consumers-card");
+  const data = snapshot();
+  data.energy.consumers = [{id: "slow", name: "Wolne gniazdko", power: "sensor.slow", power_w: "100", today_kwh: "2"}];
+  data.energy.report_cadence = {"sensor.slow": {reports: 10, mean_seconds: 30.4, typical_seconds: 30, longest_seconds: 32, last_report_age_seconds: 12}};
+  device.emit(data);
+  await tick();
+  let title = device.root.querySelector("[data-consumer-id=slow] .device-name").title;
+  assert.match(title, /Typowy odstęp: 30.0 s/);
+  assert.match(title, /Średni odstęp: 30.4 s/);
+  assert.match(title, /Ostatni raport: 12.0 s temu/);
+  assert.match(device.root.textContent, /100 W/);
+  data.energy.report_cadence["sensor.slow"] = {reports: 1};
+  device.emit({...data});
+  await tick();
+  title = device.root.querySelector("[data-consumer-id=slow] .device-name").title;
+  assert.match(title, /Ustalanie częstotliwości/);
+});

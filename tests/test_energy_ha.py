@@ -96,6 +96,26 @@ async def test_energy_sources_aliases_readonly_persistence_and_failed_write(ha):
     }
     await manager.async_put_energy(config, manager.revision)
     await hass.async_block_till_done()
+    # Both changed and identical writes count; reading/rendering never does.
+    before = manager.report_cadence.snapshot(dt_util.utcnow().timestamp())[
+        ids["battery"]
+    ]["reports"]
+    hass.states.async_set(ids["battery"], "501", {"unit_of_measurement": "W"})
+    await hass.async_block_till_done()
+    hass.states.async_set(ids["battery"], "501", {"unit_of_measurement": "W"})
+    await hass.async_block_till_done()
+    manager.publish()
+    cadence = manager.data["energy"]["report_cadence"][ids["battery"]]
+    assert cadence["reports"] == before + 2
+    assert cadence["last_report_age_seconds"] < 5
+    manager.publish()
+    assert (
+        manager.data["energy"]["report_cadence"][ids["battery"]]["reports"]
+        == before + 2
+    )
+    hass.states.async_set(ids["battery"], "500", {"unit_of_measurement": "W"})
+    await hass.async_block_till_done()
+    original[ids["battery"]] = hass.states.get(ids["battery"])
     assert manager.data["energy"]["today"]["pv_energy"] == "3"
     assert manager.data["energy"]["today"]["home_energy"] == "20"
     assert manager.data["energy"]["today"]["credited_energy"] is None
@@ -190,10 +210,20 @@ async def test_energy_sources_aliases_readonly_persistence_and_failed_write(ha):
         },
         manager.revision,
     )
-    october = next(
-        row for row in manager.data["comparison"] if row["month"] == "2026-10"
+    # Compare the current month, independent of the test execution date.
+    local = now.astimezone(WARSAW)
+    month_start = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    previous = month_start.replace(year=month_start.year - 1)
+    following = (previous + timedelta(days=32)).replace(day=1)
+    expected = (
+        following.astimezone(UTC) - previous.astimezone(UTC)
+    ).total_seconds() / 3600
+    current = next(
+        row
+        for row in manager.data["comparison"]
+        if row["month"] == local.strftime("%Y-%m")
     )
-    assert float(october["previous_kwh"]) == pytest.approx(745)
-    assert float(october["current_kwh"]) > 0
+    assert float(current["previous_kwh"]) == pytest.approx(expected)
+    assert float(current["current_kwh"]) > 0
     assert manager.data["planning"]["forecast"]["complete"] is True
     assert manager.data["planning"]["forecast"]["first_shortfall_day"] is not None

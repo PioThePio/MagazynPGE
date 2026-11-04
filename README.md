@@ -262,7 +262,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.17.0.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.17.1.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 
@@ -324,3 +324,8 @@ Zapas całkowity to `pełna pojemność × SOC / 100`; energia dostępna to `pe�
 Profil można obejrzeć w **Źródła energii → Lokalny akumulator → Estymacja czasu i ustawienia zaawansowane → Profil ładowania**. Wykres pokazuje W według SOC, tabela — moc i liczbę obserwacji dla każdego przedziału 5 punktów procentowych. Zielone zakresy mają co najmniej 3 obserwacje; szare mają ich mniej, a brak danych pozostaje pusty. Profil nadal pochodzi z historii BMS, nie z domyślnych założeń. Widok aktualizuje się bez zamykania okna ani zmiany niezapisanych ustawień.
 
 Objaśnienia konfiguratora są zwykłymi dymkami po najechaniu na ⓘ, bez rozwijania tekstu. Informacyjne rozwijacze usunięto z głównego diagramu i odbiorców. Okno szczegółów baterii pozostaje otwarte podczas aktualizacji danych; przycisk zamknięcia i Escape działają na komputerze i telefonie.
+
+
+## Diagnostyka raportowania odbiorców — 0.17.1
+
+Najedź na nazwę odbiorcy, aby sprawdzić odstępy pomiędzy raportami jego encji mocy w HA: medianę, średnią, najdłuższą przerwę, liczbę raportów z ostatnich 5 minut i wiek ostatniego raportu. Liczą się też raporty z niezmienioną wartością. Dane zbierają się od uruchomienia integracji; nie odtwarzamy ich ze zmian zapisanych w Recorder, ponieważ nie zawierają wszystkich identycznych raportów. To diagnostyka zapisów encji przez integrację, bez zmiany średnich i obliczeń energii.

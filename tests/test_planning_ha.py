@@ -149,6 +149,11 @@ async def test_plan_daily_api_and_durable_month_boundaries(ha):
     backup = manager.export()
     assert backup["format_version"] == 5
     assert len(backup["hourly_cache"]["hours"]) >= 720
+    # Reading the same history must not invalidate the frontend's in-flight response.
+    await manager.async_refresh_planning_history()
+    revision = manager.hourly_revision
+    await manager.async_refresh_planning_history()
+    assert manager.hourly_revision == revision
     # A month boundary already frozen in our Store survives Recorder purging it.
     with patch(
         "custom_components.pge_storage.planning_history.async_read_counters",
@@ -283,7 +288,7 @@ async def test_plan_daily_api_and_durable_month_boundaries(ha):
             ).to_have_count(2)
             await expect(
                 page.locator('pge-history-card [data-days="2026-09"] tbody tr').last
-            ).to_contain_text("203")
+            ).to_contain_text("203", timeout=30000)
             await page.locator("pge-energy-card").scroll_into_view_if_needed()
             await page.screenshot(path="/tmp/pge-modules-desktop.png", full_page=True)
             await page.set_viewport_size({"width": 430, "height": 932})

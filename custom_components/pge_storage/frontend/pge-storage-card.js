@@ -1,6 +1,6 @@
-/* PGE 0.17.0: independent Lovelace modules, no external libraries. */
-import "./pge-settings.js?v=0.17.0";
-const VERSION = "0.17.0";
+/* PGE 0.17.1: independent Lovelace modules, no external libraries. */
+import "./pge-settings.js?v=0.17.1";
+const VERSION = "0.17.1";
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -722,6 +722,13 @@ class ConsumersCard extends PeriodCard {
       `<span class="device-values"><strong role="cell">${fmt(power)} W</strong><small role="cell" class="device-average" title="Średnia ważona czasem z ${windowLabel(this.averageSeconds)}${covered != null && covered < this.averageSeconds ? ` · niepełne dane: ${fmt(covered)} / ${this.averageSeconds} s` : ""}">${fmt(mean)} W${covered != null && covered < this.averageSeconds ? " ·" : ""}</small><small role="cell">${precise(kwh)} kWh</small></span>`;
     const toolbar = `<label class="average-options">Średnia<select data-average aria-label="Okno średniej">${powerWindows.map(n => `<option value="${n}" ${this.averageSeconds === n ? "selected" : ""}>${windowLabel(n)}</option>`).join("")}</select></label>`;
     const headers = `<div class="device-header" role="row">${[["name","Nazwa"],["power","Moc"],["average","Średnia"],["energy","Energia"]].map(([key,label]) => `<div role="columnheader" aria-sort="${this.sortMode === key ? this.sortDirection === "asc" ? "ascending" : "descending" : "none"}"><button data-sort="${key}" aria-pressed="${this.sortMode === key}">${label}${this.sortMode === key ? this.sortDirection === "asc" ? " ▴" : " ▾" : ""}</button></div>`).join("")}</div>`;
+    const reportHint = c => {
+      if (!c.power || c.id === "__untracked__") return c.name;
+      const d = e.report_cadence?.[c.power];
+      const age = d?.last_report_age_seconds;
+      const seconds = n => n == null || !Number.isFinite(n) ? "—" : `${Number(n).toFixed(1)} s`;
+      return `${c.name}\nRaporty encji HA · ostatnie 5 min\n${d?.reports >= 2 ? `Typowy odstęp: ${seconds(d.typical_seconds)}\nŚredni odstęp: ${seconds(d.mean_seconds)}\nNajdłuższa przerwa między raportami: ${seconds(d.longest_seconds)}` : "Ustalanie częstotliwości"}\nLiczba raportów: ${d?.reports ?? 0}\nOstatni raport: ${seconds(age)} temu\nObserwujemy zapisy encji przez integrację, również bez zmiany wartości.`;
+    };
     const rows = (parent, depth = 0, visited = new Set()) =>
       (children.get(parent) || [])
         .sort((a, b) => (this._orders.get(parent)?.indexOf(a.id) ?? 0) - (this._orders.get(parent)?.indexOf(b.id) ?? 0))
@@ -731,7 +738,7 @@ class ConsumersCard extends PeriodCard {
           seen.add(c.id);
           const nested = children.get(c.id)?.length,
             open = this._expanded.has(c.id);
-          return `<div class="device ${c.id === "__untracked__" ? "untracked" : ""} ${nested ? "device-folder" : ""}" style="--depth:${depth}"><div class="device-line"><div class="device-content" role="row" data-consumer-id="${esc(c.id)}"><div class="device-name-cell" role="cell">${depth ? '<span class="tree-stem">└</span>' : ""}<button class="device-name" title="${esc(c.name)}">${esc(c.name)}</button></div>${values(c.power_w, c.period_kwh, c.average_w, c.id === "__untracked__" ? window?.untracked_covered_seconds : window?.consumer_coverage_seconds?.[c.id])}</div></div><div class="bar"><i style="width:${c.power_w != null && homeW > 0 ? Math.max(0, Math.min(100, (100 * Number(c.power_w)) / Number(homeW))) : 0}%"></i></div></div>${nested ? rows(c.id, depth + 1, seen) : ""}`;
+          return `<div class="device ${c.id === "__untracked__" ? "untracked" : ""} ${nested ? "device-folder" : ""}" style="--depth:${depth}"><div class="device-line"><div class="device-content" role="row" data-consumer-id="${esc(c.id)}"><div class="device-name-cell" role="cell">${depth ? '<span class="tree-stem">└</span>' : ""}<button class="device-name" title="${esc(reportHint(c))}">${esc(c.name)}</button></div>${values(c.power_w, c.period_kwh, c.average_w, c.id === "__untracked__" ? window?.untracked_covered_seconds : window?.consumer_coverage_seconds?.[c.id])}</div></div><div class="bar"><i style="width:${c.power_w != null && homeW > 0 ? Math.max(0, Math.min(100, (100 * Number(c.power_w)) / Number(homeW))) : 0}%"></i></div></div>${nested ? rows(c.id, depth + 1, seen) : ""}`;
         })
         .join("");
     this.frame(
