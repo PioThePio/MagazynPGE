@@ -89,7 +89,9 @@ async def test_native_dashboard_cards_editing_and_reload(ha):
                 "custom:pge-balance-card",
                 "custom:pge-balance-card",
                 "custom:pge-balance-card",
+                "custom:pge-energy-controls-card",
                 "custom:pge-energy-card",
+                "custom:pge-battery-time-card",
                 "custom:pge-consumers-card",
                 "custom:pge-projection-card",
                 "custom:pge-opust-card",
@@ -197,6 +199,11 @@ async def test_legacy_split_preserves_independent_cards_and_other_entries():
     assert original == before
     assert cards[0] == energy and cards[1] == before["views"][0]["cards"][1]
     assert sum(card["type"] == "custom:pge-energy-card" for card in cards) == 1
+    assert not any(
+        card["type"]
+        in ("custom:pge-energy-controls-card", "custom:pge-battery-time-card")
+        for card in cards
+    )
     assert [c for c in cards if c["type"] == "custom:pge-storage-card"] == [
         {"type": "custom:pge-storage-card", "entry_id": "two"}
     ]
@@ -204,7 +211,12 @@ async def test_legacy_split_preserves_independent_cards_and_other_entries():
     # No guessed ownership for implicit cards in a multiple-entry installation.
     implicit = {"views": [{"cards": [{"type": "custom:pge-storage-card"}]}]}
     assert split_legacy_view(implicit, "one", allow_default=False) == implicit
-    assert split_legacy_view(implicit, "one", allow_default=True) != implicit
+    split = split_legacy_view(implicit, "one", allow_default=True)
+    assert {
+        "custom:pge-energy-controls-card",
+        "custom:pge-energy-card",
+        "custom:pge-battery-time-card",
+    } <= {card["type"] for card in split["views"][0]["cards"]}
 
 
 async def test_startup_repairs_legacy_dashboard_and_keeps_original_backup(ha):

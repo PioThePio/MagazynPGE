@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -16,6 +17,7 @@ from custom_components.pge_storage.hourly import (
     validate_archive,
 )
 from custom_components.pge_storage.hourly_history import from_states, from_sums
+from custom_components.pge_storage.hourly_views import hours_for_day
 from custom_components.pge_storage.ledger import (
     WARSAW,
     LedgerError,
@@ -115,6 +117,22 @@ def test_dst_uses_distinct_utc_hours_and_warsaw_calendar(day, count):
             if datetime.fromisoformat(key).astimezone(WARSAW).hour == 2
         ]
         assert len(repeated) == 2 and repeated[0].utcoffset() != repeated[1].utcoffset()
+
+
+@pytest.mark.parametrize(("day", "count"), [("2026-03-29", 23), ("2026-10-25", 25)])
+def test_hour_chart_keeps_each_local_clock_hour_and_exact_settlement(day, count):
+    start = datetime.combine(
+        datetime.fromisoformat(day).date(), datetime.min.time(), WARSAW
+    ).astimezone(UTC)
+    book = book_rows(start, [(1, 0), (0, 1)] * (count // 2) + [(1, 0)] * (count % 2))
+    manager = SimpleNamespace(hour_book=lambda: book, hourly_current={})
+    rows = hours_for_day(manager, day)["rows"]
+    assert len(rows) == count
+    assert rows[0]["balance_kwh"] == "1"
+    assert rows[1]["balance_kwh"] == "-1"
+    assert rows[1]["net_kwh"] == "0.8"
+    if count == 25:
+        assert [row["label"] for row in rows].count("02:00") == 2
 
 
 def test_expiry_is_applied_before_next_day_withdrawal_and_fifo_is_oldest_month():

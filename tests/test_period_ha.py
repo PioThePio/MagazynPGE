@@ -18,7 +18,10 @@ from homeassistant.helpers.recorder import get_instance
 
 from custom_components.pge_storage.energy_panel import async_statistics_today
 from custom_components.pge_storage.ledger import WARSAW
-from custom_components.pge_storage.period import async_energy_period
+from custom_components.pge_storage.period import (
+    async_consumer_period,
+    async_energy_period,
+)
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
@@ -238,6 +241,11 @@ async def test_year_uses_available_history_and_today_uses_native_five_minute_row
     assert year["values"]["home_energy"] == "138"
     assert year["consumers"][0]["period_kwh"] == "48"
     assert year["partial"] is True
+    one = await async_consumer_period(
+        manager, "year", "2026-01-01", "AC", datetime(2026, 10, 19, 12, tzinfo=UTC)
+    )
+    assert one["period_kwh"] == "48"
+    assert one["status"] == "partial"
 
     # Actual native short-term rows use the same sums as hourly statistics.
     recorder = get_instance(hass)

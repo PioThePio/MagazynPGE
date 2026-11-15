@@ -199,6 +199,11 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                             node => node.getBoundingClientRect().toJSON()),
                         nodes: [...element.querySelectorAll('.node')].map(
                             node => node.getBoundingClientRect().toJSON()),
+                        pv: element.querySelector('.pv-left')?.getBoundingClientRect().toJSON(),
+                        borders: [...element.querySelectorAll('.node')].map(
+                            node => getComputedStyle(node).borderTopWidth),
+                        lines: [...element.querySelectorAll('.flow-line')].map(
+                            line => getComputedStyle(line).strokeWidth),
                         cardBottom: element.closest('ha-card').getBoundingClientRect().bottom,
                         card: {
                             width: element.closest('ha-card').clientWidth,
@@ -211,10 +216,16 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                         geometry["hour"]["bottom"] + 2 < geometry["gridLine"]["top"]
                     ), geometry
                 assert len(geometry["circles"]) == 5
+                assert set(geometry["borders"]) == {"4px"}, geometry
+                assert set(geometry["lines"]) == {"4px"}, geometry
                 assert (
                     geometry["card"]["scrollWidth"] <= geometry["card"]["width"] + 1
                 ), geometry
                 bounds = geometry["bounds"]
+                if geometry["pv"]:
+                    assert geometry["pv"]["bottom"] < geometry["circles"][1]["top"], (
+                        geometry
+                    )
                 assert (
                     max(node["bottom"] for node in geometry["nodes"]) + 4
                     <= (geometry["cardBottom"])
@@ -422,6 +433,12 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             await expect(page).to_have_url(f"{origin}{url}")
             await expect(page.locator("pge-storage-card")).to_have_count(0)
             await expect(page.locator("pge-energy-card")).to_have_count(1)
+            await expect(page.locator("pge-energy-controls-card")).to_have_count(1)
+            await expect(page.locator("pge-battery-time-card")).to_have_count(1)
+            await expect(page.locator("pge-energy-card .period-picker")).to_have_count(
+                0
+            )
+            await expect(page.locator("pge-energy-card #battery-eta")).to_have_count(0)
             await expect(page.locator("pge-consumers-card")).to_have_count(1)
             await expect(page.locator("pge-balance-card")).to_have_count(3)
             for tag in (
@@ -452,14 +469,14 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 "kWh"
             )
             await check_flow_geometry()
-            await page.locator('pge-energy-card [data-period="month"]').click()
+            await page.locator('pge-energy-controls-card [data-period="month"]').click()
             await expect(
-                page.locator('pge-energy-card [data-period="month"]')
+                page.locator('pge-energy-controls-card [data-period="month"]')
             ).to_have_attribute("aria-pressed", "true")
             current_month = await page.locator("pge-energy-card").evaluate(
                 "node => node.anchor.slice(0,7)"
             )
-            await page.locator('pge-energy-card [data-shift="-1"]').click()
+            await page.locator('pge-energy-controls-card [data-shift="-1"]').click()
             previous_month = await page.locator("pge-energy-card").evaluate(
                 "node => node.anchor.slice(0,7)"
             )
@@ -467,8 +484,14 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             await expect(
                 page.locator("pge-energy-card .node-home strong")
             ).to_have_text("3400 W")
-            await page.locator("pge-energy-card [data-current]").click()
-            await page.locator('pge-energy-card [data-period="day"]').click()
+            await page.locator("pge-energy-controls-card [data-current]").click()
+            await page.locator('pge-energy-controls-card [data-period="day"]').click()
+            await page.locator("pge-battery-time-card #battery-eta").click()
+            time_dialog = page.locator("pge-battery-time-card #battery-dialog")
+            await expect(time_dialog).to_be_visible()
+            manager.publish()
+            await expect(time_dialog).to_be_visible()
+            await page.locator("pge-battery-time-card #close-battery").click()
             for entity_id, value in {
                 "sensor.ac": "300.2",
                 "sensor.ac_down": "100.1",

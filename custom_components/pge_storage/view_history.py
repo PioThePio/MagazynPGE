@@ -132,6 +132,83 @@ async def restore_power_history(hass, config, core, now):
     )
 
 
+async def restore_discharge_history(hass, config, now):
+    """Time-weighted 24h discharge intervals; unknown states have no weight."""
+    sources = config["sources"]
+    roles = (
+        ("battery_power",)
+        if sources.get("battery_power")
+        else ("battery_charge_power", "battery_discharge_power")
+    )
+    selected = {role: source_ids(sources.get(role)) for role in roles}
+    ids = {entity for group in selected.values() for entity in group}
+    if not ids:
+        return []
+    begin = now - timedelta(hours=24)
+    rows = await read_states(hass, ids, begin, now)
+    return discharge_intervals_from_states(rows, config, begin, now)
+
+
+def discharge_intervals_from_states(rows, config, begin, now):
+    """Exclude unavailable, charging and idle spans from the weighted mean."""
+    sources = config["sources"]
+    roles = (
+        ("battery_power",)
+        if sources.get("battery_power")
+        else ("battery_charge_power", "battery_discharge_power")
+    )
+    selected = {role: source_ids(sources.get(role)) for role in roles}
+    ids = {entity for group in selected.values() for entity in group}
+    changes = sorted(
+        {begin, now}
+        | {
+            state.last_updated
+            for series in rows.values()
+            for state in series
+            if begin <= state.last_updated <= now
+        }
+    )
+    ordered = {
+        entity: sorted(rows.get(entity, []), key=lambda state: state.last_updated)
+        for entity in ids
+    }
+    cursors = dict.fromkeys(ids, 0)
+    states = {}
+    proxy = SimpleNamespace(states=SimpleNamespace(get=states.get))
+    intervals = []
+    for start, stop in zip(changes, changes[1:], strict=False):
+        for entity, series in ordered.items():
+            cursor = cursors[entity]
+            while cursor < len(series) and series[cursor].last_updated <= start:
+                states[entity] = series[cursor]
+                cursor += 1
+            cursors[entity] = cursor
+        watts = {}
+        for role, group in selected.items():
+            readings = [value(proxy, entity, {"W": 1, "kW": 1000}) for entity in group]
+            watts[role] = (
+                sum(readings) if all(v is not None for v in readings) else None
+            )
+        if sources.get("battery_power"):
+            signed = watts.get("battery_power")
+            discharge = (
+                signed * (-1 if config["directions"]["battery"] == "charge" else 1)
+                if signed is not None
+                else None
+            )
+        else:
+            charge, draw = (
+                watts.get("battery_charge_power"),
+                watts.get("battery_discharge_power"),
+            )
+            discharge = (
+                draw - charge if charge is not None and draw is not None else None
+            )
+        if discharge is not None and discharge > 25 and stop > start:
+            intervals.append((start.timestamp(), stop.timestamp(), discharge))
+    return intervals
+
+
 def learn_chunk(rows, config, begin, end, profile):
     """Use co-temporal recorded states, one eligible observation per minute."""
     opt = config["battery_forecast"]

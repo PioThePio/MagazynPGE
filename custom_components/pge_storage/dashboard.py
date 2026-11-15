@@ -56,7 +56,17 @@ def dashboard_config(entry_id: str) -> dict:
                     {
                         "type": "grid",
                         "column_span": 2,
-                        "cards": [card("energy", 24)],
+                        "cards": [
+                            card("energy-controls", 24, sync_group="home"),
+                            card(
+                                "energy",
+                                24,
+                                sync_group="home",
+                                show_controls=False,
+                                show_eta=False,
+                            ),
+                            card("battery-time", 24, sync_group="home"),
+                        ],
                     },
                     {"type": "grid", "cards": [card("consumers", 12)]},
                     {
@@ -195,6 +205,7 @@ def split_legacy_view(config, entry_id, *, allow_default):
         existing = {
             key(card) for cards in lists for card in cards if isinstance(card, dict)
         }
+        had_energy = ("custom:pge-energy-card", None) in existing
         for cards in lists:
             replacement = []
             for card in cards:
@@ -207,11 +218,28 @@ def split_legacy_view(config, entry_id, *, allow_default):
                     # already independent cards wins over wrapper defaults.
                     for template in templates:
                         role = key(template)
+                        if (
+                            template["type"]
+                            in (
+                                "custom:pge-energy-controls-card",
+                                "custom:pge-battery-time-card",
+                            )
+                            and had_energy
+                        ):
+                            continue
                         if role not in existing:
                             generated = deepcopy(template)
                             generated["grid_options"]["columns"] = 12
                             if generated["type"] == "custom:pge-energy-card":
                                 for option in ("show_hour", "average_seconds"):
+                                    if option in card:
+                                        generated[option] = card[option]
+                            if generated["type"] == "custom:pge-energy-controls-card":
+                                for option in (
+                                    "average_seconds",
+                                    "period",
+                                    "anchor_day",
+                                ):
                                     if option in card:
                                         generated[option] = card[option]
                             if card.get("visibility"):

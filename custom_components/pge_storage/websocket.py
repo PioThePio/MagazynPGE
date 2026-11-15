@@ -14,9 +14,10 @@ from .dashboard import async_create_dashboard
 from .energy import energy_sources, validate_energy_config
 from .energy_panel import async_panel_config
 from .history import async_read_counters, async_statistics_metadata
+from .hourly_views import hours_for_day
 from .hourly_views import months as async_months
 from .ledger import LedgerError
-from .period import PERIODS, async_energy_period
+from .period import PERIODS, async_consumer_period, async_energy_period
 
 _LOGGER = logging.getLogger(__name__)
 ENTRY = {vol.Optional("entry_id"): str}
@@ -66,6 +67,8 @@ def async_register(hass):
         repair_dashboard,
         rebuild_battery_profile,
         energy_period,
+        consumer_period,
+        hour_chart,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -386,6 +389,42 @@ async def energy_period(hass, connection, msg):
     try:
         result = await async_energy_period(
             coordinator, msg["period"], msg["anchor_day"]
+        )
+    except LedgerError as err:
+        connection.send_error(msg["id"], err.code, str(err))
+    else:
+        connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "pge_storage/hour_chart", **ENTRY, vol.Required("day"): str}
+)
+@callback
+def hour_chart(hass, connection, msg):
+    coordinator = _get(hass, connection, msg)
+    try:
+        result = hours_for_day(coordinator, msg["day"])
+    except LedgerError as err:
+        connection.send_error(msg["id"], err.code, str(err))
+    else:
+        connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "pge_storage/consumer_period",
+        **ENTRY,
+        vol.Required("period"): vol.In(PERIODS),
+        vol.Required("anchor_day"): str,
+        vol.Required("consumer_id"): str,
+    }
+)
+@websocket_api.async_response
+async def consumer_period(hass, connection, msg):
+    coordinator = _get(hass, connection, msg)
+    try:
+        result = await async_consumer_period(
+            coordinator, msg["period"], msg["anchor_day"], msg["consumer_id"]
         )
     except LedgerError as err:
         connection.send_error(msg["id"], err.code, str(err))

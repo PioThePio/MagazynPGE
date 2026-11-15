@@ -27,7 +27,20 @@ views:
       - type: grid
         column_span: 2
         cards:
+          - type: custom:pge-energy-controls-card
+            sync_group: home
+            grid_options:
+              columns: 24
+              rows: auto
           - type: custom:pge-energy-card
+            sync_group: home
+            show_controls: false
+            show_eta: false
+            grid_options:
+              columns: 24
+              rows: auto
+          - type: custom:pge-battery-time-card
+            sync_group: home
             grid_options:
               columns: 24
               rows: auto

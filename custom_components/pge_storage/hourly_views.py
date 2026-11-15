@@ -137,6 +137,47 @@ def daily(manager, month):
     }
 
 
+def hours_for_day(manager, day):
+    """Display every Warsaw clock hour, including DST transitions and gaps."""
+    try:
+        selected = date.fromisoformat(day)
+        if selected.isoformat() != day:
+            raise ValueError
+    except TypeError, ValueError:
+        raise LedgerError("invalid_date", "Wybierz dzień RRRR-MM-DD.") from None
+    if selected > dt_util.utcnow().astimezone(WARSAW).date():
+        raise LedgerError("future_date", "Wybierz bieżący lub zakończony dzień.")
+    begin, end = midnight(selected), midnight(selected + timedelta(days=1))
+    book = manager.hour_book()
+    current = manager.hourly_current
+    rows = []
+    cursor = begin
+    while cursor < end:
+        key = cursor.isoformat()
+        row = book.hours.get(key)
+        provisional = current if current.get("start") == key else None
+        found = row or provisional
+        rows.append(
+            {
+                "start": key,
+                "label": cursor.astimezone(WARSAW).strftime("%H:%M"),
+                "balance_kwh": (
+                    energy_text(-energy(row["balance_kwh"]))
+                    if row
+                    else found.get("balance_kwh")
+                    if found
+                    else None
+                ),
+                "net_kwh": found.get("net_kwh") if found else None,
+                "known": bool(found and (row or found.get("known"))),
+                "provisional": bool(provisional and not row),
+                "basis": found.get("basis") if found else None,
+            }
+        )
+        cursor += timedelta(hours=1)
+    return {"day": day, "rows": rows, "time_zone": "Europe/Warsaw"}
+
+
 async def months(manager, count=12):
     await manager.async_refresh_planning_history()
     now = dt_util.utcnow()

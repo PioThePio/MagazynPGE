@@ -69,7 +69,7 @@ def balanced_total(series, terms, begin, end):
     }
 
 
-async def async_available_statistics(hass, ids, begin, end, hourly=None):
+async def async_available_statistics(hass, ids, begin, end, hourly=None, daily=None):
     """Read-only native statistics. Each endpoint represents the end of a bucket."""
     if not ids:
         return {}, {}
@@ -104,6 +104,15 @@ async def async_available_statistics(hass, ids, begin, end, hourly=None):
         stat: {int(row["start"]) + 3600: row.get("sum") for row in hourly.get(stat, [])}
         for stat in ids
     }
+    if daily:
+        for stat in ids:
+            points[stat].update(
+                {
+                    int(row["start"]) + 86400: row["sum"]
+                    for row in daily.get(stat, [])
+                    if row.get("sum") is not None
+                }
+            )
     for stat in ids:
         points[stat].update(
             {

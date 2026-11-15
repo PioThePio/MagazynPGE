@@ -93,6 +93,12 @@ SENSOR_DEFINITIONS.update(
             "battery_estimate",
             "available_to_minimum_kwh",
         ),
+        "battery_reserve_energy": (
+            "Pozostała energia rezerwy baterii",
+            "kWh",
+            "battery_estimate",
+            "reserve_kwh",
+        ),
         "battery_charge_time": (
             "Czas do naładowania baterii",
             "s",
@@ -169,7 +175,7 @@ class PGESensor(CoordinatorEntity, SensorEntity):
         if key in (
             "battery_full_capacity",
             "battery_available_energy",
-            "battery_stored",
+            "battery_reserve_energy",
         ):
             self._attr_suggested_display_precision = 2
         if key.startswith("hourly_"):
@@ -261,6 +267,7 @@ class PGESensor(CoordinatorEntity, SensorEntity):
             "battery_stored",
             "battery_full_capacity",
             "battery_available_energy",
+            "battery_reserve_energy",
             "battery_charge_time",
             "battery_discharge_time",
         ):

@@ -329,13 +329,95 @@ test("notes are escaped and failed invoice save keeps the draft", async () => {
 });
 test("Lovelace picker registers every independent module and a visual tile editor", async () => {
   const { window, card } = await setup("pge-balance-card");
-  assert.equal(window.customCards.length, 9);
+  assert.equal(window.customCards.length, 11);
+  assert.ok(window.customCards.some(card => card.type === "pge-energy-controls-card"));
+  assert.ok(window.customCards.some(card => card.type === "pge-battery-time-card"));
   const editor = card.constructor.getConfigElement();
   editor.setConfig({ type: "custom:pge-balance-card", metric: "deficit" });
   assert.equal(
     editor.querySelector('select[data-key="metric"]').value,
     "deficit",
   );
+  await window.happyDOM.close();
+});
+
+test("linked controls update only cards in their group", async () => {
+  const { window, card, hass, root } = await setup("pge-energy-controls-card");
+  card.setConfig({type:"custom:pge-energy-controls-card", sync_group:"main"});
+  const linked = window.document.createElement("pge-energy-card");
+  linked.setConfig({type:"custom:pge-energy-card", sync_group:"main", show_controls:false, show_eta:false});
+  window.document.body.append(linked);
+  linked.hass = hass;
+  const separate = window.document.createElement("pge-energy-card");
+  separate.setConfig({type:"custom:pge-energy-card", show_controls:false, show_eta:false});
+  window.document.body.append(separate);
+  separate.hass = hass;
+  await tick();
+  root.querySelector('[data-period="week"]').click();
+  assert.equal(linked.period, "week");
+  assert.equal(separate.period, "day");
+  root.querySelector("[data-flow-average]").value = "300";
+  root.querySelector("[data-flow-average]").onchange({target:root.querySelector("[data-flow-average]")});
+  assert.equal(linked.flowAverageSeconds, 300);
+  assert.equal(separate.flowAverageSeconds, 10);
+  await window.happyDOM.close();
+});
+
+test("hour chart uses bars, exact values and a provisional column", async () => {
+  const {window,card,root,hass,emit}=await setup("pge-energy-card");
+  const data=snapshot();
+  data.energy.hourly_current={known:true,balance_kwh:"-0.04"};
+  emit(data);
+  assert.match(root.querySelector(".hour-buffer").textContent,/0,0 kWh/);
+  assert.doesNotMatch(root.querySelector(".hour-buffer").textContent,/−0,0|-0,0/);
+  const requestedDays=[];
+  hass.callWS=async command => {requestedDays.push(command.day);return {rows:[
+    {label:"10:00",known:true,balance_kwh:"1.234",net_kwh:"-1.234",provisional:false},
+    {label:"11:00",known:true,balance_kwh:"-0.456",net_kwh:"0.3648",provisional:true},
+  ]};};
+  root.querySelector(".hour-buffer").click();
+  await tick();
+  assert.equal(root.querySelectorAll(".hour-column").length,2);
+  assert.equal(root.querySelectorAll(".hour-positive i").length,1);
+  assert.equal(root.querySelectorAll(".hour-negative i").length,1);
+  assert.equal(root.querySelectorAll(".hour-column.provisional").length,1);
+  const dialog=root.querySelector("#hour-dialog");
+  emit(data);
+  assert.equal(root.querySelector("#hour-dialog"),dialog);
+  assert.equal(dialog.open,true);
+  root.querySelector(".hour-column.provisional").click();
+  assert.match(root.querySelector("#hour-selection").textContent,/0.3648 kWh/);
+  root.querySelector('[data-hour-shift="-1"]').click();
+  await tick();
+  assert.equal(requestedDays.length,2);
+  assert.notEqual(requestedDays[0],requestedDays[1]);
+  await window.happyDOM.close();
+});
+
+test("consumer period shows fast source while another source is still loading", async () => {
+  const {window,root,hass,emit}=await setup("pge-consumers-card");
+  let completeSlow;
+  hass.callWS=async command => {
+    if (command.type === "pge_storage/energy_period") return new Promise(() => {});
+    if (command.type === "pge_storage/consumer_period" && command.consumer_id === "fast")
+      return {id:"fast",period_kwh:"2.5",status:"ready"};
+    if (command.type === "pge_storage/consumer_period")
+      return new Promise(resolve => {completeSlow=resolve;});
+    return null;
+  };
+  const data=snapshot();
+  data.energy.consumers=[
+    {id:"fast",name:"Szybki",energy:"sensor.fast",power_w:100},
+    {id:"slow",name:"Wolny",energy:"sensor.slow",power_w:200},
+  ];
+  emit(data);
+  await tick();
+  assert.match(root.querySelector('[data-consumer-id="fast"]').textContent,/2,5 kWh/);
+  assert.match(root.querySelector('[data-consumer-id="slow"]').textContent,/— kWh/);
+  assert.match(root.querySelector('[role="status"]').textContent,/Ładowanie/);
+  completeSlow({id:"slow",period_kwh:"1.25",status:"ready"});
+  await tick();
+  assert.match(root.querySelector('[data-consumer-id="slow"]').textContent,/1,3 kWh/);
   await window.happyDOM.close();
 });
 
@@ -817,7 +899,7 @@ test("diagram freezes a complete frame between source reports and PGE is connect
   assert.equal(grid.style.left, pge.style.left);
   assert.ok(parseFloat(pge.style.top) > parseFloat(grid.style.top));
   const link = root.querySelector('[data-flow="pge"]');
-  assert.equal(link.getAttribute("d"), "M150 375V398");
+  assert.equal(link.getAttribute("d"), "M150 451V480");
   assert.equal(link.hasAttribute("marker-start"), false);
   assert.equal(link.hasAttribute("marker-end"), false);
   data.energy.hourly_current = {start:"2026-10-26T12:00:00Z", end:"2026-10-26T13:00:00Z", known:true, balance_kwh:"2", net_kwh:"1.6"};
@@ -836,11 +918,11 @@ test("compact hour can be hidden, opens its entity, and rings use power shares",
   data.energy.pv_arrays=[{id:"low",power_entity:"sensor.low",name:"MPPT",power_w:100},{id:"high",power_entity:"sensor.high",name:"Solar Power",power_w:100}];
   data.energy.config.pv_order=["sensor.high","sensor.low"];
   emit(data);
-  assert.match(root.querySelector(".hour-buffer").textContent,/-0,42/);
+  assert.match(root.querySelector(".hour-buffer").textContent,/-0,4 kWh/);
   let entity;
   card.addEventListener("hass-more-info",event=>entity=event.detail.entityId);
   root.querySelector("[data-hour-info]").click();
-  assert.equal(entity,"sensor.hour");
+  assert.equal(root.querySelector("#hour-dialog").open,true);
   assert.match(root.querySelector(".node-home").getAttribute("style"),/20%.*30%/);
   assert.equal(root.querySelector(".node-pv").style.left,root.querySelector(".node-home").style.left);
   assert.match(root.querySelector(".pv-left .pv-installation").textContent,/Solar Power/);
@@ -881,10 +963,10 @@ test("current hour leaves the grid power arrow unobstructed", async () => {
   data.energy.hourly_current={known:true,balance_kwh:"0.37"};
   emit(data);
   const line=root.querySelector('[data-flow="grid"]');
-  assert.equal(line.getAttribute("d"),"M233 290H307");
+  assert.equal(line.getAttribute("d"),"M253 350H287");
   assert.ok(line.hasAttribute("marker-end"));
   assert.match(root.querySelector("style:last-of-type").textContent,/\.hour-buffer\{[^}]*top:31%/);
-  assert.match(root.querySelector(".hour-buffer").textContent,/\+0,37/);
+  assert.match(root.querySelector(".hour-buffer").textContent,/\+0,4/);
   await window.happyDOM.close();
 });
 
@@ -977,7 +1059,7 @@ test("recovery history shows one conservative correction and its replacement sta
 test("one battery time opens persistent reserve details and follows charging direction", async () => {
   const {window,root,emit}=await setup("pge-energy-card");
   const data=snapshot();
-  data.energy.battery_estimate={direction:"discharging",quality:"constant_recent_power",discharge_seconds:7200,charge_seconds:null,averaging_seconds:60,target_averaging_seconds:300,minimum_soc:20,stored_kwh:3,available_to_minimum_kwh:2,reserve_kwh:1,reserve_discharge_seconds:3600,total_discharge_seconds:10800,history_seeded:true};
+  data.energy.battery_estimate={direction:"discharging",quality:"constant_recent_power",discharge_seconds:7200,charge_seconds:null,averaging_seconds:60,target_averaging_seconds:300,minimum_soc:20,soc:60,capacity_kwh:5,stored_kwh:3,available_to_minimum_kwh:2,reserve_kwh:1,reserve_discharge_seconds:3600,total_discharge_seconds:10800,history_seeded:true};
   emit(data);
   assert.match(root.querySelector("#battery-eta").textContent,/Wystarczy na.*2 h/);
   assert.doesNotMatch(root.querySelector("#battery-eta").textContent,/minimum|Rezerwa|Do 100/);
@@ -986,11 +1068,13 @@ test("one battery time opens persistent reserve details and follows charging dir
   const dialog=root.querySelector("#battery-dialog");
   assert.equal(dialog.open,true);
   assert.match(dialog.textContent,/Energia w baterii3,0 kWh/);
-  assert.match(dialog.textContent,/Dodatkowy czas do 0%\+1 h/);
+  assert.equal(dialog.querySelector(".battery-graphic .reserve").style.width,"20%");
+  assert.equal(dialog.querySelector(".battery-graphic .available").style.width,"40%");
+  assert.match(dialog.textContent,/Dodatkowo z rezerwy do 0%1 h/);
   for(let i=0;i<10;i++){data.energy.battery_estimate.minimum_soc=30;emit(data);}
   assert.equal(root.querySelector("#battery-dialog"),dialog);
   assert.equal(dialog.open,true);
-  assert.match(dialog.textContent,/Aktualne minimum SOC30%/);
+  assert.match(dialog.textContent,/Minimum 30% · Aktualny SOC 60%/);
   root.querySelector("#close-battery").click();
   emit(data);assert.equal(dialog.open,false);
   Object.assign(data.energy.battery_estimate,{direction:"charging",charge_seconds:1800,discharge_seconds:null});emit(data);
@@ -999,6 +1083,28 @@ test("one battery time opens persistent reserve details and follows charging dir
   root.querySelector("#close-battery").click();
   Object.assign(data.energy.battery_estimate,{direction:"idle",charge_seconds:null});emit(data);
   assert.equal(root.querySelector("#battery-eta strong").textContent,"—");
+  await window.happyDOM.close();
+});
+
+test("standalone battery time keeps modal open and uses registered energy entities", async () => {
+  const {window,card,root,emit}=await setup("pge-battery-time-card");
+  const data=snapshot();
+  data.entities.battery_reserve_energy="sensor.real_reserve";
+  data.energy.battery_estimate={soc:10,minimum_soc:20,capacity_kwh:5,reserve_kwh:0.5,available_to_minimum_kwh:0,stored_kwh:0.5,direction:"charging",charge_seconds:16200,historical_discharge_seconds:3600,historical_discharge_power_w:1000,discharge_seconds:0,reserve_discharge_seconds:1800};
+  emit(data);
+  root.querySelector("#battery-eta").click();
+  const dialog=root.querySelector("#battery-dialog");
+  assert.equal(dialog.open,true);
+  assert.equal(dialog.querySelector(".battery-graphic .reserve").style.width,"10%");
+  assert.equal(dialog.querySelector(".battery-graphic .available").style.width,"0%");
+  assert.match(dialog.className,/battery-dialog/);
+  let opened;
+  card.addEventListener("hass-more-info",event=>opened=event.detail.entityId);
+  dialog.querySelector('[data-battery-info="battery_reserve_energy"]').click();
+  assert.equal(opened,"sensor.real_reserve");
+  emit(data);
+  assert.equal(root.querySelector("#battery-dialog"),dialog);
+  assert.equal(dialog.open,true);
   await window.happyDOM.close();
 });
 

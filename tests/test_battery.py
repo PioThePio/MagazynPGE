@@ -53,6 +53,19 @@ def test_charge_discharge_reserve_average_and_pause():
     )
 
 
+def test_charging_uses_only_time_weighted_discharge_history_for_work_time():
+    hass, config = fixture()
+    model = BatteryEstimate()
+    model.seed([], config, 0)
+    model.seed_discharge_history([(-7200, -3600, 500), (-3600, 0, 1500)], 0)
+    result = run(model, hass, config, 1000)
+    assert result["charge_seconds"] == 9000
+    assert result["historical_discharge_power_w"] == 1000
+    assert result["historical_discharge_seconds"] == 7200
+    assert result["discharge_seconds"] == 5400
+    assert result["reserve_discharge_seconds"] == 3600
+
+
 def test_learning_requires_independent_bms_limit_and_complete_future_soc_bins():
     hass, config = fixture(learn=True)
     model = BatteryEstimate()

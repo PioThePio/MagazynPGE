@@ -430,7 +430,11 @@ class LedgerCoordinator(DataUpdateCoordinator):
             _LOGGER.exception("Cannot refresh optional PGE energy boundaries")
 
     async def async_refresh_view_history(self, *, rebuild=False):
-        from .view_history import restore_battery_profile, restore_power_history
+        from .view_history import (
+            restore_battery_profile,
+            restore_discharge_history,
+            restore_power_history,
+        )
 
         async with self.view_history_lock:
             now = dt_util.utcnow()
@@ -445,6 +449,16 @@ class LedgerCoordinator(DataUpdateCoordinator):
                         return
                     self.aligned_flow.seed(frames, reports, identity)
                     self.battery_estimator.seed(frames, config, now.timestamp())
+                    try:
+                        discharge_intervals = await restore_discharge_history(
+                            self.hass, config, now
+                        )
+                    except Exception:
+                        _LOGGER.exception("Cannot restore 24-hour discharge history")
+                    else:
+                        self.battery_estimator.seed_discharge_history(
+                            discharge_intervals, now.timestamp()
+                        )
                     self._history_identity = identity
                 profile, metadata = await restore_battery_profile(
                     self.hass,

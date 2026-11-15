@@ -150,6 +150,35 @@ class BatteryEstimate:
         self.last_learning = None
         self.history_driven = False
         self.history_seeded = False
+        self.discharge_intervals = deque(maxlen=100000)
+        self.discharge_area = 0.0
+        self.discharge_duration = 0.0
+        self.last_power = None
+
+    def seed_discharge_history(self, intervals, now):
+        """Recorder replaces only the historic portion; keep newer live intervals."""
+        latest = max((stop for _start, stop, _watts in intervals), default=now - 86400)
+        live = [row for row in self.discharge_intervals if row[0] >= latest]
+        self.discharge_intervals = deque(
+            [row for row in intervals if row[1] >= now - 86400] + live,
+            maxlen=100000,
+        )
+        self.discharge_area = sum(
+            (stop - start) * watts for start, stop, watts in self.discharge_intervals
+        )
+        self.discharge_duration = sum(
+            stop - start for start, stop, _watts in self.discharge_intervals
+        )
+
+    def historical_discharge_watts(self, now):
+        begin = now - 86400
+        total, duration = self.discharge_area, self.discharge_duration
+        if self.discharge_intervals:
+            start, _stop, watts = self.discharge_intervals[0]
+            omitted = max(0, begin - start)
+            total -= omitted * watts
+            duration -= omitted
+        return (total / duration, duration) if duration else (None, 0)
 
     def restore(self, raw):
         if not isinstance(raw, dict) or len(raw) > 20:
@@ -244,6 +273,9 @@ class BatteryEstimate:
                 self.profile = {}
             self.samples.clear()
             self.history_seeded = False
+            self.discharge_intervals.clear()
+            self.discharge_area = self.discharge_duration = 0.0
+            self.last_power = None
             self.identity = identity
             self.last_learning = None
         soc = values.get("battery_soc")
@@ -253,6 +285,21 @@ class BatteryEstimate:
         )
         power = charge - discharge
         direction = 1 if power > 25 else -1 if power < -25 else 0
+        if self.last_power is not None:
+            previous, watts = self.last_power
+            if previous < now <= previous + 30 and watts < -25:
+                if len(self.discharge_intervals) == self.discharge_intervals.maxlen:
+                    start, stop, dropped = self.discharge_intervals.popleft()
+                    self.discharge_area -= (stop - start) * dropped
+                    self.discharge_duration -= stop - start
+                self.discharge_intervals.append((previous, now, -watts))
+                self.discharge_area += (now - previous) * -watts
+                self.discharge_duration += now - previous
+        self.last_power = (now, power)
+        while self.discharge_intervals and self.discharge_intervals[0][1] < now - 86400:
+            start, stop, watts = self.discharge_intervals.popleft()
+            self.discharge_area -= (stop - start) * watts
+            self.discharge_duration -= stop - start
         if self.samples and self.samples[-1][2] != direction:
             self.samples.clear()
             self.history_seeded = False
@@ -322,6 +369,8 @@ class BatteryEstimate:
             and minimum is not None
             and 0 <= minimum <= 100
             else None,
+            "historical_discharge_power_w": None,
+            "historical_discharge_seconds": 0,
             "learned_bins": len(self.profile),
             "profile_bins": [
                 {
@@ -372,6 +421,26 @@ class BatteryEstimate:
             result["charge_seconds"] = round(
                 capacity * (100 - soc) / 100 * 3600000 / usable
             )
+            historical, covered = self.historical_discharge_watts(now)
+            result["historical_discharge_power_w"] = (
+                round(historical) if historical else None
+            )
+            result["historical_discharge_seconds"] = round(covered)
+            if (
+                historical
+                and historical > 25
+                and minimum is not None
+                and 0 <= minimum <= 100
+            ):
+                result["discharge_seconds"] = round(
+                    capacity * max(0, soc - minimum) / 100 * 3600000 / historical
+                )
+                result["reserve_discharge_seconds"] = round(
+                    capacity * min(soc, minimum) / 100 * 3600000 / historical
+                )
+                result["total_discharge_seconds"] = (
+                    result["discharge_seconds"] + result["reserve_discharge_seconds"]
+                )
             if opt["learn"]:
                 total, known = 0, True
                 cursor = soc

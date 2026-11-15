@@ -196,13 +196,31 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
         and metadata[stat][1].get("has_sum")
         and metadata[stat][1].get("unit_class") == "energy"
     }
-    rows = (
+    daily_rows = (
         await recorder.async_add_executor_job(
             partial(
                 statistics.statistics_during_period,
                 hass,
                 bounds.begin - timedelta(days=2),
                 bounds.as_of,
+                statistical,
+                "day",
+                {"energy": "kWh"},
+                {"sum"},
+            )
+        )
+        if statistical and kind == "year"
+        else None
+    )
+    rows = (
+        await recorder.async_add_executor_job(
+            partial(
+                statistics.statistics_during_period,
+                hass,
+                bounds.begin - timedelta(days=2),
+                min(bounds.as_of, bounds.begin + timedelta(days=2))
+                if kind == "year"
+                else bounds.as_of,
                 statistical,
                 "hour",
                 {"energy": "kWh"},
@@ -212,8 +230,26 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
         if statistical
         else {}
     )
+    if (
+        statistical
+        and kind == "year"
+        and bounds.as_of > bounds.begin + timedelta(days=2)
+    ):
+        recent = await recorder.async_add_executor_job(
+            partial(
+                statistics.statistics_during_period,
+                hass,
+                max(bounds.begin, bounds.as_of - timedelta(days=2)),
+                bounds.as_of,
+                statistical,
+                "hour",
+                {"energy": "kWh"},
+                {"sum"},
+            )
+        )
+        rows = {stat: rows.get(stat, []) + recent.get(stat, []) for stat in statistical}
     observed, coverage = await async_available_statistics(
-        hass, statistical, bounds.begin, bounds.as_of, rows
+        hass, statistical, bounds.begin, bounds.as_of, rows, daily_rows
     )
     values_by_id = {
         stat: row["value"] if row else None for stat, row in coverage.items()
@@ -340,4 +376,108 @@ async def async_energy_period(manager, kind, anchor_day, now=None):
         "pge_withdrawn_basis": "clock_hour_net_fifo"
         if values["pge_withdrawn_energy"] is not None
         else "missing_stock_history",
+    }
+
+
+async def async_consumer_period(manager, kind, anchor_day, consumer_id, now=None):
+    """Read one consumer independently so a slow source cannot block other rows."""
+    bounds = period_bounds(kind, anchor_day, now or dt_util.utcnow())
+    item = next(
+        (
+            item
+            for index, item in enumerate(manager.energy_config["consumers"])
+            if (
+                item.get("id")
+                or item.get("statistic")
+                or item.get("energy")
+                or item.get("power")
+                or str(index)
+            )
+            == consumer_id
+        ),
+        None,
+    )
+    if item is None:
+        raise LedgerError("invalid_consumer", "Nie znaleziono wybranego odbiorcy.")
+    source = item.get("statistic") or item.get("energy")
+    if not source:
+        return {"id": consumer_id, "period_kwh": None, "status": "missing_source"}
+    hass = manager.hass
+    recorder = get_instance(hass)
+    metadata = await recorder.async_add_executor_job(
+        partial(statistics.get_metadata, hass, statistic_ids={source})
+    )
+    has_sum = (
+        source in metadata
+        and metadata[source][1].get("has_sum")
+        and metadata[source][1].get("unit_class") == "energy"
+    )
+    if has_sum:
+        if kind == "year":
+            daily = await recorder.async_add_executor_job(
+                partial(
+                    statistics.statistics_during_period,
+                    hass,
+                    bounds.begin - timedelta(days=2),
+                    bounds.as_of,
+                    {source},
+                    "day",
+                    {"energy": "kWh"},
+                    {"sum"},
+                )
+            )
+            hourly = await recorder.async_add_executor_job(
+                partial(
+                    statistics.statistics_during_period,
+                    hass,
+                    bounds.begin - timedelta(days=2),
+                    min(bounds.as_of, bounds.begin + timedelta(days=2)),
+                    {source},
+                    "hour",
+                    {"energy": "kWh"},
+                    {"sum"},
+                )
+            )
+            if bounds.as_of > bounds.begin + timedelta(days=2):
+                recent = await recorder.async_add_executor_job(
+                    partial(
+                        statistics.statistics_during_period,
+                        hass,
+                        max(bounds.begin, bounds.as_of - timedelta(days=2)),
+                        bounds.as_of,
+                        {source},
+                        "hour",
+                        {"energy": "kWh"},
+                        {"sum"},
+                    )
+                )
+                hourly[source] = hourly.get(source, []) + recent.get(source, [])
+        else:
+            daily = None
+            hourly = None
+        _observed, coverage = await async_available_statistics(
+            hass, {source}, bounds.begin, bounds.as_of, hourly, daily
+        )
+        row = coverage.get(source)
+        return {
+            "id": consumer_id,
+            "period_kwh": row["value"] if row else None,
+            "status": "partial"
+            if row and row["partial"]
+            else "ready"
+            if row
+            else "missing_history",
+        }
+    opening = await _raw_at(hass, {source}, bounds.begin, manager.max_age_hours)
+    closing = await _raw_at(hass, {source}, bounds.as_of, manager.max_age_hours)
+    start, stop = opening.get(source), closing.get(source)
+    result = (
+        energy_text(energy(stop) - energy(start))
+        if start is not None and stop is not None and energy(stop) >= energy(start)
+        else None
+    )
+    return {
+        "id": consumer_id,
+        "period_kwh": result,
+        "status": "ready" if result is not None else "missing_history",
     }

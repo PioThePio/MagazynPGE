@@ -30,7 +30,7 @@ Nowe encje **Bilans bieżącej godziny** (`P−E`, dodatni = pobór, ujemny = ek
 
 Saldo z faktury zachowuje wartość do odbioru; nie odejmujemy ponownie 20%. Partie z faktury umożliwiają FIFO i ważność 12 miesięcy od końca miesiąca wprowadzenia. Bez partii saldo jest oznaczone jako oszacowanie bez wygaśnięć. Projekcja zużywa bieżący zapas według historycznego **poboru po bilansowaniu godzinowym**, bez przyszłych doładowań. Stary profil surowego importu nie jest automatycznie uznawany za taki profil — wczytaj historię ponownie lub zapisz ręczne założenia.
 
-Wskaźnik bieżącej godziny znajduje się nad połączeniem Sieć–Dom, pozostawiając odsłoniętą strzałkę fizycznego przepływu. Kliknięcie otwiera szczegóły encji; w konfiguratorze lub YAML `show_hour: false` można go ukryć. Osobna karta to `custom:pge-hour-card`. PGE znajduje się pod siecią i ma przerywane połączenie rozliczeniowe z siecią. Nie jest fizycznym źródłem zasilania domu.
+Wskaźnik bieżącej godziny znajduje się nad połączeniem Sieć–Dom, pozostawiając odsłoniętą strzałkę fizycznego przepływu. Pokazuje P−E do 0,1 kWh; kliknięcie otwiera słupki godzinowe z dokładnymi wartościami i zmianą magazynu po opuście; w konfiguratorze lub YAML `show_hour: false` można go ukryć. Osobna karta to `custom:pge-hour-card`. PGE znajduje się pod siecią i ma przerywane połączenie rozliczeniowe z siecią. Nie jest fizycznym źródłem zasilania domu.
 
 ## Źródła w Twojej instalacji
 
@@ -98,13 +98,15 @@ Nie trzeba zmieniać `configuration.yaml`, definicji obecnych sensorów ani konf
 
 ## Osobne moduły dashboardu (0.9)
 
-Po aktualizacji kliknij **Rozliczenia i ustawienia → Utwórz dashboard z osobnych kart → Otwórz dashboard**. Powstaje natywny dashboard HA z ośmioma niezależnymi kartami: trzy kafelki, przepływy, odbiorcy, projekcja, historia i konfigurator. **Ołówek HA** pozwala przenosić i edytować każdą kartę osobno. Ponowne kliknięcie przycisku otwiera ten sam dashboard i zachowuje Twoje zmiany.
+Po aktualizacji kliknij **Rozliczenia i ustawienia → Utwórz dashboard z osobnych kart → Otwórz dashboard**. Powstaje natywny dashboard HA z osobnymi kartami sterowania zakresem, diagramu i czasu baterii oraz kafelkami, odbiorcami, projekcją, opustem, historią i konfiguratorem. **Ołówek HA** pozwala przenosić i edytować każdą kartę osobno. Ponowne kliknięcie przycisku otwiera ten sam dashboard i zachowuje Twoje zmiany.
 
 Dotychczasowa `custom:pge-storage-card` pozostaje zgodnym zestawem modułów, dopasowanym do szerokości samej karty. Aby edytować elementy osobno w HA, korzystaj z utworzonego dashboardu lub **Dodaj kartę → wyszukaj PGE**. Kafelki można też dodać jako standardowe karty encji HA.
 
 | Moduł w selektorze | Typ YAML | Przeznaczenie |
 |---|---|---|
 | PGE · Odbiorcy w domu | `custom:pge-consumers-card` | Osobna lista urządzeń, moc, średnia 1 s–30 min i energia okresu |
+| PGE · Sterowanie energią | `custom:pge-energy-controls-card` | Średnia mocy, dzień/tydzień/miesiąc/rok i nawigacja dat; połącz z diagramem przez `sync_group` |
+| PGE · Czas baterii | `custom:pge-battery-time-card` | Czas do pełna lub do rezerwy i graficzne szczegóły |
 | PGE · Energia w domu | `custom:pge-energy-card` | Schemat PV, domu, sieci, akumulatora i magazynu PGE; moc teraz + energia dzisiaj jednocześnie |
 | PGE · Pojedynczy kafelek | `custom:pge-balance-card` | Jedna wybrana wartość, kliknięcie otwiera encję HA |
 | PGE · Miesiące i dni | `custom:pge-history-card` | Miesięczne podsumowanie i wykres; kliknięcie miesiąca otwiera dni i wykres dzienny |
@@ -262,7 +264,7 @@ npm run check
 
 Testy Python uruchamiają rzeczywisty, izolowany HA z SQLite Recorder i autoryzowanym WebSocket na losowym porcie lokalnym. Sprawdzają historię, CRUD, trwałość i uprawnienia; nie łączą się z Twoim HA. Testy karty obejmują DOM oraz pełny frontend HA w Chromium: automatyczne ładowanie zasobu, wyświetlenie karty i ponowne otwarcie po odświeżeniu. Test przeglądarkowy używa systemowego `chromium`, jeśli jest dostępny, albo przeglądarki zainstalowanej przez Playwright. Nie oznacza to weryfikacji wyglądu we wszystkich przeglądarkach ani wdrożenia w Twojej instalacji.
 
-Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.17.1.zip`.
+Wyniki wykonanych kontroli: [WERYFIKACJA.md](docs/WERYFIKACJA.md). Paczkę instalacyjną z samą integracją, dashboardem i dokumentacją tworzy `uv run --frozen python scripts/build_archive.py`; wynik trafia do `dist/MagazynPGE-0.18.0.zip`.
 
 Opcjonalne uruchomienie lokalnego HA do ręcznego sprawdzenia GUI:
 
@@ -325,6 +327,14 @@ Profil można obejrzeć w **Źródła energii → Lokalny akumulator → Estymac
 
 Objaśnienia konfiguratora są zwykłymi dymkami po najechaniu na ⓘ, bez rozwijania tekstu. Informacyjne rozwijacze usunięto z głównego diagramu i odbiorców. Okno szczegółów baterii pozostaje otwarte podczas aktualizacji danych; przycisk zamknięcia i Escape działają na komputerze i telefonie.
 
+
+## Dashboard 0.18.0
+
+Nowy dashboard i [przykład YAML](dashboards/pge.yaml) używają osobnych kart `pge-energy-controls-card`, `pge-energy-card` i `pge-battery-time-card`. Wszystkie trzy mają `sync_group: home`; usuń tę opcję lub ustaw inną nazwę dla niezależnego zestawu. Dotychczasowa karta `pge-energy-card` bez `show_controls: false` i `show_eta: false` nadal zawiera sterowanie i czas baterii. `pge-storage-card` zachowuje zgodność, a migracja dashboardów Storage nie duplikuje już dodanych osobnych kart. YAML użytkownika nie jest automatycznie zmieniany.
+
+Szczegóły baterii pokazują rezerwę, dostępną energię i wolne miejsce z wybranego minimum SOC. Wartości kWh otwierają historię odpowiadającej encji HA. Nową encją jest `battery_reserve_energy`; istniejące `battery_stored`, `battery_available_energy` i `battery_full_capacity` zachowują identyfikatory. W trakcie ładowania czas pracy jest szacowany z ważonej czasem mocy wyłącznie okresów rozładowania z ostatnich 24 godzin. Karta respektuje ograniczenie animacji systemu; w edytorze kart można je także wyłączyć.
+
+Energia odbiorców jest pobierana również osobno dla każdego źródła, więc dostępne wiersze pojawiają się bez czekania na pozostałe. Rok korzysta z dziennych statystyk z dokładnymi granicami godzinowymi. Brak historii pozostaje nieznany, nie zerem.
 
 ## Diagnostyka raportowania odbiorców — 0.17.1
 

@@ -15,6 +15,7 @@ from custom_components.pge_storage.energy_panel import (
 )
 from custom_components.pge_storage.flow import AlignedFlow
 from custom_components.pge_storage.view_history import (
+    discharge_intervals_from_states,
     frames_from_states,
     learn_chunk,
 )
@@ -143,6 +144,28 @@ def test_recorded_power_restores_thirty_minute_means_without_waiting():
     assert means["home_power_w"] == 1100
     assert means["consumers"]["a"] == pytest.approx(500, abs=1)
     assert means["untracked_power_w"] == pytest.approx(600, abs=1)
+
+
+def test_discharge_history_excludes_unknown_idle_and_charging_intervals():
+    begin = datetime(2026, 10, 28, 9, tzinfo=UTC)
+    end = begin + timedelta(hours=4)
+    config = validate_energy_config(
+        {"sources": {"battery_power": "sensor.battery_power"}}
+    )
+    rows = {
+        "sensor.battery_power": [
+            state("sensor.battery_power", -1000, "W", begin),
+            state(
+                "sensor.battery_power", "unavailable", "W", begin + timedelta(hours=1)
+            ),
+            state("sensor.battery_power", 0, "W", begin + timedelta(hours=2)),
+            state("sensor.battery_power", 1500, "W", begin + timedelta(hours=3)),
+        ]
+    }
+    intervals = discharge_intervals_from_states(rows, config, begin, end)
+    assert intervals == [
+        (begin.timestamp(), (begin + timedelta(hours=1)).timestamp(), 1000)
+    ]
 
 
 def test_bms_profile_is_reconstructed_only_from_synchronous_eligible_history():
