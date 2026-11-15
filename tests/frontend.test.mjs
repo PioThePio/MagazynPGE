@@ -329,7 +329,7 @@ test("notes are escaped and failed invoice save keeps the draft", async () => {
 });
 test("Lovelace picker registers every independent module and a visual tile editor", async () => {
   const { window, card } = await setup("pge-balance-card");
-  assert.equal(window.customCards.length, 12);
+  assert.equal(window.customCards.length, 13);
   assert.ok(window.customCards.some(card => card.type === "pge-battery-graphic-card"));
   assert.ok(window.customCards.some(card => card.type === "pge-energy-controls-card"));
   assert.ok(window.customCards.some(card => card.type === "pge-battery-time-card"));
@@ -1173,7 +1173,9 @@ test("independent battery graphic shows values, direction and opens HA histories
   data.energy.battery_estimate = {soc: 22, minimum_soc: 20, capacity_kwh: 5, direction: "charging", charge_seconds: 360, reserve_discharge_seconds: 600, discharge_seconds: 59};
   emit(data);
   assert.equal(root.querySelector(".battery-part.available").style.width, "2%");
-  assert.equal(root.querySelector(".battery-arrows").textContent, "◀◀");
+  assert.equal(root.querySelector(".battery-arrows").classList.contains("charging"), true);
+  assert.equal(root.querySelectorAll(".battery-arrow-column").length, 2);
+  assert.equal(root.querySelectorAll(".battery-arrow-column i").length, 6);
   assert.match(root.querySelector(".battery-columns").textContent, /0 h 01 min/);
   let opened;
   card.addEventListener("hass-more-info", event => opened = event.detail.entityId);
@@ -1181,8 +1183,27 @@ test("independent battery graphic shows values, direction and opens HA histories
   assert.equal(opened, "sensor.battery_power");
   root.querySelector('[data-battery-info="battery_available_energy"]').click();
   assert.equal(opened, "sensor.available");
+  data.energy.battery_estimate.direction = "discharging";
+  emit(data);
+  assert.equal(root.querySelector(".battery-arrows").classList.contains("discharging"), true);
   data.energy.battery_estimate.direction = "idle";
   emit(data);
   assert.equal(root.querySelector(".battery-arrows"), null);
+  await window.happyDOM.close();
+});
+
+
+test("battery summary is available independently", async () => {
+  const {window, card, root, emit} = await setup("pge-battery-summary-card");
+  const data = snapshot();
+  data.entities.battery_reserve_energy = "sensor.reserve";
+  data.energy.battery_estimate = {direction:"discharging", reserve_kwh:1, available_to_minimum_kwh:2, averaging_seconds:60, target_averaging_seconds:300};
+  emit(data);
+  assert.match(root.textContent, /Pozostała rezerwa/);
+  assert.match(root.textContent, /Średnia: 1 min/);
+  let entity;
+  card.addEventListener("hass-more-info", event => entity = event.detail.entityId);
+  root.querySelector('[data-battery-info="battery_reserve_energy"]').click();
+  assert.equal(entity, "sensor.reserve");
   await window.happyDOM.close();
 });

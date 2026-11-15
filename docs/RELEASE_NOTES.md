@@ -1,8 +1,7 @@
-MagazynPGE 0.18.1 — poprawki bilansu godzin i akumulatora.
+MagazynPGE 0.18.2 — poprawki widoku akumulatora.
 
-- Wybór godziny pozostaje widoczny podczas odświeżania, a zmiana magazynu po opuście jest zaokrąglana do 0,1 kWh.
-- Godziny potwierdzone odczytami Recorder na granicach godzin mogą zastąpić oczekujący blok po restarcie, także gdy brakuje granic w lokalnym cache. Nieznane okresy pozostają oznaczone jako niepewne.
-- Nowa osobna karta `custom:pge-battery-graphic-card` i wspólny widok szczegółów pokazują podział energii, moc, czasy oraz animowany kierunek. Wartości prowadzą do encji HA.
-- Komunikat o luce godzinowej usunięto z głównego diagramu; informacje o odzyskiwaniu pozostają w historii.
+- Wartości energii w wąskich częściach baterii mogą zawijać jednostkę do kolejnego wiersza. Końcówka jest oddzielona kreską i pozostaje poza skalą 100%.
+- Trzy rzędy animowanych znaczników pokazują kierunek przy granicy SOC; kolumny odpowiadają mocy, a znaczniki są po stronie wolnego miejsca przy ładowaniu i po stronie zgromadzonej energii przy rozładowaniu.
+- Przywrócono podsumowanie energii i podstawy wyliczenia czasu pod szczegółami baterii. Jest też dostępne jako osobna karta `custom:pge-battery-summary-card`.
 
-Aktualizacja: HACS → 0.18.1 → restart HA → odświeżenie dashboardu.
+Aktualizacja: HACS → 0.18.2 → restart HA → odświeżenie dashboardu.

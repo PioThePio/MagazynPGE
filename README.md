@@ -10,7 +10,7 @@ Pod Siecią są fizyczne „Pobrano” i „Oddano” w wybranym okresie, bez op
 
 Obwódki Domu i ładowanej baterii pokazują szacowane udziały mocy: PV żółty, bateria turkusowy, sieć niebieski. Przy jednoczesnym zasilaniu i ładowaniu stosujemy proporcjonalny podział wspólnego zasilania. Nie jest to pomiar pochodzenia energii zgromadzonej w baterii. PGE nie jest fizycznym źródłem zasilania.
 
-Graficzny akumulator można dodać jako osobną kartę Lovelace `custom:pge-battery-graphic-card`. Pokazuje moc i podział energii; kliknięcie mocy lub części baterii otwiera odpowiednią encję w Home Assistant.
+Graficzny akumulator można dodać jako osobną kartę Lovelace `custom:pge-battery-graphic-card`. Pokazuje moc i podział energii; kliknięcie mocy lub części baterii otwiera odpowiednią encję w Home Assistant. Kartę `custom:pge-battery-summary-card` można dodać osobno, aby wyświetlić podsumowanie oraz podstawę wyliczenia czasu.
 
 Czas baterii wymaga SOC, rzeczywistej mocy baterii i pojemności odpowiadającej 0–100% SOC (kWh albo Ah × napięcie nominalne / 1000). Minimum SOC wybierasz z encji sensor/number, np. aktywnego limitu Victrona — identyfikator wybiera użytkownik, integracja go nie zgaduje. Średnia 1/5/15 min, domyślnie 5 min; pierwsze co najmniej 30 s zbiera pomiary. Przy mocy ≤25 W lub brakujących danych czas pozostaje nieznany. Po zmianie kierunku przepływu zbieramy nowe okno. Dwie nowe encje czasu mają jednostkę sekund.
 
