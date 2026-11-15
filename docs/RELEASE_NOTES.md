@@ -1,10 +1,8 @@
-MagazynPGE 0.18.0 — osobne moduły dashboardu i szczegóły energii.
+MagazynPGE 0.18.1 — poprawki bilansu godzin i akumulatora.
 
-- Rozdzielono sterowanie zakresem, diagram i czas baterii na niezależne karty Lovelace. `sync_group` łączy zakres i średnią wybranych kart; istniejące karty i ustawienia są zachowane.
-- Diagram ma większe, równo rozstawione okręgi, węższą kolumnę instalacji PV i animację wyłącznie przy przepływie energii. Animację można wyłączyć; uwzględniane jest `prefers-reduced-motion`.
-- Bilans bieżącej godziny pokazuje P−E do 0,1 kWh. Kliknięcie otwiera słupki godzinowe: pobór ponad osią, eksport poniżej, bieżąca godzina wyróżniona. Szczegóły pokazują dokładny wynik i zmianę magazynu po opuście.
-- Graficzne szczegóły akumulatora pokazują rzeczywistą rezerwę do wybranego minimum SOC, energię dostępną i wolną pojemność. Nowa encja rezerwy otwiera natywną historię HA, podobnie jak istniejące encje energii baterii.
-- Podczas ładowania czas pracy dostępnej energii i rezerwy wykorzystuje ważoną czasem moc z okresów rozładowania z ostatnich 24 godzin. Braki odczytów, ładowanie i postój nie są liczone jako 0 W.
-- Energia odbiorców może pojawiać się wiersz po wierszu. Odczyt roku opiera się na dziennych statystykach HA i dokładnych granicach godzin, z zachowaniem częściowej historii i braków danych.
+- Wybór godziny pozostaje widoczny podczas odświeżania, a zmiana magazynu po opuście jest zaokrąglana do 0,1 kWh.
+- Godziny potwierdzone odczytami Recorder na granicach godzin mogą zastąpić oczekujący blok po restarcie, także gdy brakuje granic w lokalnym cache. Nieznane okresy pozostają oznaczone jako niepewne.
+- Nowa osobna karta `custom:pge-battery-graphic-card` i wspólny widok szczegółów pokazują podział energii, moc, czasy oraz animowany kierunek. Wartości prowadzą do encji HA.
+- Komunikat o luce godzinowej usunięto z głównego diagramu; informacje o odzyskiwaniu pozostają w historii.
 
-Model rozliczeń godzinowych, FIFO, odzyskiwanie po przerwach, identyfikatory dotychczasowych encji i konfiguracja źródeł pozostają zachowane. Aktualizacja: HACS → 0.18.0 → restart HA → odświeżenie dashboardu.
+Aktualizacja: HACS → 0.18.1 → restart HA → odświeżenie dashboardu.

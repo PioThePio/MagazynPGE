@@ -329,7 +329,8 @@ test("notes are escaped and failed invoice save keeps the draft", async () => {
 });
 test("Lovelace picker registers every independent module and a visual tile editor", async () => {
   const { window, card } = await setup("pge-balance-card");
-  assert.equal(window.customCards.length, 11);
+  assert.equal(window.customCards.length, 12);
+  assert.ok(window.customCards.some(card => card.type === "pge-battery-graphic-card"));
   assert.ok(window.customCards.some(card => card.type === "pge-energy-controls-card"));
   assert.ok(window.customCards.some(card => card.type === "pge-battery-time-card"));
   const editor = card.constructor.getConfigElement();
@@ -386,7 +387,9 @@ test("hour chart uses bars, exact values and a provisional column", async () => 
   assert.equal(root.querySelector("#hour-dialog"),dialog);
   assert.equal(dialog.open,true);
   root.querySelector(".hour-column.provisional").click();
-  assert.match(root.querySelector("#hour-selection").textContent,/0.3648 kWh/);
+  assert.match(root.querySelector("#hour-selection").textContent,/0,4 kWh/);
+  emit(data);
+  assert.match(root.querySelector("#hour-selection").textContent,/0,4 kWh/);
   root.querySelector('[data-hour-shift="-1"]').click();
   await tick();
   assert.equal(requestedDays.length,2);
@@ -1067,14 +1070,14 @@ test("one battery time opens persistent reserve details and follows charging dir
   root.querySelector(".node-battery").click();
   const dialog=root.querySelector("#battery-dialog");
   assert.equal(dialog.open,true);
-  assert.match(dialog.textContent,/Energia w baterii3,0 kWh/);
-  assert.equal(dialog.querySelector(".battery-graphic .reserve").style.width,"20%");
-  assert.equal(dialog.querySelector(".battery-graphic .available").style.width,"40%");
-  assert.match(dialog.textContent,/Dodatkowo z rezerwy do 0%1 h/);
+  assert.match(dialog.textContent,/Akumulator/);
+  assert.equal(dialog.querySelector(".battery-body .reserve").style.width,"20%");
+  assert.equal(dialog.querySelector(".battery-body .available").style.width,"40%");
+  assert.match(dialog.textContent,/Rezerwa1 h 00 min/);
   for(let i=0;i<10;i++){data.energy.battery_estimate.minimum_soc=30;emit(data);}
   assert.equal(root.querySelector("#battery-dialog"),dialog);
   assert.equal(dialog.open,true);
-  assert.match(dialog.textContent,/Minimum 30% · Aktualny SOC 60%/);
+  assert.match(dialog.querySelector(".battery-markers").textContent,/30%60%/);
   root.querySelector("#close-battery").click();
   emit(data);assert.equal(dialog.open,false);
   Object.assign(data.energy.battery_estimate,{direction:"charging",charge_seconds:1800,discharge_seconds:null});emit(data);
@@ -1095,8 +1098,8 @@ test("standalone battery time keeps modal open and uses registered energy entiti
   root.querySelector("#battery-eta").click();
   const dialog=root.querySelector("#battery-dialog");
   assert.equal(dialog.open,true);
-  assert.equal(dialog.querySelector(".battery-graphic .reserve").style.width,"10%");
-  assert.equal(dialog.querySelector(".battery-graphic .available").style.width,"0%");
+  assert.equal(dialog.querySelector(".battery-body .reserve").style.width,"10%");
+  assert.equal(dialog.querySelector(".battery-body .available").style.width,"0%");
   assert.match(dialog.className,/battery-dialog/);
   let opened;
   card.addEventListener("hass-more-info",event=>opened=event.detail.entityId);
@@ -1159,4 +1162,27 @@ test("consumer report diagnostics show cadence without changing power or energy"
   await tick();
   title = device.root.querySelector("[data-consumer-id=slow] .device-name").title;
   assert.match(title, /Ustalanie częstotliwości/);
+});
+
+test("independent battery graphic shows values, direction and opens HA histories", async () => {
+  const {window, card, root, emit} = await setup("pge-battery-graphic-card");
+  const data = snapshot();
+  data.entities.battery_power = "sensor.battery_power";
+  data.entities.battery_available_energy = "sensor.available";
+  data.energy.values.battery_power = 1200;
+  data.energy.battery_estimate = {soc: 22, minimum_soc: 20, capacity_kwh: 5, direction: "charging", charge_seconds: 360, reserve_discharge_seconds: 600, discharge_seconds: 59};
+  emit(data);
+  assert.equal(root.querySelector(".battery-part.available").style.width, "2%");
+  assert.equal(root.querySelector(".battery-arrows").textContent, "◀◀");
+  assert.match(root.querySelector(".battery-columns").textContent, /0 h 01 min/);
+  let opened;
+  card.addEventListener("hass-more-info", event => opened = event.detail.entityId);
+  root.querySelector('[data-battery-info="battery_power"]').click();
+  assert.equal(opened, "sensor.battery_power");
+  root.querySelector('[data-battery-info="battery_available_energy"]').click();
+  assert.equal(opened, "sensor.available");
+  data.energy.battery_estimate.direction = "idle";
+  emit(data);
+  assert.equal(root.querySelector(".battery-arrows"), null);
+  await window.happyDOM.close();
 });

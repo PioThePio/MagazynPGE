@@ -99,3 +99,18 @@ async def test_only_actual_recorder_boundary_history_can_replace_estimate(ha):
     proof = await proven_hours(hass, cache["sources"], cache, hours)
     assert proof == set(hours)
     assert reconcile(cache, {}, hours, end, proof)["blocks"][0]["status"] == "replaced"
+
+    # After a restart the integration's own boundary cache may be missing,
+    # although Recorder already contains the complete hourly boundary states.
+    pending, _, _, _ = example(start)
+    pending["sources"] = cache["sources"]
+    pending = reconcile(pending, {}, hours, end)
+    assert pending["blocks"][0]["status"] == "pending"
+    proof = await proven_hours(hass, pending["sources"], pending, hours)
+    assert proof == set(hours)
+    repaired = reconcile(pending, {}, hours, end, proof)
+    assert repaired["blocks"][0]["status"] == "replaced"
+    assert (
+        validate(repaired, pending["sources"], end, hours)["blocks"][0]["status"]
+        == "replaced"
+    )

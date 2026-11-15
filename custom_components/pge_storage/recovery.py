@@ -166,6 +166,16 @@ def reconcile(cache, boundaries, hours, now, proven=()):
         }
         needed.update(k for k in cache["boundaries"] if start <= moment(k) <= end)
         needed.update((start.isoformat(), end.isoformat()))
+        keys = [
+            (start + timedelta(hours=i)).isoformat()
+            for i in range(int((end - start).total_seconds() // 3600))
+        ]
+        # A pending block must not hide hours already proved by actual
+        # Recorder boundary states, even if our own boundary cache is empty.
+        if end <= now and keys and all(k in hours and k in proven for k in keys):
+            block["status"] = "replaced"
+            blocks.append(block)
+            continue
         if end > now:
             blocks.append(block)
             continue
@@ -321,7 +331,7 @@ async def proven_hours(hass, sources, cache, hours):
     proven = set()
     recorder = get_instance(hass)
     for block in cache["blocks"]:
-        if block["status"] != "estimated":
+        if block["status"] not in ("estimated", "pending"):
             continue
         start, end = moment(block["start"]), moment(block["end"])
         keys = [
@@ -330,7 +340,7 @@ async def proven_hours(hass, sources, cache, hours):
         ]
         if not all(k in hours for k in keys):
             continue
-        if not all(
+        if block["status"] == "estimated" and not all(
             sum((energy(hours[k][f]) for k in keys), energy(0)) == energy(block[f])
             for f in ("raw_import_kwh", "raw_export_kwh")
         ):
