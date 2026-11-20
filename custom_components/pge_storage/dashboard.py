@@ -235,6 +235,7 @@ def split_legacy_view(config, entry_id, *, allow_default):
                                     "title",
                                     "show_hour",
                                     "show_node_labels",
+                                    "hidden_pv_arrays",
                                 ):
                                     if option in card:
                                         generated[option] = card[option]

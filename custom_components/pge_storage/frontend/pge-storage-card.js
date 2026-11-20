@@ -1,6 +1,6 @@
-/* PGE 0.19.0: independent Lovelace modules, no external libraries. */
-import "./pge-settings.js?v=0.19.0";
-const VERSION = "0.19.0";
+/* PGE 0.19.1: independent Lovelace modules, no external libraries. */
+import "./pge-settings.js?v=0.19.1";
+const VERSION = "0.19.1";
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -386,6 +386,7 @@ const localDay = () =>
   }).format(new Date());
 const powerWindows = [1,5,10,15,60,300,900,1800];
 const windowLabel = seconds => seconds < 60 ? `${seconds} s` : `${seconds/60} min`;
+const hiddenPVArrays = config => Array.isArray(config.hidden_pv_arrays) ? config.hidden_pv_arrays : [];
 const defaultFlowAverage = 10;
 const configuredFlowAverage = config => {
   const value = Number(config.average_seconds);
@@ -651,18 +652,16 @@ const flowMapCSS = `
 }
 .node.ring {border-color:transparent; background:linear-gradient(var(--card-background-color,#fff),var(--card-background-color,#fff)) padding-box,var(--ring) border-box}
 .node ha-icon,.node-name,.node strong,.node-energy,.flow-small,.soc {position:absolute; left:50%; transform:translateX(-50%)}
-.node ha-icon {top:8%; --mdc-icon-size:clamp(15px,3.8cqw,22px); color:var(--c)}
-.node-name {top:30%; font-size:clamp(9px,2.7cqw,13px); color:var(--secondary-text-color); line-height:1.1; white-space:nowrap}
-.node strong {top:49%; transform:translate(-50%,-50%); font-size:var(--circle-value-size); line-height:1.15; white-space:nowrap}
+.node ha-icon {top:5%; --mdc-icon-size:clamp(15px,3.8cqw,22px); color:var(--c)}
+.node-name {bottom:calc(50% + var(--circle-value-size) * .58 + 1px); font-size:clamp(9px,2.7cqw,13px); color:var(--secondary-text-color); line-height:1.1; white-space:nowrap}
+.node strong {top:50%; transform:translate(-50%,-50%); font-size:var(--circle-value-size); line-height:1.15; white-space:nowrap}
 .node-pge strong {font-size:clamp(12px,3.8cqw,23px)}
 .node-energy {bottom:14%; font-size:clamp(10px,3cqw,16px); white-space:nowrap}
-.flow-small {bottom:23%; font-size:clamp(9px,2.5cqw,13px); white-space:nowrap}
-.node .flow-small + .flow-small {bottom:9%}
-.soc {top:8%; display:flex; align-items:center; gap:3px; font-size:clamp(10px,2.7cqw,14px); color:var(--c)}
+.flow-small {bottom:21%; font-size:clamp(9px,2.5cqw,13px); white-space:nowrap}
+.node .flow-small + .flow-small {bottom:7%}
+.soc {top:5%; display:flex; align-items:center; gap:3px; font-size:clamp(10px,2.7cqw,14px); color:var(--c)}
 .soc ha-icon {position:static; transform:none; --mdc-icon-size:clamp(10px,3cqw,17px)}
-.node.without-label strong {top:41%}
-.node.without-label .node-energy {bottom:16%}
-.node.without-label .flow-small:not(.flow-small + .flow-small) {bottom:27%}
+.node.without-label > ha-icon,.node.without-label .soc {top:16%}
 .hour-buffer {
   position:absolute; left:45%; top:33.5%; transform:translate(-50%,-50%); z-index:2;
   width:18%; padding:clamp(2px,1cqw,5px) 1px; border:1px solid var(--divider-color,#dce5e8);
@@ -671,12 +670,13 @@ const flowMapCSS = `
 .hour-buffer strong {font-size:clamp(9px,2.7cqw,15px); white-space:nowrap}
 .hour-buffer small {font-size:clamp(8px,1.8cqw,10px)}
 .pv-installations {
-  position:absolute; right:0; top:max(2%,calc(17% - 11cqw)); width:19%;
-  max-height:26cqw; overflow:auto; display:grid; gap:clamp(3px,1cqw,7px);
+  position:absolute; right:calc(35% + var(--circle-diameter) / 2 + 6px);
+  top:17%; transform:translateY(-50%); width:28%; max-height:25cqw;
+  overflow:auto; display:grid; gap:clamp(3px,1cqw,7px);
 }
 .pv-installation {
   min-width:0; padding:clamp(2px,0.8cqw,6px); border:2px solid #dd9a1a;
-  border-radius:10px; background:transparent; text-align:center;
+  border-radius:10px; background:transparent; text-align:center; line-height:1.15;
 }
 .pv-installation span {
   display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -823,7 +823,8 @@ class EnergyCard extends EnergyPeriodCard {
           `<marker id="arrow-${key}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L9 5L1 9Z" fill="${color}"/></marker>`,
       )
       .join("");
-    const pvHTML = pvArrays.map((array, index) =>
+    const hiddenPV = hiddenPVArrays(this.config);
+    const pvHTML = pvArrays.map((array, index) => hiddenPV.includes(array.id) ? "" :
       `<button class="pv-installation" data-pv="${index}" title="${esc(array.name)}"><span>${esc(array.name)}</span><strong>${fmt(array.power_w)} W</strong></button>`
     ).join("");
     const ring = key => {
@@ -840,7 +841,7 @@ class EnergyCard extends EnergyPeriodCard {
     const etaHTML = this.config.show_eta !== false && eta && eta.quality !== "disabled" ? batteryTimeHTML(eta) : "";
     const batteryDetails = batteryDialogHTML(eta, v, this._batteryOpen, this.config.animations !== false);
     const nodesHTML = nodes.map(node => {
-      const showLabel = this.config.show_node_labels !== false || node.key === "battery";
+      const showLabel = this.config.show_node_labels !== false;
       const gradient = ring(node.key);
       const hint = node.title || node.name;
       const ringHint = gradient ? " · Szacowany udział mocy: PV żółty, akumulator turkusowy, sieć niebieski; proporcjonalny podział wspólnego zasilania" : "";
@@ -854,8 +855,9 @@ class EnergyCard extends EnergyPeriodCard {
         energy = `<span class="flow-small" title="${credit}">↓ ${precise(node.credit)} kWh</span><span class="flow-small" title="${draw}">↑ ${precise(node.draw)} kWh</span>`;
       }
       const value = `${node.signed ? signedPower(node.value) : fmt(node.value)} ${node.unit}`;
+      const socLabel = node.key === "battery" && node.soc != null ? `, SOC ${fmt(node.soc)}%` : "";
       return `<button class="node node-${node.key}${gradient ? " ring" : ""}${showLabel ? "" : " without-label"}" data-entity="${node.entity}"
-        style="left:${node.x}%;top:${node.y}%;--c:${node.color};${gradient ? `--ring:${gradient}` : ""}" title="${esc(hint + ringHint)}" ${showLabel ? "" : `aria-label="${esc(node.name + ", " + value)}"`}>
+        style="left:${node.x}%;top:${node.y}%;--c:${node.color};${gradient ? `--ring:${gradient}` : ""}" title="${esc(hint + ringHint)}" ${showLabel ? "" : `aria-label="${esc(`${node.name}, ${value}${socLabel}`)}"`}>
         ${node.key === "battery" ? `<span class="soc">${icon}${fmt(node.soc)}%</span>` : icon}
         ${showLabel ? `<span class="node-name">${node.name}</span>` : ""}<strong>${value}</strong>${energy}
       </button>`;
@@ -874,7 +876,7 @@ class EnergyCard extends EnergyPeriodCard {
             ${arrow("battery", "#32aaa4", "M390 442V489", Number(battery))}
             <path class="flow-line" data-flow="pge" d="M150 442V489" stroke="#7b61c4" opacity="0.6"/>
           </svg>
-          ${pvHTML ? `<div class="pv-installations pv-right">${pvHTML}</div>` : ""}
+          ${pvHTML ? `<div class="pv-installations pv-left">${pvHTML}</div>` : ""}
           ${nodesHTML}
         </div>
         ${etaHTML}
@@ -1918,6 +1920,7 @@ class SettingsCard extends PGEBase {
     }
   }
 }
+const diagramCardTypes = ["custom:pge-energy-card", "custom:pge-storage-card"];
 class Dashboard extends HTMLElement {
   constructor() {
     super();
@@ -1952,6 +1955,7 @@ class Dashboard extends HTMLElement {
         ...(card.localName === "pge-energy-card" ? {
           title: this.config.title, show_controls: false, show_eta: false,
           show_hour: this.config.show_hour, show_node_labels: this.config.show_node_labels,
+          hidden_pv_arrays: this.config.hidden_pv_arrays,
         } : {}),
         ...(card.localName === "pge-energy-controls-card" ? {
           average_seconds: this.config.average_seconds, show_controls: this.config.show_controls,
@@ -1969,13 +1973,66 @@ class CardEditor extends HTMLElement {
   setConfig(config) {
     this.config = config;
     this.render();
+    this._connectPVOptions();
   }
   set hass(hass) {
     this._hass = hass;
+    this._connectPVOptions();
+  }
+  connectedCallback() {
+    this._connectPVOptions();
+  }
+  disconnectedCallback() {
+    this._stopPVOptions?.();
+    this._stopPVOptions = null;
+  }
+  _connectPVOptions() {
+    const connection = this._hass?.connection;
+    const entry = this.config?.entry_id || "";
+    const needsPV = this.isConnected && connection && diagramCardTypes.includes(this.config?.type);
+    if (needsPV && this._stopPVOptions && this._pvConnection === connection && this._pvEntry === entry) return;
+    this.disconnectedCallback();
+    this._pvConnection = connection;
+    this._pvEntry = entry;
+    this._pvArrays = [];
+    this._renderPVOptions();
+    if (!needsPV) return;
+    this._stopPVOptions = connect(this._hass, entry, data => {
+      this._pvArrays = data.energy?.pv_arrays || [];
+      this._renderPVOptions();
+    });
+  }
+  _renderPVOptions() {
+    const fields = this.querySelector("[data-pv-options]");
+    if (!fields) return;
+    const arrays = new Map((this._pvArrays || []).map(array => [array.id, array.name]));
+    const hidden = hiddenPVArrays(this.config);
+    const options = [...arrays].map(([id, name]) => `<label class="pge-toggle"><input type="checkbox" data-pv-visible="${esc(id)}" ${hidden.includes(id) ? "" : "checked"}> ${esc(name || id)}</label>`).join("");
+    if (fields._options === options) return;
+    fields._options = options;
+    fields.hidden = !options;
+    fields.innerHTML = options ? `<legend>Kafelki instalacji PV</legend>${options}` : "";
+    fields.onchange = event => {
+      const id = event.target.dataset.pvVisible;
+      if (!id) return;
+      const next = new Set(hiddenPVArrays(this.config));
+      if (event.target.checked) next.delete(id);
+      else next.add(id);
+      const config = { ...this.config };
+      if (next.size) config.hidden_pv_arrays = [...next];
+      else delete config.hidden_pv_arrays;
+      this._emitConfig(config);
+    };
+  }
+  _emitConfig(config) {
+    this.config = config;
+    this.dispatchEvent(new CustomEvent("config-changed", {
+      detail: { config }, bubbles: true, composed: true,
+    }));
   }
   render() {
     const type = this.config.type;
-    const hasDiagram = ["custom:pge-energy-card", "custom:pge-storage-card"].includes(type);
+    const hasDiagram = diagramCardTypes.includes(type);
     const hasControls = hasDiagram || type === "custom:pge-energy-controls-card";
     const hasBatteryTime = hasDiagram || type === "custom:pge-battery-time-card";
     const toggle = (key, label, disabled = false) => `<label class="pge-toggle"><input type="checkbox" data-key="${key}" ${this.config[key] !== false ? "checked" : ""} ${disabled ? "disabled" : ""}> ${label}</label>`;
@@ -2001,7 +2058,7 @@ class CardEditor extends HTMLElement {
         ${powerWindows.map(seconds => `<option value="${seconds}" ${average === seconds ? "selected" : ""}>${windowLabel(seconds)}</option>`).join("")}
       </select></label>` : ""}
     ${hasBatteryTime ? toggle("show_eta", "Pokaż czas akumulatora (Wystarczy na / Do pełna)") : ""}
-    ${hasDiagram ? toggle("show_node_labels", "Pokaż opisy Sieć, Dom, Słońce i Magazyn PGE") + toggle("show_hour", "Pokaż bieżącą godzinę") : ""}
+    ${hasDiagram ? `${toggle("show_node_labels", "Pokaż opisy kółek (w tym Akumulator)")}${toggle("show_hour", "Pokaż bieżącą godzinę")}<fieldset data-pv-options hidden></fieldset>` : ""}
     ${["custom:pge-energy-card", "custom:pge-battery-time-card", "custom:pge-battery-graphic-card"].includes(type) ? toggle("animations", "Animacje przepływu i baterii") : ""}`;
     for (const input of this.querySelectorAll("[data-key]"))
       input.onchange = () => {
@@ -2011,16 +2068,11 @@ class CardEditor extends HTMLElement {
           if (input.value) config.average_seconds = Number(input.value);
           else delete config.average_seconds;
         }
-        this.config = config;
+        this._emitConfig(config);
         if (key === "show_controls") this.render();
-        this.dispatchEvent(
-          new CustomEvent("config-changed", {
-            detail: { config },
-            bubbles: true,
-            composed: true,
-          }),
-        );
+        if (key === "entry_id") this._connectPVOptions();
       };
+    this._renderPVOptions();
   }
 }
 for (const [tag, element] of [

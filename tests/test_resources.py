@@ -199,7 +199,13 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                             node => node.getBoundingClientRect().toJSON()),
                         nodes: [...element.querySelectorAll('.node')].map(
                             node => node.getBoundingClientRect().toJSON()),
-                        pv: element.querySelector('.pv-right')?.getBoundingClientRect().toJSON(),
+                        pv: element.querySelector('.pv-left')?.getBoundingClientRect().toJSON(),
+                        valueOffsets: [...element.querySelectorAll('.node')].map(node => {
+                            const circle = node.getBoundingClientRect();
+                            const value = node.querySelector('strong').getBoundingClientRect();
+                            return [value.x + value.width / 2 - circle.x - circle.width / 2,
+                                    value.y + value.height / 2 - circle.y - circle.height / 2];
+                        }),
                         eta: element.closest('ha-card').querySelector('#battery-eta')?.getBoundingClientRect().toJSON(),
                         etaFont: element.closest('ha-card').querySelector('#battery-eta strong') &&
                             getComputedStyle(element.closest('ha-card').querySelector('#battery-eta strong')).fontSize,
@@ -248,12 +254,19 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                     geometry["card"]["scrollWidth"] <= geometry["card"]["width"] + 1
                 ), geometry
                 bounds = geometry["bounds"]
+                assert all(
+                    abs(dx) < 1 and abs(dy) < 1 for dx, dy in geometry["valueOffsets"]
+                ), geometry
                 if geometry["pv"]:
-                    assert geometry["pv"]["left"] > geometry["circles"][0]["right"]
-                    assert geometry["pv"]["right"] <= bounds["right"] + 1
+                    assert geometry["circles"][0]["left"] - geometry["pv"][
+                        "right"
+                    ] == pytest.approx(6, abs=1)
+                    assert geometry["pv"]["left"] >= bounds["left"] - 1
                     assert geometry["pv"]["bottom"] < geometry["circles"][1]["top"], (
                         geometry
                     )
+                    if geometry.get("hour"):
+                        assert geometry["pv"]["bottom"] < geometry["hour"]["top"]
                 if geometry.get("eta"):
                     assert geometry["eta"]["left"] == pytest.approx(
                         geometry["circles"][1]["left"], abs=1
@@ -647,6 +660,13 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             await page.set_viewport_size({"width": 390, "height": 844})
             await check_flow_geometry()
             await page.screenshot(path="/tmp/pge-09-native-mobile.png", full_page=True)
+            diagram = page.locator("pge-energy-card")
+            await diagram.evaluate(
+                "element => element.setConfig({...element.config, show_node_labels: false})"
+            )
+            await expect(diagram.locator(".flow-map .node-name")).to_have_count(0)
+            await expect(diagram.locator(".node-battery .soc")).to_be_visible()
+            await check_flow_geometry()
             hidden_modules = await page.evaluate(
                 """async () => {
                     const wrappers = [];

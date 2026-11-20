@@ -1,8 +1,7 @@
-MagazynPGE 0.19.0 — ustawienia widoczności i bardziej zwarty diagram energii.
+MagazynPGE 0.19.1 — poprawki układu diagramu energii.
 
-- Edytor kart pozwala niezależnie ukryć wybór okresu, nawigację po datach, czas akumulatora oraz opisy czterech kółek. Ukryte elementy oddają miejsce pozostałej treści.
-- Średnią mocy ustawia się w edytorze karty. Nagłówek diagramu pojawia się po wpisaniu tytułu.
-- Diagram ma nieco mniejsze kółka, obydwa kafelki PV po prawej przy Słońcu i bilans godzinowy między Słońcem, Domem i Siecią.
-- Kafelek czasu baterii ma obramowanie w kolorze akumulatora, szerokość diagramu od krawędzi do krawędzi kółek i czas wielkości głównych wartości mocy.
+- Solplanet, Victron i pozostałe skonfigurowane kafelki PV są po lewej stronie kółka Słońca, blisko jego krawędzi.
+- Edytor pozwala ukryć każdą instalację PV osobno. Słońce nadal pokazuje łączną produkcję.
+- Wyłączenie opisów obejmuje też Akumulator. Główna wartość w każdym kółku pozostaje na środku niezależnie od widoczności opisu.
 
 Po aktualizacji w HACS zrestartuj Home Assistant i odśwież dashboard.

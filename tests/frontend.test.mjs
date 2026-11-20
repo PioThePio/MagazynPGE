@@ -411,10 +411,52 @@ test("the energy editor can remove each control, title and circle labels indepen
   edit("show_node_labels", false);
   edit("title", "   ");
   assert.equal(root.querySelector(".period-picker, #battery-eta, ha-card > .head"), null);
-  assert.deepEqual([...root.querySelectorAll(".node-name")].map(node => node.textContent), ["Akumulator"]);
+  assert.equal(root.querySelectorAll(".node-name").length, 0);
   assert.match(root.querySelector(".node-home").getAttribute("aria-label"), /^Dom,/);
+  assert.match(root.querySelector(".node-battery").getAttribute("aria-label"), /^Akumulator, .*SOC 78%/);
   root.querySelector(".node-battery").click();
   assert.equal(root.getElementById("battery-dialog").open, true);
+  await window.happyDOM.close();
+});
+
+test("the editor hides individual PV tiles by ID and retains the solar total", async () => {
+  const {window, card, root, hass, emit} = await setup("pge-energy-card");
+  const data = snapshot();
+  data.energy.pv_arrays = [
+    {id:"sensor.solplanet_energy", name:"Solplanet", power_entity:"sensor.solplanet_power", power_w:1500},
+    {id:"sensor.victron_energy", name:"Victron", power_entity:"sensor.victron_power", power_w:1000},
+  ];
+  const editor = card.constructor.getConfigElement();
+  editor.hass = hass;
+  editor.setConfig(card.config);
+  window.document.body.append(editor);
+  editor.addEventListener("config-changed", event => card.setConfig(event.detail.config));
+  emit(data);
+  const setVisible = (id, visible) => {
+    const checkbox = editor.querySelector(`[data-pv-visible="${id}"]`);
+    checkbox.checked = visible;
+    checkbox.dispatchEvent(new window.Event("change", {bubbles:true}));
+  };
+  const names = () => [...root.querySelectorAll(".pv-installation span")].map(node => node.textContent);
+  assert.deepEqual(names().sort(), ["Solplanet", "Victron"]);
+  setVisible("sensor.solplanet_energy", false);
+  assert.deepEqual(names(), ["Victron"]);
+  let entity;
+  card.addEventListener("hass-more-info", event => entity = event.detail.entityId);
+  root.querySelector(".pv-installation").click();
+  assert.equal(entity, "sensor.victron_power");
+  setVisible("sensor.victron_energy", false);
+  assert.equal(root.querySelector(".pv-installations") === null, true);
+  assert.match(root.querySelector(".node-pv strong").textContent, /2500 W/);
+  editor.setConfig(card.config);
+  assert.ok([...editor.querySelectorAll("[data-pv-visible]")].every(input => !input.checked));
+  data.energy.pv_arrays[0].name = "Nowy Solplanet";
+  emit(data);
+  assert.deepEqual(names(), []);
+  setVisible("sensor.solplanet_energy", true);
+  assert.deepEqual(names(), ["Nowy Solplanet"]);
+  setVisible("sensor.victron_energy", true);
+  assert.deepEqual(names().sort(), ["Nowy Solplanet", "Victron"]);
   await window.happyDOM.close();
 });
 
@@ -981,8 +1023,7 @@ test("compact hour can be hidden, opens its entity, and rings use power shares",
   assert.equal(root.querySelector("#hour-dialog").open,true);
   assert.match(root.querySelector(".node-home").getAttribute("style"),/20%.*30%/);
   assert.equal(root.querySelector(".node-pv").style.left,root.querySelector(".node-home").style.left);
-  assert.match(root.querySelector(".pv-right .pv-installation").textContent,/Solar Power/);
-  assert.equal(root.querySelector(".pv-left"),null);
+  assert.match(root.querySelector(".pv-left .pv-installation").textContent,/Solar Power/);
   assert.equal(root.querySelectorAll(".period-picker .chip").length,0);
   card.setConfig({type:"custom:pge-energy-card",show_hour:false});
   assert.equal(root.querySelector(".hour-buffer"),null);
