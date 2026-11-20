@@ -231,7 +231,11 @@ def split_legacy_view(config, entry_id, *, allow_default):
                             generated = deepcopy(template)
                             generated["grid_options"]["columns"] = 12
                             if generated["type"] == "custom:pge-energy-card":
-                                for option in ("show_hour", "average_seconds"):
+                                for option in (
+                                    "title",
+                                    "show_hour",
+                                    "show_node_labels",
+                                ):
                                     if option in card:
                                         generated[option] = card[option]
                             if generated["type"] == "custom:pge-energy-controls-card":
@@ -239,9 +243,17 @@ def split_legacy_view(config, entry_id, *, allow_default):
                                     "average_seconds",
                                     "period",
                                     "anchor_day",
+                                    "show_controls",
+                                    "show_period_tabs",
+                                    "show_date_navigation",
                                 ):
                                     if option in card:
                                         generated[option] = card[option]
+                            if (
+                                generated["type"] == "custom:pge-battery-time-card"
+                                and "show_eta" in card
+                            ):
+                                generated["show_eta"] = card["show_eta"]
                             if card.get("visibility"):
                                 generated["visibility"] = deepcopy(card["visibility"])
                             replacement.append(generated)

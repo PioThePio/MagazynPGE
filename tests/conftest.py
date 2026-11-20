@@ -16,6 +16,7 @@ async def ha(tmp_path_factory):
     (directory / "pge.yaml").write_text(
         "views:\n  - title: PGE\n    path: magazyn\n    type: panel\n    cards:\n"
         "      - type: custom:pge-storage-card\n"
+        "        title: Energia w domu\n"
     )
     await asyncio.to_thread(
         (directory / "custom_components").symlink_to,

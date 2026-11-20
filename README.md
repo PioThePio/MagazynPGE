@@ -107,7 +107,7 @@ Dotychczasowa `custom:pge-storage-card` pozostaje zgodnym zestawem modułów, do
 | Moduł w selektorze | Typ YAML | Przeznaczenie |
 |---|---|---|
 | PGE · Odbiorcy w domu | `custom:pge-consumers-card` | Osobna lista urządzeń, moc, średnia 1 s–30 min i energia okresu |
-| PGE · Sterowanie energią | `custom:pge-energy-controls-card` | Średnia mocy, dzień/tydzień/miesiąc/rok i nawigacja dat; połącz z diagramem przez `sync_group` |
+| PGE · Sterowanie energią | `custom:pge-energy-controls-card` | Dzień, tydzień, miesiąc, rok i nawigacja po datach. Połącz z diagramem przez `sync_group`. Średnią mocy ustawisz w edytorze karty. |
 | PGE · Czas baterii | `custom:pge-battery-time-card` | Czas do pełna lub do rezerwy i graficzne szczegóły |
 | PGE · Energia w domu | `custom:pge-energy-card` | Schemat PV, domu, sieci, akumulatora i magazynu PGE; moc teraz + energia dzisiaj jednocześnie |
 | PGE · Pojedynczy kafelek | `custom:pge-balance-card` | Jedna wybrana wartość, kliknięcie otwiera encję HA |
@@ -333,6 +333,8 @@ Objaśnienia konfiguratora są zwykłymi dymkami po najechaniu na ⓘ, bez rozwi
 ## Dashboard 0.18.0
 
 Nowy dashboard i [przykład YAML](dashboards/pge.yaml) używają osobnych kart `pge-energy-controls-card`, `pge-energy-card` i `pge-battery-time-card`. Wszystkie trzy mają `sync_group: home`; usuń tę opcję lub ustaw inną nazwę dla niezależnego zestawu. Dotychczasowa karta `pge-energy-card` bez `show_controls: false` i `show_eta: false` nadal zawiera sterowanie i czas baterii. `pge-storage-card` zachowuje zgodność, a migracja dashboardów Storage nie duplikuje już dodanych osobnych kart. YAML użytkownika nie jest automatycznie zmieniany.
+
+W edytorze karty możesz niezależnie ukryć wybór okresu (`show_period_tabs: false`), nawigację po datach (`show_date_navigation: false`), czas akumulatora (`show_eta: false`) oraz wspólnie opisy „Sieć”, „Dom”, „Słońce” i „Magazyn PGE” (`show_node_labels: false`). W układzie z osobnymi kartami ustaw ukrywanie sterowania w karcie sterowania, a czasu w karcie czasu akumulatora. Puste `title` usuwa nagłówek diagramu. Okno „Średnia mocy” (`average_seconds`) wybiera się w ustawieniach diagramu lub powiązanej karty sterowania. Jeśli ustawisz je w obu miejscach, pierwszeństwo ma diagram. Domyślne okno to 10 s.
 
 Szczegóły baterii pokazują rezerwę, dostępną energię i wolne miejsce z wybranego minimum SOC. Wartości kWh otwierają historię odpowiadającej encji HA. Nową encją jest `battery_reserve_energy`; istniejące `battery_stored`, `battery_available_energy` i `battery_full_capacity` zachowują identyfikatory. W trakcie ładowania czas pracy jest szacowany z ważonej czasem mocy wyłącznie okresów rozładowania z ostatnich 24 godzin. Karta respektuje ograniczenie animacji systemu; w edytorze kart można je także wyłączyć.
 

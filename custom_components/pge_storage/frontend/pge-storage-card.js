@@ -1,6 +1,6 @@
-/* PGE 0.18.2: independent Lovelace modules, no external libraries. */
-import "./pge-settings.js?v=0.18.2";
-const VERSION = "0.18.2";
+/* PGE 0.19.0: independent Lovelace modules, no external libraries. */
+import "./pge-settings.js?v=0.19.0";
+const VERSION = "0.19.0";
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -44,7 +44,7 @@ const coreMetrics = {
   import_since_settlement: ["Pobrano od faktury", "mdi:arrow-down", "#3287bd"],
   credited_since_settlement: ["Oddano od faktury", "mdi:arrow-up", "#ab63b4"],
 };
-const css = `:host{display:block;min-width:0;container-type:inline-size;-webkit-user-select:text;user-select:text;--pge-blue:#3287bd;--pge-teal:#278680;--pge-purple:#7b61c4;--pge-orange:#e6a020}*{box-sizing:border-box}ha-card{padding:20px;border-radius:20px;overflow:hidden;color:var(--primary-text-color,#24333c)}h2{font-size:17px;margin:0;font-weight:650}h3{font-size:14px;margin:0}.head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:16px}.sub{font-size:12px;color:var(--secondary-text-color,#6a7c87);line-height:1.5}.chip{font-size:11px;padding:5px 9px;border-radius:20px;background:var(--secondary-background-color,#f1f5f6);white-space:nowrap}.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.seg{display:flex;background:var(--secondary-background-color,#f1f5f6);border-radius:20px;padding:3px}.seg button{border-radius:16px;padding:6px 12px;font-size:12px}.seg .active{background:var(--card-background-color,#fff);box-shadow:0 1px 4px #0002}button{font:inherit;color:inherit;background:transparent;border:0;cursor:pointer;padding:8px;border-radius:8px}button:hover{background:var(--secondary-background-color,#f0f4f5)}button:focus-visible,summary:focus-visible{outline:2px solid var(--primary-color,#3287bd);outline-offset:2px}.primary{background:var(--primary-color,#3287bd);color:white;padding:10px 16px}.primary:hover{filter:brightness(.94);background:var(--primary-color,#3287bd)}.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}th,td{text-align:right;border-bottom:1px solid var(--divider-color,#e7edef);padding:10px 6px;white-space:nowrap}th{font-size:10px;color:var(--secondary-text-color,#667b85);font-weight:500}th:first-child,td:first-child{text-align:left}td small{display:block;font-size:10px;color:var(--secondary-text-color)}td.balance{font-weight:700}td.plus{color:var(--pge-teal)}td.minus{color:var(--pge-blue)}.month-row{cursor:pointer}.month-row:hover{background:var(--secondary-background-color,#f5f8f8)}.month-row button{padding:0;font-weight:600}.details-cell{padding:0 0 14px;background:var(--secondary-background-color,#f5f8f8)}.details-cell table{font-size:11px}.daily-table{max-height:330px;overflow:auto}.daily-table thead{position:sticky;top:0;background:var(--card-background-color,#fff);z-index:1}.details-cell td,.details-cell th{padding:7px 6px}.small-chart{padding:12px 4px 0}.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--secondary-text-color);margin:12px 0}.legend span{display:flex;align-items:center;gap:5px}.dot{height:7px;width:15px;border-radius:5px;background:var(--c)}svg.chart{width:100%;height:auto;max-height:240px;display:block;overflow:visible}svg.chart text{fill:var(--secondary-text-color,#647985);font-size:13px}svg.chart .grid{stroke:var(--divider-color,#e0e8eb);stroke-dasharray:3 4}.empty{font-size:12px;color:var(--secondary-text-color);padding:12px 0}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 16px}.stat{background:var(--secondary-background-color,#f4f7f8);border-radius:12px;padding:12px 10px}.stat strong{display:block;font-size:clamp(16px,5cqw,24px);overflow-wrap:anywhere;margin:4px 0}.stat small{font-size:10px;color:var(--secondary-text-color)}details>summary{cursor:pointer;font-size:12px;color:var(--secondary-text-color);padding:10px 0}ha-icon{--mdc-icon-size:22px}select,input{font:inherit;background:var(--card-background-color,#fff);color:var(--primary-text-color);border:1px solid var(--divider-color,#dbe3e7);padding:10px;border-radius:9px;max-width:100%}.warn{color:#b45a2d;font-size:12px}.error{color:var(--error-color,#b3261e)}@media(max-width:450px){ha-card{padding:16px 12px}th,td{padding:9px 4px}.stat{padding:9px 7px}.stat strong{font-size:18px}.head{gap:6px}.legend{gap:9px;font-size:10px}}`;
+const css = `:host([hidden]){display:none}:host{display:block;min-width:0;container-type:inline-size;-webkit-user-select:text;user-select:text;--pge-blue:#3287bd;--pge-teal:#278680;--pge-purple:#7b61c4;--pge-orange:#e6a020}*{box-sizing:border-box}ha-card{padding:20px;border-radius:20px;overflow:hidden;color:var(--primary-text-color,#24333c)}h2{font-size:17px;margin:0;font-weight:650}h3{font-size:14px;margin:0}.head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:16px}.sub{font-size:12px;color:var(--secondary-text-color,#6a7c87);line-height:1.5}.chip{font-size:11px;padding:5px 9px;border-radius:20px;background:var(--secondary-background-color,#f1f5f6);white-space:nowrap}.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.seg{display:flex;background:var(--secondary-background-color,#f1f5f6);border-radius:20px;padding:3px}.seg button{border-radius:16px;padding:6px 12px;font-size:12px}.seg .active{background:var(--card-background-color,#fff);box-shadow:0 1px 4px #0002}button{font:inherit;color:inherit;background:transparent;border:0;cursor:pointer;padding:8px;border-radius:8px}button:hover{background:var(--secondary-background-color,#f0f4f5)}button:focus-visible,summary:focus-visible{outline:2px solid var(--primary-color,#3287bd);outline-offset:2px}.primary{background:var(--primary-color,#3287bd);color:white;padding:10px 16px}.primary:hover{filter:brightness(.94);background:var(--primary-color,#3287bd)}.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}th,td{text-align:right;border-bottom:1px solid var(--divider-color,#e7edef);padding:10px 6px;white-space:nowrap}th{font-size:10px;color:var(--secondary-text-color,#667b85);font-weight:500}th:first-child,td:first-child{text-align:left}td small{display:block;font-size:10px;color:var(--secondary-text-color)}td.balance{font-weight:700}td.plus{color:var(--pge-teal)}td.minus{color:var(--pge-blue)}.month-row{cursor:pointer}.month-row:hover{background:var(--secondary-background-color,#f5f8f8)}.month-row button{padding:0;font-weight:600}.details-cell{padding:0 0 14px;background:var(--secondary-background-color,#f5f8f8)}.details-cell table{font-size:11px}.daily-table{max-height:330px;overflow:auto}.daily-table thead{position:sticky;top:0;background:var(--card-background-color,#fff);z-index:1}.details-cell td,.details-cell th{padding:7px 6px}.small-chart{padding:12px 4px 0}.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--secondary-text-color);margin:12px 0}.legend span{display:flex;align-items:center;gap:5px}.dot{height:7px;width:15px;border-radius:5px;background:var(--c)}svg.chart{width:100%;height:auto;max-height:240px;display:block;overflow:visible}svg.chart text{fill:var(--secondary-text-color,#647985);font-size:13px}svg.chart .grid{stroke:var(--divider-color,#e0e8eb);stroke-dasharray:3 4}.empty{font-size:12px;color:var(--secondary-text-color);padding:12px 0}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 16px}.stat{background:var(--secondary-background-color,#f4f7f8);border-radius:12px;padding:12px 10px}.stat strong{display:block;font-size:clamp(16px,5cqw,24px);overflow-wrap:anywhere;margin:4px 0}.stat small{font-size:10px;color:var(--secondary-text-color)}details>summary{cursor:pointer;font-size:12px;color:var(--secondary-text-color);padding:10px 0}ha-icon{--mdc-icon-size:22px}select,input{font:inherit;background:var(--card-background-color,#fff);color:var(--primary-text-color);border:1px solid var(--divider-color,#dbe3e7);padding:10px;border-radius:9px;max-width:100%}.warn{color:#b45a2d;font-size:12px}.error{color:var(--error-color,#b3261e)}@media(max-width:450px){ha-card{padding:16px 12px}th,td{padding:9px 4px}.stat{padding:9px 7px}.stat strong{font-size:18px}.head{gap:6px}.legend{gap:9px;font-size:10px}}`;
 // A single HA subscription per connection and entry, shared by all independent modules.
 const hubs = new WeakMap();
 function connect(hass, entry, listener) {
@@ -186,6 +186,14 @@ class PGEBase extends HTMLElement {
   }
   getGridOptions() {
     return { columns: 12, rows: "auto" };
+  }
+  setCardHidden(hidden) {
+    if (this.hidden === hidden) return;
+    this.hidden = hidden;
+    // Lovelace also removes its own grid item, including the space around it.
+    this.dispatchEvent(new CustomEvent("card-visibility-changed", {
+      detail: { value: !hidden }, bubbles: true, composed: true,
+    }));
   }
   static getConfigElement() {
     return window.document.createElement("pge-card-editor");
@@ -378,6 +386,11 @@ const localDay = () =>
   }).format(new Date());
 const powerWindows = [1,5,10,15,60,300,900,1800];
 const windowLabel = seconds => seconds < 60 ? `${seconds} s` : `${seconds/60} min`;
+const defaultFlowAverage = 10;
+const configuredFlowAverage = config => {
+  const value = Number(config.average_seconds);
+  return powerWindows.includes(value) ? value : undefined;
+};
 const periodCache = new WeakMap();
 const consumerPeriodCache = new WeakMap();
 const periodGroups = new WeakMap();
@@ -417,34 +430,53 @@ class PeriodCard extends PGEBase {
     this._leaveGroup = null;
   }
   _joinGroup(config) {
+    const connection = this._hass?.connection;
+    const key = config?.sync_group && `${config.entry_id || "auto"}:${config.sync_group}`;
+    if (this._group && connection === this._groupConnection && key === this._groupKey) {
+      this.period = this._group.period;
+      this.anchor = this._group.anchor;
+      this._syncGroupAverage(this._group);
+      return;
+    }
     this._leaveGroup?.();
     this._leaveGroup = null;
-    if (!config?.sync_group || !this._hass?.connection) return;
-    let groups = periodGroups.get(this._hass.connection);
-    if (!groups) periodGroups.set(this._hass.connection, (groups = new Map()));
-    const key = `${config.entry_id || "auto"}:${config.sync_group}`;
+    if (!key || !connection) return;
+    let groups = periodGroups.get(connection);
+    if (!groups) periodGroups.set(connection, (groups = new Map()));
     let group = groups.get(key);
-    if (!group) groups.set(key, (group = { period: this.period, anchor: this.anchor, average: this.flowAverageSeconds || 10, members: new Set() }));
+    if (!group) groups.set(key, (group = { period: this.period, anchor: this.anchor, members: new Set() }));
     this.period = group.period;
     this.anchor = group.anchor;
-    if ("flowAverageSeconds" in this) this.flowAverageSeconds = group.average;
     group.members.add(this);
     this._group = group;
+    this._groupKey = key;
+    this._groupConnection = connection;
     this._leaveGroup = () => {
       group.members.delete(this);
       if (!group.members.size) groups.delete(key);
+      else this._syncGroupAverage(group);
       if (this._group === group) this._group = null;
     };
+    this._syncGroupAverage(group);
     if (this.data && this.shadowRoot && this.isConnected) this.render();
+  }
+  _syncGroupAverage(group) {
+    const configured = [...group.members].filter(member => member._configuredFlowAverage !== undefined);
+    const source = configured.find(member => member.localName === "pge-energy-card") || configured[0];
+    const average = source?._configuredFlowAverage ?? defaultFlowAverage;
+    for (const member of group.members) {
+      if (!("flowAverageSeconds" in member) || member.flowAverageSeconds === average) continue;
+      member.flowAverageSeconds = average;
+      if (member !== this && member.data && member.isConnected) member.render();
+    }
   }
   _publishGroup() {
     if (!this._group) return;
-    Object.assign(this._group, { period: this.period, anchor: this.anchor, average: this.flowAverageSeconds || this._group.average });
+    Object.assign(this._group, { period: this.period, anchor: this.anchor });
     for (const member of this._group.members) {
       if (member === this) continue;
       member.period = this.period;
       member.anchor = this.anchor;
-      if ("flowAverageSeconds" in member) member.flowAverageSeconds = this._group.average;
       member.periodData = null;
       member._periodKey = null;
       if (member.data && member.shadowRoot && member.isConnected) member.render();
@@ -491,13 +523,14 @@ class PeriodCard extends PGEBase {
         if (this.isConnected && this.shadowRoot) this.render();
       });
   }
-  periodHTML() {
+  periodHTML({ showTabs = true, showNavigation = true } = {}) {
+    if (!showTabs && !showNavigation) return "";
     const label =
       this.periodData?.label ||
       (this.period === "day"
         ? day(this.anchor)
         : month(this.anchor.slice(0, 7)));
-    return `<div class="period-picker"><div class="period-tabs">${[
+    const tabs = showTabs ? `<div class="period-tabs">${[
       ["day", "Dzień"],
       ["week", "Tydzień"],
       ["month", "Miesiąc"],
@@ -507,9 +540,9 @@ class PeriodCard extends PGEBase {
         ([key, label]) =>
           `<button data-period="${key}" class="${this.period === key ? "active" : ""}" aria-pressed="${this.period === key}">${label}</button>`,
       )
-      .join(
-        "",
-      )}</div><div class="period-nav"><button data-shift="-1" aria-label="Poprzedni okres">‹</button><label><span>${esc(label)}</span><input data-anchor type="date" aria-label="Wybierz datę okresu" value="${this.anchor}" max="${localDay()}"></label><button data-shift="1" aria-label="Następny okres" ${shiftedDay(this.anchor, this.period, 1) > localDay() ? "disabled" : ""}>›</button><button data-current title="Bieżący okres">↺</button></div></div>`;
+      .join("")}</div>` : "";
+    const navigation = showNavigation ? `<div class="period-nav"><button data-shift="-1" aria-label="Poprzedni okres">‹</button><label><span>${esc(label)}</span><input data-anchor type="date" aria-label="Wybierz datę okresu" value="${this.anchor}" max="${localDay()}"></label><button data-shift="1" aria-label="Następny okres" ${shiftedDay(this.anchor, this.period, 1) > localDay() ? "disabled" : ""}>›</button><button data-current title="Bieżący okres">↺</button></div>` : "";
+    return `<div class="period-picker">${tabs}${navigation}</div>`;
   }
   bindPeriod() {
     for (const button of this.shadowRoot.querySelectorAll("[data-period]"))
@@ -529,11 +562,13 @@ class PeriodCard extends PGEBase {
           this.changePeriod();
         }
       };
-    this.shadowRoot.querySelector("[data-current]").onclick = () => {
+    const current = this.shadowRoot.querySelector("[data-current]");
+    if (current) current.onclick = () => {
       this.anchor = localDay();
       this.changePeriod();
     };
-    this.shadowRoot.querySelector("[data-anchor]").onchange = (event) => {
+    const anchor = this.shadowRoot.querySelector("[data-anchor]");
+    if (anchor) anchor.onchange = (event) => {
       const value = event.target.value;
       if (/^\d{4}-\d{2}-\d{2}$/.test(value) && value <= localDay()) {
         this.anchor = value;
@@ -549,32 +584,131 @@ class PeriodCard extends PGEBase {
     this.render();
   }
 }
-const periodCSS = `.period-picker{margin:8px 0 18px}.period-tabs{display:flex;gap:4px;padding:4px;border-radius:13px;background:var(--secondary-background-color,#f3f6f7)}.period-tabs button{flex:1;font-size:12px;padding:8px 4px}.period-tabs button.active{background:var(--card-background-color,#fff);box-shadow:0 1px 5px #0001}.period-nav{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:9px;font-size:12px}.period-nav>button{font-size:22px;padding:3px 12px}.period-nav button:disabled{opacity:.25;cursor:default}.period-nav label{position:relative;min-width:120px;text-align:center;font-weight:600}.period-nav input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer;padding:0}.period-note{font-size:11px;color:var(--secondary-text-color);text-align:center;line-height:1.5;margin-top:10px}`;
-class EnergyControlsCard extends PeriodCard {
-  constructor() { super(); this.flowAverageSeconds = 10; }
+const periodCSS = `.period-picker{margin:8px 0 18px}.period-tabs{display:flex;gap:4px;padding:4px;border-radius:13px;background:var(--secondary-background-color,#f3f6f7)}.period-tabs button{flex:1;font-size:12px;padding:8px 4px}.period-tabs button.active{background:var(--card-background-color,#fff);box-shadow:0 1px 5px #0001}.period-nav{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:9px;font-size:12px}.period-nav:first-child{margin-top:0}.period-nav>button{font-size:22px;padding:3px 12px}.period-nav button:disabled{opacity:.25;cursor:default}.period-nav label{position:relative;min-width:120px;text-align:center;font-weight:600}.period-nav input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer;padding:0}.period-note{font-size:11px;color:var(--secondary-text-color);text-align:center;line-height:1.5;margin-top:10px}`;
+const energyPeriodControls = config => ({
+  showTabs: config.show_controls !== false && config.show_period_tabs !== false,
+  showNavigation: config.show_controls !== false && config.show_date_navigation !== false,
+});
+class EnergyPeriodCard extends PeriodCard {
+  flowAverageSeconds = defaultFlowAverage;
   setConfig(config) {
-    this.flowAverageSeconds = powerWindows.includes(Number(config.average_seconds)) ? Number(config.average_seconds) : 10;
+    this._configuredFlowAverage = configuredFlowAverage(config);
+    this.flowAverageSeconds = this._configuredFlowAverage ?? defaultFlowAverage;
     super.setConfig(config);
-  }
-  render() {
-    this.frame(`<style>${periodCSS}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Zakres energii")}</h2><label class="flow-average">Średnia<select data-flow-average aria-label="Średnia mocy diagramu">${powerWindows.map(n => `<option value="${n}" ${this.flowAverageSeconds === n ? "selected" : ""}>${windowLabel(n)}</option>`).join("")}</select></label></div>${this.periodHTML()}</ha-card>`);
-    this.bindPeriod();
-    this.shadowRoot.querySelector("[data-flow-average]").onchange = event => {
-      this.flowAverageSeconds = Number(event.target.value);
-      this._publishGroup();
-      this.render();
-    };
   }
 }
-class EnergyCard extends PeriodCard {
-  constructor() {
-    super();
-    this.flowAverageSeconds = 10;
-  }
+class EnergyControlsCard extends EnergyPeriodCard {
+  // A hidden controls card can still supply its saved average to the diagram.
+  connectedWhileHidden = true;
   setConfig(config) {
-    this.flowAverageSeconds = powerWindows.includes(Number(config.average_seconds)) ? Number(config.average_seconds) : 10;
+    const { showTabs, showNavigation } = energyPeriodControls(config);
     super.setConfig(config);
+    this.setCardHidden(!showTabs && !showNavigation);
   }
+  render() {
+    const controls = this.periodHTML(energyPeriodControls(this.config));
+    this.frame(controls ? `<style>${periodCSS}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Zakres energii")}</h2></div>${controls}</ha-card>` : "");
+    this.bindPeriod();
+  }
+}
+const energyLayoutCSS = `
+.energy-layout {
+  container-type:inline-size; max-width:660px; margin-inline:auto;
+  --circle-diameter:29%;
+  --circle-value-size:clamp(13px,4.1cqw,25px);
+  --battery-color:#32aaa4;
+}
+.battery-time-card {
+  background:transparent; border:0; box-shadow:none; padding-block:0;
+}
+.battery-eta {
+  display:flex; align-items:center; gap:clamp(4px,2cqw,12px);
+  width:calc(40% + var(--circle-diameter)); margin-inline-start:calc(25% - var(--circle-diameter) / 2);
+  padding:clamp(6px,2cqw,14px);
+  border:2px solid var(--battery-color); border-radius:18px;
+  background:transparent; text-align:left;
+}
+.flow-map + .battery-eta {margin-block-start:8px}
+.battery-eta ha-icon {color:var(--battery-color); --mdc-icon-size:clamp(15px,4cqw,22px)}
+.battery-eta > span {flex:1; min-width:0; font-size:clamp(10px,3cqw,13px)}
+.battery-eta strong {font-size:var(--circle-value-size); text-align:right; line-height:1.15}
+.battery-eta small {display:block; margin-top:3px; color:var(--secondary-text-color)}
+`;
+const flowMapCSS = `
+.flow-map {position:relative; aspect-ratio:600/700}
+.flow-map svg {position:absolute; inset:0; width:100%; height:100%; pointer-events:none}
+.flow-line {fill:none; stroke-width:4}
+.flow-map.animations-off [data-active="true"] {animation:none}
+[data-active="true"] {stroke-dasharray:9 7; animation:flow-travel 1.5s linear infinite}
+[data-reverse="true"] {animation-direction:reverse}
+@keyframes flow-travel {to{stroke-dashoffset:-16}}
+@media(prefers-reduced-motion:reduce){[data-active="true"]{animation:none}}
+[data-flow="pge"] {stroke-dasharray:4 5}
+.node {
+  position:absolute; transform:translate(-50%,-50%); padding:0;
+  width:var(--circle-diameter); aspect-ratio:1; border:4px solid var(--c); border-radius:50%;
+  background:var(--card-background-color,#fff); box-shadow:0 3px 16px #00000005;
+}
+.node.ring {border-color:transparent; background:linear-gradient(var(--card-background-color,#fff),var(--card-background-color,#fff)) padding-box,var(--ring) border-box}
+.node ha-icon,.node-name,.node strong,.node-energy,.flow-small,.soc {position:absolute; left:50%; transform:translateX(-50%)}
+.node ha-icon {top:8%; --mdc-icon-size:clamp(15px,3.8cqw,22px); color:var(--c)}
+.node-name {top:30%; font-size:clamp(9px,2.7cqw,13px); color:var(--secondary-text-color); line-height:1.1; white-space:nowrap}
+.node strong {top:49%; transform:translate(-50%,-50%); font-size:var(--circle-value-size); line-height:1.15; white-space:nowrap}
+.node-pge strong {font-size:clamp(12px,3.8cqw,23px)}
+.node-energy {bottom:14%; font-size:clamp(10px,3cqw,16px); white-space:nowrap}
+.flow-small {bottom:23%; font-size:clamp(9px,2.5cqw,13px); white-space:nowrap}
+.node .flow-small + .flow-small {bottom:9%}
+.soc {top:8%; display:flex; align-items:center; gap:3px; font-size:clamp(10px,2.7cqw,14px); color:var(--c)}
+.soc ha-icon {position:static; transform:none; --mdc-icon-size:clamp(10px,3cqw,17px)}
+.node.without-label strong {top:41%}
+.node.without-label .node-energy {bottom:16%}
+.node.without-label .flow-small:not(.flow-small + .flow-small) {bottom:27%}
+.hour-buffer {
+  position:absolute; left:45%; top:33.5%; transform:translate(-50%,-50%); z-index:2;
+  width:18%; padding:clamp(2px,1cqw,5px) 1px; border:1px solid var(--divider-color,#dce5e8);
+  border-radius:10px; background:var(--card-background-color,#fff); text-align:center;
+}
+.hour-buffer strong {font-size:clamp(9px,2.7cqw,15px); white-space:nowrap}
+.hour-buffer small {font-size:clamp(8px,1.8cqw,10px)}
+.pv-installations {
+  position:absolute; right:0; top:max(2%,calc(17% - 11cqw)); width:19%;
+  max-height:26cqw; overflow:auto; display:grid; gap:clamp(3px,1cqw,7px);
+}
+.pv-installation {
+  min-width:0; padding:clamp(2px,0.8cqw,6px); border:2px solid #dd9a1a;
+  border-radius:10px; background:transparent; text-align:center;
+}
+.pv-installation span {
+  display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-size:clamp(9px,2.1cqw,12px);
+}
+.pv-installation strong {font-size:clamp(9px,2.55cqw,17px); white-space:nowrap}
+`;
+const batteryDialogCSS = `
+.battery-dialog {
+  color:var(--primary-text-color); background:var(--card-background-color,#fff);
+  border:0; border-radius:18px; width:min(520px,92vw); max-height:85dvh;
+  overflow:auto; padding:20px; box-shadow:0 14px 70px #0005;
+}
+.battery-dialog::backdrop {background:#14283280}
+.battery-detail-row {
+  display:flex; justify-content:space-between; gap:18px; padding:10px 0;
+  border-bottom:1px solid var(--divider-color,#e7edef); font-size:13px;
+}
+.battery-detail-row b {text-align:right}
+`;
+function batteryTimeHTML(eta) {
+  const direction = eta?.direction || "idle";
+  const label = direction === "charging" ? "Do pełna" : direction === "discharging" ? "Wystarczy na" : "Czas pracy";
+  let time = "—";
+  if (direction === "charging") time = eta.model_range_seconds ? batteryRange(eta.model_range_seconds) : batteryDuration(eta.charge_seconds);
+  if (direction === "discharging") time = batteryDuration(eta.discharge_seconds);
+  const note = eta?.averaging_seconds >= 30 ? `Średnia ${batteryUsedWindow(eta.averaging_seconds)}` : direction === "idle" ? "" : "Zbieranie pomiarów";
+  return `<button id="battery-eta" class="battery-eta" aria-label="Szczegóły czasu pracy baterii">
+    <ha-icon icon="mdi:battery-clock-outline"></ha-icon><span>${label}${note ? `<small>${note}</small>` : ""}</span><strong>${time}</strong>
+  </button>`;
+}
+class EnergyCard extends EnergyPeriodCard {
   render() {
     this.ensurePeriod();
     const frame = this.data.energy?.diagram_frame,
@@ -689,15 +823,9 @@ class EnergyCard extends PeriodCard {
           `<marker id="arrow-${key}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L9 5L1 9Z" fill="${color}"/></marker>`,
       )
       .join("");
-    const arrayList = (parity) =>
-      pvArrays
-        .map((a, i) => ({ a, i }))
-        .filter(() => parity === 0)
-        .map(
-          ({ a, i }) =>
-            `<button class="pv-installation" data-pv="${i}" title="${esc(a.name)}"><span>${esc(a.name)}</span><strong>${fmt(a.power_w)} W</strong></button>`,
-        )
-        .join("");
+    const pvHTML = pvArrays.map((array, index) =>
+      `<button class="pv-installation" data-pv="${index}" title="${esc(array.name)}"><span>${esc(array.name)}</span><strong>${fmt(array.power_w)} W</strong></button>`
+    ).join("");
     const ring = key => {
       if (!["home", "battery"].includes(key) || (key === "home" && !(Number(v.home_power)>0))) return "";
       const pv = Math.max(0,Number(v.pv_power)||0), grid = Math.max(0,Number(v.grid_import_power)||0), battery = key === "home" ? Math.max(0,Number(v.battery_discharge_power)||0) : 0;
@@ -708,32 +836,55 @@ class EnergyCard extends PeriodCard {
       return `conic-gradient(#dd9a1a 0% ${a}%,#32aaa4 ${a}% ${b}%,#3287bd ${b}% 100%)`;
     };
     const eta = this.data.energy?.battery_estimate;
-    const duration = value => {
-      if (value == null || !Number.isFinite(Number(value))) return "—";
-      if (value <= 0) return "0 min";
-      if (value < 60) return "< 1 min";
-      const minutes = Math.ceil(Number(value)/60);
-      return `${Math.floor(minutes/60) ? Math.floor(minutes/60)+" h " : ""}${minutes%60 ? minutes%60+" min" : ""}`.trim();
-    };
-    const range = values => values ? `${duration(values[0])} – ${duration(values[1])}` : "—";
-    const usedWindow = seconds => seconds == null ? "—" : seconds < 60 ? `${Math.floor(seconds)} s` : `${Math.floor(seconds/60)} min${Math.floor(seconds%60) ? " "+Math.floor(seconds%60)+" s" : ""}`;
-    const direction = eta?.direction || "idle";
-    const etaLabel = direction === "charging" ? "Do pełna" : direction === "discharging" ? "Wystarczy na" : "Czas pracy";
-    const etaTime = direction === "charging" ? eta?.model_range_seconds ? range(eta.model_range_seconds) : duration(eta?.charge_seconds) : direction === "discharging" ? duration(eta?.discharge_seconds) : "—";
-    const averageNote = eta?.averaging_seconds >= 30 ? `Średnia ${usedWindow(eta.averaging_seconds)}` : direction === "idle" ? "" : "Zbieranie pomiarów";
-    const etaHTML = eta && eta.quality !== "disabled" ? `<button id="battery-eta" class="battery-eta" aria-label="Szczegóły czasu pracy baterii"><ha-icon icon="mdi:battery-clock-outline"></ha-icon><span><span class="eta-label">${etaLabel}</span><small>${averageNote}</small></span><strong>${etaTime}</strong></button>` : "";
+    const title = String(this.config.title ?? "").trim();
+    const etaHTML = this.config.show_eta !== false && eta && eta.quality !== "disabled" ? batteryTimeHTML(eta) : "";
     const batteryDetails = batteryDialogHTML(eta, v, this._batteryOpen, this.config.animations !== false);
-    this.frame(
-      `<style>${periodCSS}${batteryCSS}${batteryVisualCSS}.battery-dialog{color:var(--primary-text-color);background:var(--card-background-color,#fff);border:0;border-radius:18px;width:min(520px,92vw);max-height:85dvh;overflow:auto;padding:20px;box-shadow:0 14px 70px #0005}.battery-dialog::backdrop{background:#14283280}.battery-detail-row{display:flex;justify-content:space-between;gap:18px;padding:10px 0;border-bottom:1px solid var(--divider-color,#e7edef);font-size:13px}.battery-detail-row b{text-align:right;white-space:nowrap}.battery-dialog h3{margin-top:20px}.hour-buffer{position:absolute;left:43%;top:31%;transform:translate(-50%,-50%);width:18cqw;padding:5px 1px;border:1px solid var(--divider-color,#dce5e8);border-radius:10px;background:var(--card-background-color,#fff);z-index:2;display:grid;text-align:center;gap:2px;font-size:clamp(8px,2cqw,11px)}.hour-buffer strong{font-size:clamp(10px,2.7cqw,15px);white-space:nowrap}.hour-buffer small{font-size:9px}.node.ring{border:4px solid transparent;background:linear-gradient(var(--card-background-color,#fff),var(--card-background-color,#fff)) padding-box,var(--ring) border-box!important}.battery-eta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;padding:12px;border-radius:12px;background:var(--secondary-background-color,#f3f6f7);font-size:12px}.battery-eta b,.battery-eta small{display:block}.battery-eta small{font-size:10px;color:var(--secondary-text-color)}.eta-model{grid-column:1/-1}.battery-eta{display:flex;align-items:center;gap:12px;max-width:440px;width:100%;margin:12px auto 0;padding:14px 16px;border:1px solid var(--divider-color,#e7edef);text-align:left}.battery-eta ha-icon{color:var(--pge-teal)}.battery-eta>span{flex:1}.battery-eta .eta-label{font-size:13px}.battery-eta strong{font-size:clamp(14px,3.8cqw,20px);white-space:normal;max-width:62%;text-align:right;line-height:1.2}.battery-eta small{margin-top:3px}.flow-average{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--secondary-text-color);white-space:nowrap}.flow-average select{width:auto;min-width:63px;padding:5px;border-radius:8px}.flow-map{position:relative;container-type:inline-size;aspect-ratio:600/700;max-width:660px;margin:0 auto}.flow-map svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.flow-map.animations-off [data-active="true"]{animation:none}.flow-line{fill:none;stroke-width:4}[data-active="true"]{stroke-dasharray:9 7;animation:flow-travel 1.5s linear infinite}[data-reverse="true"]{animation-direction:reverse}@keyframes flow-travel{to{stroke-dashoffset:-16}}@media(prefers-reduced-motion:reduce){[data-active="true"]{animation:none}}[data-flow="pge"]{stroke-dasharray:4 5}.node{position:absolute;transform:translate(-50%,-50%);padding:0;width:31cqw;height:31cqw;border:4px solid var(--c);border-radius:50%;background:var(--card-background-color,#fff)!important;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;box-shadow:0 3px 16px #00000005}.node ha-icon{position:absolute;top:8%;--mdc-icon-size:clamp(17px,3.8cqw,22px);color:var(--c)}.node .node-name{position:absolute;top:30%;font-size:clamp(11px,2.7cqw,13px);color:var(--secondary-text-color);line-height:1.1}.node strong{position:absolute;top:49%;transform:translateY(-50%);font-size:clamp(15px,4.1cqw,25px);line-height:1.2;white-space:nowrap}.node .node-energy{position:absolute;bottom:14%;font-size:clamp(11px,3cqw,16px);color:var(--secondary-text-color);white-space:nowrap}.node-home{border-width:4px}.node-pge strong{font-size:clamp(12px,3.8cqw,23px)}.flow-small{position:absolute;bottom:23%;font-size:clamp(10px,2.5cqw,13px);white-space:nowrap}.soc{position:absolute;top:8%;display:flex;align-items:center;gap:3px;font-size:clamp(11px,2.7cqw,14px);color:var(--c)}.soc ha-icon{position:static;--mdc-icon-size:clamp(11px,3cqw,17px)}.pv-installations{position:absolute;top:2%;width:28%;max-height:27cqw;overflow:auto;display:grid;gap:7px}.pv-left{left:4%;top:2%}.pv-right{right:0}.pv-installation{padding:7px 8px;background:var(--secondary-background-color,#f5f7f8);border-radius:11px;text-align:left;min-width:0}.pv-installation span{display:block;font-size:clamp(11px,2.5cqw,12px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pv-installation strong{font-size:clamp(11px,3.2cqw,17px)}.node .flow-small + .flow-small{bottom:9%}.battery-stock{position:absolute;bottom:0;left:51%;right:21%;text-align:center;font-size:11px;color:var(--secondary-text-color)}@container(max-width:380px){.node{gap:2px}.pv-installation{padding:5px}.flow-small{font-size:9px}}</style><ha-card><div class="head"><h2>${esc(this.config.title || "Energia w domu")}</h2>${this.config.show_controls === false ? "" : `<label class="flow-average" title="Długość średniej mocy; częstotliwość odświeżania pozostaje niezależna">Średnia<select data-flow-average aria-label="Średnia mocy diagramu">${powerWindows.map(n => `<option value="${n}" ${this.flowAverageSeconds === n ? "selected" : ""}>${windowLabel(n)}</option>`).join("")}</select></label>`}</div>${this.config.show_controls === false ? "" : this.periodHTML()}${(this.data.accounting_error || this.data.pending_error) && !/^Brak danych godzinowych:/.test(this.data.accounting_error || this.data.pending_error) ? `<div class="warn">${esc(this.data.accounting_error || this.data.pending_error)}</div>` : ""}<div class="flow-map ${this.config.animations === false ? "animations-off" : ""}">${hourHTML}<svg viewBox="0 0 600 700" aria-hidden="true"><defs>${defs}</defs>${arrow("pv", "#dd9a1a", "M390 219V251", Number(v.pv_power))}${arrow("grid", "#3287bd", "M253 350H287", Number(grid))}${arrow("battery", "#32aaa4", "M390 451V480", Number(battery))}<path class="flow-line" data-flow="pge" d="M150 451V480" stroke="#7b61c4" opacity="0.6"/></svg><div class="pv-installations pv-left">${arrayList(0)}</div><div class="pv-installations pv-right">${arrayList(1)}</div>${nodes.map((n) => `<button class="node node-${n.key} ${ring(n.key) ? "ring" : ""}" data-entity="${n.entity}" style="left:${n.x}%;top:${n.y}%;--c:${n.color};${ring(n.key) ? `--ring:${ring(n.key)}` : ""}" title="${esc(n.title || n.name)}${ring(n.key) ? " · Szacowany udział mocy: PV żółty, akumulator turkusowy, sieć niebieski; proporcjonalny podział wspólnego zasilania" : ""}">${n.key === "battery" ? `<span class="soc"><ha-icon icon="${n.icon}"></ha-icon>${fmt(n.soc)}%</span>` : `<ha-icon icon="${n.icon}"></ha-icon>`}<span class="node-name">${n.name}</span><strong>${n.signed ? signedPower(n.value) : fmt(n.value)} ${n.unit}</strong>${n.key === "grid" ? `<span class="flow-small" title="Oddano do sieci, bez opustu">↓ ${precise(t.grid_export_energy)} kWh</span><span class="flow-small" title="Pobrano z sieci, bez opustu">↑ ${precise(t.grid_import_energy)} kWh</span>` : n.key === "pge" || n.key === "battery" ? `<span class="flow-small" title="${n.key === "pge" ? "Wprowadzone po opuście" : "Władowano"}">↓ ${precise(n.credit)} kWh</span><span class="flow-small" title="${n.key === "pge" ? "Pobrano z magazynu" : "Wyładowano"}">↑ ${precise(n.draw)} kWh</span>` : `<span class="node-energy">${n.signed ? signed(n.energy) : precise(n.energy)} kWh</span>`}</button>`).join("")}</div><div id="battery-eta-slot">${this.config.show_eta === false ? "" : etaHTML}</div>${batteryDetails}${hourDialogHTML(this)}${this._periodError ? `<div class="warn">${esc(this._periodError)}</div>` : ""}</ha-card>`,
-    );
-    if (this.config.show_controls !== false) this.bindPeriod();
+    const nodesHTML = nodes.map(node => {
+      const showLabel = this.config.show_node_labels !== false || node.key === "battery";
+      const gradient = ring(node.key);
+      const hint = node.title || node.name;
+      const ringHint = gradient ? " · Szacowany udział mocy: PV żółty, akumulator turkusowy, sieć niebieski; proporcjonalny podział wspólnego zasilania" : "";
+      const icon = `<ha-icon icon="${node.icon}"></ha-icon>`;
+      let energy = `<span class="node-energy">${precise(node.energy)} kWh</span>`;
+      if (node.key === "grid") {
+        energy = `<span class="flow-small" title="Oddano do sieci, bez opustu">↓ ${precise(t.grid_export_energy)} kWh</span><span class="flow-small" title="Pobrano z sieci, bez opustu">↑ ${precise(t.grid_import_energy)} kWh</span>`;
+      } else if (node.key === "pge" || node.key === "battery") {
+        const credit = node.key === "pge" ? "Wprowadzone po opuście" : "Władowano";
+        const draw = node.key === "pge" ? "Pobrano z magazynu" : "Wyładowano";
+        energy = `<span class="flow-small" title="${credit}">↓ ${precise(node.credit)} kWh</span><span class="flow-small" title="${draw}">↑ ${precise(node.draw)} kWh</span>`;
+      }
+      const value = `${node.signed ? signedPower(node.value) : fmt(node.value)} ${node.unit}`;
+      return `<button class="node node-${node.key}${gradient ? " ring" : ""}${showLabel ? "" : " without-label"}" data-entity="${node.entity}"
+        style="left:${node.x}%;top:${node.y}%;--c:${node.color};${gradient ? `--ring:${gradient}` : ""}" title="${esc(hint + ringHint)}" ${showLabel ? "" : `aria-label="${esc(node.name + ", " + value)}"`}>
+        ${node.key === "battery" ? `<span class="soc">${icon}${fmt(node.soc)}%</span>` : icon}
+        ${showLabel ? `<span class="node-name">${node.name}</span>` : ""}<strong>${value}</strong>${energy}
+      </button>`;
+    }).join("");
+    const accountingError = this.data.accounting_error || this.data.pending_error;
+    this.frame(`<style>${periodCSS}${batteryCSS}${batteryVisualCSS}${batteryDialogCSS}${energyLayoutCSS}${flowMapCSS}</style><ha-card>
+      ${title ? `<div class="head"><h2>${esc(title)}</h2></div>` : ""}
+      ${this.periodHTML(energyPeriodControls(this.config))}
+      ${accountingError && !/^Brak danych godzinowych:/.test(accountingError) ? `<div class="warn">${esc(accountingError)}</div>` : ""}
+      <div class="energy-layout">
+        <div class="flow-map ${this.config.animations === false ? "animations-off" : ""}">
+          ${hourHTML}
+          <svg viewBox="0 0 600 700" aria-hidden="true"><defs>${defs}</defs>
+            ${arrow("pv", "#dd9a1a", "M390 211V258", Number(v.pv_power))}
+            ${arrow("grid", "#3287bd", "M242 350H298", Number(grid))}
+            ${arrow("battery", "#32aaa4", "M390 442V489", Number(battery))}
+            <path class="flow-line" data-flow="pge" d="M150 442V489" stroke="#7b61c4" opacity="0.6"/>
+          </svg>
+          ${pvHTML ? `<div class="pv-installations pv-right">${pvHTML}</div>` : ""}
+          ${nodesHTML}
+        </div>
+        ${etaHTML}
+      </div>
+      ${batteryDetails}${hourDialogHTML(this)}${this._periodError ? `<div class="warn">${esc(this._periodError)}</div>` : ""}
+    </ha-card>`);
+    this.bindPeriod();
     bindHourDialog(this);
     const hourInfo = this.shadowRoot.querySelector("[data-hour-info]");
     if (hourInfo) hourInfo.onclick = () => openHourDialog(this);
-    const averageSelect = this.shadowRoot.querySelector("[data-flow-average]");
-    if (averageSelect) averageSelect.onchange = event => {
-      this.flowAverageSeconds = Number(event.target.value); this._publishGroup(); this.render();
-    };
     for (const button of this.shadowRoot.querySelectorAll("[data-entity]"))
       button.onclick = () => this.info(button.dataset.entity);
     const batteryDialog = this.shadowRoot.getElementById("battery-dialog");
@@ -761,13 +912,21 @@ class EnergyCard extends PeriodCard {
   }
 }
 class BatteryTimeCard extends PGEBase {
+  setConfig(config) {
+    super.setConfig(config);
+    this.setCardHidden(config.show_eta === false);
+  }
   render() {
+    if (this.config.show_eta === false) {
+      this._batteryOpen = false;
+      this.frame("");
+      return;
+    }
     const eta = this.data.energy?.battery_estimate;
-    const direction = eta?.direction || "idle";
-    const label = direction === "charging" ? "Do pełna" : direction === "discharging" ? "Wystarczy na" : "Czas pracy";
-    const value = direction === "charging" ? eta?.model_range_seconds ? batteryRange(eta.model_range_seconds) : batteryDuration(eta?.charge_seconds) : direction === "discharging" ? batteryDuration(eta?.discharge_seconds) : "—";
-    const note = eta?.averaging_seconds >= 30 ? `Średnia ${batteryUsedWindow(eta.averaging_seconds)}` : direction === "idle" ? "" : "Zbieranie pomiarów";
-    this.frame(`<style>${batteryCSS}${batteryVisualCSS}.battery-dialog{color:var(--primary-text-color);background:var(--card-background-color,#fff);border:0;border-radius:18px;width:min(520px,92vw);max-height:85dvh;overflow:auto;padding:20px;box-shadow:0 14px 70px #0005}.battery-dialog::backdrop{background:#14283280}.battery-detail-row{display:flex;justify-content:space-between;gap:18px;padding:10px 0;border-bottom:1px solid var(--divider-color,#e7edef);font-size:13px}.battery-detail-row b{text-align:right}.battery-eta{display:flex;align-items:center;gap:12px;width:100%;padding:12px;border-radius:12px;background:var(--secondary-background-color,#f3f6f7);text-align:left}.battery-eta ha-icon{color:var(--pge-teal)}.battery-eta>span{flex:1}.battery-eta small{display:block;color:var(--secondary-text-color)}</style><ha-card><button id="battery-eta" class="battery-eta"><ha-icon icon="mdi:battery-clock-outline"></ha-icon><span>${label}<small>${note}</small></span><strong>${value}</strong></button>${batteryDialogHTML(eta, this.data.energy?.values, this._batteryOpen, this.config.animations !== false)}</ha-card>`);
+    this.frame(`<style>${batteryCSS}${batteryVisualCSS}${batteryDialogCSS}${energyLayoutCSS}</style><ha-card class="battery-time-card">
+      <div class="energy-layout">${batteryTimeHTML(eta)}</div>
+      ${batteryDialogHTML(eta, this.data.energy?.values, this._batteryOpen, this.config.animations !== false)}
+    </ha-card>`);
     const dialog = this.shadowRoot.getElementById("battery-dialog");
     this.shadowRoot.getElementById("battery-eta").onclick = () => { this._batteryOpen = true; if (!dialog.open) dialog.showModal(); };
     this.shadowRoot.getElementById("close-battery").onclick = () => { this._batteryOpen = false; dialog.close(); };
@@ -1781,14 +1940,25 @@ class Dashboard extends HTMLElement {
   getGridOptions() {
     return { columns: "full", rows: "auto" };
   }
+  static getConfigElement() {
+    return window.document.createElement("pge-card-editor");
+  }
   build() {
     this.shadowRoot.innerHTML = `<style>:host{display:block;min-width:0;container-type:inline-size}.layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:16px;max-width:1400px;margin:auto}.stack{display:grid;gap:16px;align-content:start;min-width:0}.stack>*{min-width:0}.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.wide{grid-column:1/-1}@container(max-width:800px){.layout{grid-template-columns:minmax(0,1fr)}}@container(max-width:420px){.tiles{gap:6px}}</style><div class="layout"><div class="stack"><pge-energy-controls-card data-module></pge-energy-controls-card><pge-energy-card data-module></pge-energy-card><pge-battery-time-card data-module></pge-battery-time-card><pge-settings-card data-module></pge-settings-card><pge-opust-card data-module></pge-opust-card><pge-consumers-card data-module></pge-consumers-card></div><div class="stack"><div class="tiles">${["available_energy", "deficit", "period_balance"].map((key) => `<pge-balance-card data-module data-metric="${key}"></pge-balance-card>`).join("")}</div><pge-projection-card data-module></pge-projection-card></div><pge-history-card class="wide" data-module></pge-history-card></div>`;
     for (const card of this.shadowRoot.querySelectorAll("[data-module]")) {
       card.setConfig({
         ...(this.config.entry_id ? { entry_id: this.config.entry_id } : {}),
         ...(card.dataset.metric ? { metric: card.dataset.metric } : {}),
-        ...(card.localName === "pge-energy-card" ? {show_controls:false, show_eta:false, show_hour:this.config.show_hour, average_seconds:this.config.average_seconds} : {}),
-        ...(card.localName === "pge-energy-controls-card" ? {average_seconds:this.config.average_seconds} : {}),
+        ...(card.localName === "pge-energy-card" ? {
+          title: this.config.title, show_controls: false, show_eta: false,
+          show_hour: this.config.show_hour, show_node_labels: this.config.show_node_labels,
+        } : {}),
+        ...(card.localName === "pge-energy-controls-card" ? {
+          average_seconds: this.config.average_seconds, show_controls: this.config.show_controls,
+          show_period_tabs: this.config.show_period_tabs, show_date_navigation: this.config.show_date_navigation,
+          period: this.config.period, anchor_day: this.config.anchor_day,
+        } : {}),
+        ...(card.localName === "pge-battery-time-card" ? { show_eta: this.config.show_eta } : {}),
         ...(["pge-energy-card","pge-energy-controls-card","pge-battery-time-card"].includes(card.localName) ? {sync_group:"home"} : {}),
       });
       if (this._hass) card.hass = this._hass;
@@ -1804,7 +1974,15 @@ class CardEditor extends HTMLElement {
     this._hass = hass;
   }
   render() {
-    this.innerHTML = `<style>pge-card-editor label{display:flex;flex-direction:column;gap:8px;margin:16px 0}pge-card-editor input,pge-card-editor select{padding:10px;font:inherit}</style><label>Tytuł<input data-key="title" value="${esc(this.config.title)}"></label><label>Identyfikator integracji (puste przy jednej)<input data-key="entry_id" value="${esc(this.config.entry_id)}"></label>${
+    const type = this.config.type;
+    const hasDiagram = ["custom:pge-energy-card", "custom:pge-storage-card"].includes(type);
+    const hasControls = hasDiagram || type === "custom:pge-energy-controls-card";
+    const hasBatteryTime = hasDiagram || type === "custom:pge-battery-time-card";
+    const toggle = (key, label, disabled = false) => `<label class="pge-toggle"><input type="checkbox" data-key="${key}" ${this.config[key] !== false ? "checked" : ""} ${disabled ? "disabled" : ""}> ${label}</label>`;
+    const showControls = this.config.show_controls !== false;
+    const integratedControls = type === "custom:pge-energy-card" || type === "custom:pge-storage-card";
+    const average = configuredFlowAverage(this.config);
+    this.innerHTML = `<style>pge-card-editor label{display:flex;flex-direction:column;gap:8px;margin:16px 0}pge-card-editor .pge-toggle{flex-direction:row;align-items:center}pge-card-editor input,pge-card-editor select{padding:10px;font:inherit}</style><label>Tytuł<input data-key="title" value="${esc(this.config.title)}"></label><label>Identyfikator integracji (puste przy jednej)<input data-key="entry_id" value="${esc(this.config.entry_id)}"></label>${
       this.config.type === "custom:pge-balance-card"
         ? `<label>Wartość<select data-key="metric">${Object.entries(coreMetrics)
             .map(
@@ -1813,11 +1991,28 @@ class CardEditor extends HTMLElement {
             )
             .join("")}</select></label>`
         : ""
-    }${this.config.type === "custom:pge-energy-card" ? `<label><input type="checkbox" data-key="show_hour" ${this.config.show_hour !== false ? "checked" : ""}> Pokaż bieżącą godzinę</label>` : ""}${["custom:pge-energy-card","custom:pge-battery-time-card","custom:pge-battery-graphic-card"].includes(this.config.type) ? `<label><input type="checkbox" data-key="animations" ${this.config.animations !== false ? "checked" : ""}> Animacje przepływu i baterii</label>` : ""}`;
+    }
+    ${integratedControls ? toggle("show_controls", "Pokaż sterowanie zakresem na tej karcie") : ""}
+    ${hasControls ? `
+      ${toggle("show_period_tabs", "Pokaż wybór okresu", !showControls)}
+      ${toggle("show_date_navigation", "Pokaż nawigację po datach", !showControls)}
+      <label>Średnia mocy<select data-key="average_seconds">
+        <option value="" ${average === undefined ? "selected" : ""}>Z grupy lub domyślna (10 s)</option>
+        ${powerWindows.map(seconds => `<option value="${seconds}" ${average === seconds ? "selected" : ""}>${windowLabel(seconds)}</option>`).join("")}
+      </select></label>` : ""}
+    ${hasBatteryTime ? toggle("show_eta", "Pokaż czas akumulatora (Wystarczy na / Do pełna)") : ""}
+    ${hasDiagram ? toggle("show_node_labels", "Pokaż opisy Sieć, Dom, Słońce i Magazyn PGE") + toggle("show_hour", "Pokaż bieżącą godzinę") : ""}
+    ${["custom:pge-energy-card", "custom:pge-battery-time-card", "custom:pge-battery-graphic-card"].includes(type) ? toggle("animations", "Animacje przepływu i baterii") : ""}`;
     for (const input of this.querySelectorAll("[data-key]"))
       input.onchange = () => {
-        const config = { ...this.config, [input.dataset.key]: input.type === "checkbox" ? input.checked : input.value };
+        const key = input.dataset.key;
+        const config = { ...this.config, [key]: input.type === "checkbox" ? input.checked : input.value };
+        if (key === "average_seconds") {
+          if (input.value) config.average_seconds = Number(input.value);
+          else delete config.average_seconds;
+        }
         this.config = config;
+        if (key === "show_controls") this.render();
         this.dispatchEvent(
           new CustomEvent("config-changed", {
             detail: { config },

@@ -199,7 +199,11 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                             node => node.getBoundingClientRect().toJSON()),
                         nodes: [...element.querySelectorAll('.node')].map(
                             node => node.getBoundingClientRect().toJSON()),
-                        pv: element.querySelector('.pv-left')?.getBoundingClientRect().toJSON(),
+                        pv: element.querySelector('.pv-right')?.getBoundingClientRect().toJSON(),
+                        eta: element.closest('ha-card').querySelector('#battery-eta')?.getBoundingClientRect().toJSON(),
+                        etaFont: element.closest('ha-card').querySelector('#battery-eta strong') &&
+                            getComputedStyle(element.closest('ha-card').querySelector('#battery-eta strong')).fontSize,
+                        nodeFont: getComputedStyle(element.querySelector('.node-home strong')).fontSize,
                         borders: [...element.querySelectorAll('.node')].map(
                             node => getComputedStyle(node).borderTopWidth),
                         lines: [...element.querySelectorAll('.flow-line')].map(
@@ -215,6 +219,28 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                     assert (
                         geometry["hour"]["bottom"] + 2 < geometry["gridLine"]["top"]
                     ), geometry
+                    hour = geometry["hour"]
+                    distances = [
+                        (
+                            (
+                                hour["x"]
+                                + hour["width"] / 2
+                                - circle["x"]
+                                - circle["width"] / 2
+                            )
+                            ** 2
+                            + (
+                                hour["y"]
+                                + hour["height"] / 2
+                                - circle["y"]
+                                - circle["height"] / 2
+                            )
+                            ** 2
+                        )
+                        ** 0.5
+                        for circle in geometry["circles"][:3]
+                    ]
+                    assert max(distances) - min(distances) < 1, geometry
                 assert len(geometry["circles"]) == 5
                 assert set(geometry["borders"]) == {"4px"}, geometry
                 assert set(geometry["lines"]) == {"4px"}, geometry
@@ -223,9 +249,19 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 ), geometry
                 bounds = geometry["bounds"]
                 if geometry["pv"]:
+                    assert geometry["pv"]["left"] > geometry["circles"][0]["right"]
+                    assert geometry["pv"]["right"] <= bounds["right"] + 1
                     assert geometry["pv"]["bottom"] < geometry["circles"][1]["top"], (
                         geometry
                     )
+                if geometry.get("eta"):
+                    assert geometry["eta"]["left"] == pytest.approx(
+                        geometry["circles"][1]["left"], abs=1
+                    )
+                    assert geometry["eta"]["right"] == pytest.approx(
+                        geometry["circles"][0]["right"], abs=1
+                    )
+                    assert geometry["etaFont"] == geometry["nodeFont"]
                 assert (
                     max(node["bottom"] for node in geometry["nodes"]) + 4
                     <= (geometry["cardBottom"])
@@ -439,6 +475,9 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
                 0
             )
             await expect(page.locator("pge-energy-card #battery-eta")).to_have_count(0)
+            await expect(
+                page.locator("pge-energy-card ha-card > .head h2")
+            ).to_have_count(0)
             await expect(page.locator("pge-consumers-card")).to_have_count(1)
             await expect(page.locator("pge-balance-card")).to_have_count(3)
             for tag in (
@@ -608,6 +647,33 @@ async def test_card_loads_on_real_lovelace_dashboard(ha):
             await page.set_viewport_size({"width": 390, "height": 844})
             await check_flow_geometry()
             await page.screenshot(path="/tmp/pge-09-native-mobile.png", full_page=True)
+            hidden_modules = await page.evaluate(
+                """async () => {
+                    const wrappers = [];
+                    const hass = document.querySelector('home-assistant').hass;
+                    for (const config of [
+                        {type: 'custom:pge-energy-controls-card', show_period_tabs: false, show_date_navigation: false},
+                        {type: 'custom:pge-battery-time-card', show_eta: false},
+                    ]) {
+                        const card = document.createElement('hui-card');
+                        card.hass = hass;
+                        card.config = config;
+                        document.body.append(card);
+                        wrappers.push(card);
+                    }
+                    try {
+                        await Promise.all(wrappers.map(card => card.updateComplete));
+                        const hidden = wrappers.map(card => card.hidden && getComputedStyle(card).display === 'none');
+                        wrappers[0].config = {...wrappers[0].config, show_date_navigation: true};
+                        wrappers[1].config = {...wrappers[1].config, show_eta: true};
+                        await Promise.all(wrappers.map(card => card.updateComplete));
+                        return [hidden, wrappers.map(card => !card.hidden)];
+                    } finally {
+                        wrappers.forEach(card => card.remove());
+                    }
+                }"""
+            )
+            assert hidden_modules == [[True, True], [True, True]]
             assert not errors, errors
         finally:
             await browser.close()

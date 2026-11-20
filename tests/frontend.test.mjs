@@ -357,10 +357,64 @@ test("linked controls update only cards in their group", async () => {
   root.querySelector('[data-period="week"]').click();
   assert.equal(linked.period, "week");
   assert.equal(separate.period, "day");
-  root.querySelector("[data-flow-average]").value = "300";
-  root.querySelector("[data-flow-average]").onchange({target:root.querySelector("[data-flow-average]")});
+  assert.equal(root.querySelector("[data-flow-average]"), null);
+  const editor = card.constructor.getConfigElement();
+  editor.setConfig(card.config);
+  editor.addEventListener("config-changed", event => card.setConfig(event.detail.config));
+  const average = editor.querySelector('[data-key="average_seconds"]');
+  average.value = "300";
+  average.dispatchEvent(new window.Event("change"));
+  assert.equal(card.config.average_seconds, 300);
   assert.equal(linked.flowAverageSeconds, 300);
   assert.equal(separate.flowAverageSeconds, 10);
+  card.setConfig({...card.config, show_period_tabs:false, show_date_navigation:false});
+  assert.equal(card.hidden, true);
+  assert.equal(linked.flowAverageSeconds, 300);
+  linked.hass = hass;
+  card.hass = hass;
+  assert.equal(linked.period, "week");
+  linked.setConfig({...linked.config, average_seconds:15});
+  assert.equal(linked.flowAverageSeconds, 15);
+  assert.equal(card.flowAverageSeconds, 15);
+  await window.happyDOM.close();
+});
+
+test("the energy editor can remove each control, title and circle labels independently", async () => {
+  const {window, card, root, emit} = await setup("pge-energy-card");
+  const data = snapshot();
+  data.energy.battery_estimate = {direction:"charging", charge_seconds:1800};
+  emit(data);
+  assert.equal(root.querySelector("ha-card > .head"), null);
+  const editor = card.constructor.getConfigElement();
+  editor.setConfig(card.config);
+  editor.addEventListener("config-changed", event => card.setConfig(event.detail.config));
+  const edit = (key, value) => {
+    const field = editor.querySelector(`[data-key="${key}"]`);
+    if (field.type === "checkbox") field.checked = value;
+    else field.value = value;
+    field.dispatchEvent(new window.Event("change"));
+  };
+  edit("title", "Energia w domu");
+  assert.equal(root.querySelector("h2").textContent, "Energia w domu");
+  edit("show_period_tabs", false);
+  assert.equal(root.querySelector(".period-tabs"), null);
+  const anchor = card.anchor;
+  root.querySelector('[data-shift="-1"]').click();
+  assert.notEqual(card.anchor, anchor);
+  edit("show_period_tabs", true);
+  edit("show_date_navigation", false);
+  assert.equal(root.querySelector(".period-picker .period-nav"), null);
+  root.querySelector('[data-period="week"]').click();
+  assert.equal(card.period, "week");
+  edit("show_period_tabs", false);
+  edit("show_eta", false);
+  edit("show_node_labels", false);
+  edit("title", "   ");
+  assert.equal(root.querySelector(".period-picker, #battery-eta, ha-card > .head"), null);
+  assert.deepEqual([...root.querySelectorAll(".node-name")].map(node => node.textContent), ["Akumulator"]);
+  assert.match(root.querySelector(".node-home").getAttribute("aria-label"), /^Dom,/);
+  root.querySelector(".node-battery").click();
+  assert.equal(root.getElementById("battery-dialog").open, true);
   await window.happyDOM.close();
 });
 
@@ -853,16 +907,15 @@ test("consumer sort includes untracked and offers time-window means without brea
 });
 
 test("diagram uses aligned mature power windows and has no timing footer", async () => {
-  const { window, root, emit } = await setup("pge-energy-card");
+  const { window, card, root, emit } = await setup("pge-energy-card");
   const data = snapshot();
   data.energy.power_windows = {"15": {covered_seconds: 15,
     values: {pv_power: 1800, home_power: 700, grid_import_power: 0, grid_export_power: 1100},
     pv_arrays: {},
   }};
   emit(data);
-  assert.equal(root.querySelector("[data-flow-average]").value, "10");
-  root.querySelector("[data-flow-average]").value = "15";
-  root.querySelector("[data-flow-average]").dispatchEvent(new window.Event("change"));
+  assert.equal(card.flowAverageSeconds, 10);
+  card.setConfig({...card.config, average_seconds:15});
   assert.match(root.querySelector(".node-pv strong").textContent, /1800 W/);
   assert.match(root.querySelector(".node-home strong").textContent, /700 W/);
   assert.equal(root.querySelector(".period-note"), null);
@@ -902,7 +955,7 @@ test("diagram freezes a complete frame between source reports and PGE is connect
   assert.equal(grid.style.left, pge.style.left);
   assert.ok(parseFloat(pge.style.top) > parseFloat(grid.style.top));
   const link = root.querySelector('[data-flow="pge"]');
-  assert.equal(link.getAttribute("d"), "M150 451V480");
+  assert.equal(link.getAttribute("d"), "M150 442V489");
   assert.equal(link.hasAttribute("marker-start"), false);
   assert.equal(link.hasAttribute("marker-end"), false);
   data.energy.hourly_current = {start:"2026-10-26T12:00:00Z", end:"2026-10-26T13:00:00Z", known:true, balance_kwh:"2", net_kwh:"1.6"};
@@ -928,8 +981,8 @@ test("compact hour can be hidden, opens its entity, and rings use power shares",
   assert.equal(root.querySelector("#hour-dialog").open,true);
   assert.match(root.querySelector(".node-home").getAttribute("style"),/20%.*30%/);
   assert.equal(root.querySelector(".node-pv").style.left,root.querySelector(".node-home").style.left);
-  assert.match(root.querySelector(".pv-left .pv-installation").textContent,/Solar Power/);
-  assert.equal(root.querySelectorAll(".pv-right .pv-installation").length,0);
+  assert.match(root.querySelector(".pv-right .pv-installation").textContent,/Solar Power/);
+  assert.equal(root.querySelector(".pv-left"),null);
   assert.equal(root.querySelectorAll(".period-picker .chip").length,0);
   card.setConfig({type:"custom:pge-energy-card",show_hour:false});
   assert.equal(root.querySelector(".hour-buffer"),null);
@@ -966,9 +1019,8 @@ test("current hour leaves the grid power arrow unobstructed", async () => {
   data.energy.hourly_current={known:true,balance_kwh:"0.37"};
   emit(data);
   const line=root.querySelector('[data-flow="grid"]');
-  assert.equal(line.getAttribute("d"),"M253 350H287");
+  assert.equal(line.getAttribute("d"),"M242 350H298");
   assert.ok(line.hasAttribute("marker-end"));
-  assert.match(root.querySelector("style:last-of-type").textContent,/\.hour-buffer\{[^}]*top:31%/);
   assert.match(root.querySelector(".hour-buffer").textContent,/\+0,4/);
   await window.happyDOM.close();
 });
@@ -982,14 +1034,13 @@ test("diagram and consumers share the same frozen means including minute windows
   body.power_windows={"5":{covered_seconds:5,values:{home_power:700},home_power_w:700,tracked_power_w:0,untracked_power_w:700,consumers:{}},"300":{covered_seconds:300,values:{home_power:600},home_power_w:600,tracked_power_w:0,untracked_power_w:600,consumers:{}}};
   data.energy.diagram_frame={sequence:10,energy:body,available_energy:"2000"};
   energy.emit(data);devices.emit(data);
-  energy.root.querySelector("[data-flow-average]").value="5";
-  energy.root.querySelector("[data-flow-average]").dispatchEvent(new energy.window.Event("change"));
+  energy.card.setConfig({...energy.card.config, average_seconds:5});
   assert.match(energy.root.querySelector(".node-home strong").textContent,/700 W/);
   assert.match(devices.root.querySelector(".consumer-total strong").textContent,/700 W/);
-  for(const [instance,selector] of [[energy,"[data-flow-average]"],[devices,"[data-average]"]]) {
-    instance.root.querySelector(selector).value="300";
-    instance.root.querySelector(selector).dispatchEvent(new instance.window.Event("change"));
-  }
+  energy.card.setConfig({...energy.card.config, average_seconds:300});
+  const deviceAverage = devices.root.querySelector("[data-average]");
+  deviceAverage.value = "300";
+  deviceAverage.dispatchEvent(new devices.window.Event("change"));
   assert.match(energy.root.querySelector(".node-home strong").textContent,/600 W/);
   assert.match(devices.root.querySelector(".consumer-total strong").textContent,/600 W/);
   assert.deepEqual([...devices.root.querySelectorAll("[data-average] option")].map(n=>n.textContent),["1 s","5 s","10 s","15 s","1 min","5 min","15 min","30 min"]);
